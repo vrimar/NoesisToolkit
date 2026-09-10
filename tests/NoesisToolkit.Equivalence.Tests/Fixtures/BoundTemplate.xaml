@@ -1,0 +1,17 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <t:UpperConverter x:Key="Upper" />
+
+  <DataTemplate x:Key="Row" ntk:DataType="t:SpikeItem">
+    <StackPanel>
+      <TextBlock x:Name="Bound" Text="{Binding Label}" />
+      <TextBlock x:Name="Shouted" Text="{Binding Label, Converter={StaticResource Upper}}" />
+      <TextBlock x:Name="Counted" Text="{Binding Index, StringFormat={}#{0}}" />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

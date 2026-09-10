@@ -1,0 +1,38 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="Chrome" TargetType="{x:Type t:SpikeControl}">
+    <StackPanel>
+      <TextBlock x:Name="Shown" Text="{TemplateBinding Label}" />
+      <TextBlock
+        x:Name="Aligned"
+        VerticalAlignment="{TemplateBinding Align}"
+        Text="{TemplateBinding Label}"
+      />
+      <t:SpikeControl x:Name="Unresolved" ntk:DataType="t:SpikeOwner" Align="{Binding Align}" />
+    </StackPanel>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Triggered" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Chrome" Background="Red">
+      <TextBlock x:Name="Caption" Text="{TemplateBinding Label}" />
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="Align" Value="Top">
+        <Setter TargetName="Chrome" Property="Background" Value="Green" />
+        <Setter TargetName="Caption" Property="Opacity" Value="0.5" />
+      </Trigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="Align" Value="Bottom" />
+          <Condition Property="Count" Value="2" />
+        </MultiTrigger.Conditions>
+        <Setter TargetName="Caption" Property="Opacity" Value="0.25" />
+      </MultiTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+</ResourceDictionary>

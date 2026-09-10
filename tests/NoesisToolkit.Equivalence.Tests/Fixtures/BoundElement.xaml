@@ -1,0 +1,56 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.BoundElementFixture"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="t:SpikeOwner"
+  Width="400"
+  Height="300"
+>
+  <StackPanel>
+    <ContentControl x:Name="Anchor" ntk:DataType="t:SpikeItem" Tag="anchored" />
+    <Button x:Name="Direct" Command="{Binding Poke}" />
+    <TextBox x:Name="Entry" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" />
+    <TextBlock x:Name="Mirror" Text="{Binding ElementName=Entry, Path=Text}" />
+    <CheckBox x:Name="Toggle" IsChecked="{Binding Flag}" />
+    <TextBlock x:Name="Fallback" Text="{Binding ElementName=Anchor, Path=Tag, Mode=OneTime}" />
+    <TextBlock x:Name="FromElement" Text="{Binding ElementName=Anchor, Path=DataContext.Label}" />
+
+    <TextBlock x:Name="Placed" Grid.Row="2" />
+    <TextBlock x:Name="FromAttached" Text="{Binding ElementName=Placed, Path=(Grid.Row)}" />
+    <ContentControl x:Name="SelfContext" Content="{Binding .}" />
+
+    <ContentControl x:Name="Templated" Tag="from-parent">
+      <ContentControl.Template>
+        <ControlTemplate TargetType="ContentControl">
+          <TextBlock x:Name="Inside" Text="{TemplateBinding Tag}" />
+        </ControlTemplate>
+      </ContentControl.Template>
+    </ContentControl>
+
+    <ItemsControl x:Name="List" ItemsSource="{Binding Items}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate ntk:DataType="t:SpikeItem">
+          <StackPanel>
+            <TextBlock x:Name="Own" Text="{Binding Label}" />
+            <TextBlock x:Name="FromPeer" Text="{Binding ElementName=Own, Path=DataContext.Label}" />
+            <TextBlock
+              x:Name="FromOuter"
+              Text="{Binding ElementName=List, Path=DataContext.Title}"
+            />
+            <TextBlock
+              x:Name="FromAncestor"
+              Text="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.Title}"
+            />
+            <Button
+              x:Name="Poker"
+              Command="{Binding DataContext.Poke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+            />
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

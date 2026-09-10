@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <NoesisSharedFile Include="CodeWriter" />
+    <NoesisSharedFile Include="XamlMarkupParser" />
+    <NoesisSharedFile Include="XamlMarkup" />
+    <NoesisSharedFile Include="XamlScopeRules" />
+    <NoesisSharedFile Include="TypeLookup" />
+    <NoesisSharedFile Include="IsExternalInitPolyfill" />
+    <NoesisSharedFile Include="Output" />
+    <NoesisSharedFile Include="PartialTypeEmitter" />
+    <NoesisSharedFile Include="SymbolFormats" />
+    <NoesisSharedFile Include="XamlFiles" />
+  </ItemGroup>
+
+  <Import Project="../../build/Analyzer.props" />
+
+  <PropertyGroup>
+    <PackageId>NoesisToolkit.XamlCompiler</PackageId>
+    <Description>Compiles NoesisGUI XAML to C# at build time: the object graph is constructed without a runtime XAML parse, and code-behind gets InitializeComponent plus typed x:Name accessors.</Description>
+    <PackageTags>$(PackageTags);aot;xaml-compiler</PackageTags>
+    <DevelopmentDependency>true</DevelopmentDependency>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(OutputPath)$(AssemblyName).dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+      Visible="false"
+    />
+    <None Include="build/*" Pack="true" PackagePath="build" />
+    <None
+      Include="../../build/CollectXamlFiles.targets"
+      Pack="true"
+      PackagePath="build/NoesisToolkit.XamlCompiler.targets"
+      Visible="false"
+    />
+  </ItemGroup>
+
+  <!-- Not BeforeTargets="Pack": the nuspec is generated inside Pack's depends chain, so a hook on
+       Pack itself runs after NuGet has already failed with its own NU5019. -->
+  <Target Name="VerifyPackagePayload" BeforeTargets="GenerateNuspec">
+    <Error
+      Condition="!Exists('$(OutputPath)$(AssemblyName).dll')"
+      Code="NTK9001"
+      Text="Analyzer payload missing: $(OutputPath)$(AssemblyName).dll. Build $(AssemblyName) for $(Configuration) before packing."
+    />
+    <Error
+      Condition="!Exists('../../build/CollectXamlFiles.targets')"
+      Code="NTK9001"
+      Text="MSBuild payload missing: build/CollectXamlFiles.targets, which packs as build/$(PackageId).targets."
+    />
+  </Target>
+</Project>

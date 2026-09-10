@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <NoesisXamlExtensions Condition="'$(NoesisXamlExtensions)' == ''">.xaml</NoesisXamlExtensions>
+    <EnableDefaultNoesisXamlItems Condition="'$(EnableDefaultNoesisXamlItems)' == ''"
+      >true</EnableDefaultNoesisXamlItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="NoesisXamlPackPrefix" />
+    <CompilerVisibleProperty Include="NoesisXamlExtensions" />
+    <CompilerVisibleProperty Include="NoesisXamlNamespaces" />
+    <CompilerVisibleProperty Include="ProjectDir" />
+  </ItemGroup>
+</Project>

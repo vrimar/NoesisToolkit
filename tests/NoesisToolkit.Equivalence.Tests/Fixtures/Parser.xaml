@@ -1,0 +1,31 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="Palette.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Keyed by type in another file, so this only resolves once the whole graph is assembled. -->
+  <Style
+    x:Key="FromImplicit"
+    TargetType="{x:Type Border}"
+    BasedOn="{StaticResource {x:Type Border}}"
+  >
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+
+  <ControlTemplate x:Key="HandedBack" TargetType="{x:Type Button}">
+    <StackPanel>
+      <!-- Figures is a PathFigureCollection, which no managed value can be assigned to. -->
+      <Path Stroke="{StaticResource Accent}" StrokeThickness="2">
+        <Path.Data>
+          <PathGeometry Figures="M 0,0 L 10,10 L 20,0 Z" />
+        </Path.Data>
+      </Path>
+      <TextBlock FontFamily="./#Fixture Sans" FontSize="13" Text="fonts" />
+      <TextBlock FontFamily="Arial" Text="&amp; &lt; &gt; &#x41;" />
+      <TextBlock Text="{}{not markup}" />
+    </StackPanel>
+  </ControlTemplate>
+</ResourceDictionary>

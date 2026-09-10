@@ -1,0 +1,15 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <!-- The whole corpus hangs off one installed root, referenced the way an application references
+       another pack: every uri the parser resolves from a rooted source stays rooted. -->
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="/Fixtures;Fixtures/Styles.xaml" />
+    <ResourceDictionary Source="/Fixtures;Fixtures/Templates.xaml" />
+    <ResourceDictionary Source="/Fixtures;Fixtures/Triggers.xaml" />
+    <ResourceDictionary Source="/Fixtures;Fixtures/Bindings.xaml" />
+    <ResourceDictionary Source="/Fixtures;Fixtures/Values.xaml" />
+    <ResourceDictionary Source="/Fixtures;Fixtures/Parser.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Noesis.GUI ships win10-* RIDs the modern SDK no longer probes; nothing here consumes them. -->
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
+    <NoesisXamlPackPrefix>Fixtures</NoesisXamlPackPrefix>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Noesis.GUI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="../../src/NoesisToolkit.XamlCompiler/NoesisToolkit.XamlCompiler.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
+    <ProjectReference Include="../../src/NoesisToolkit.Mvvm/NoesisToolkit.Mvvm.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="NoesisXamlPackPrefix" />
+    <AdditionalFiles Include="Fixtures/**/*.xaml" />
+    <None Include="Fixtures/**/*.xaml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

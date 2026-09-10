@@ -1,0 +1,25 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary Source="Palette.xaml" />
+  </ResourceDictionary.MergedDictionaries>
+
+  <ControlTemplate x:Key="ButtonTemplate" TargetType="{x:Type Button}">
+    <Border x:Name="Bg" Background="{StaticResource Accent}">
+      <ContentPresenter />
+    </Border>
+  </ControlTemplate>
+
+  <DataTemplate x:Key="RowTemplate">
+    <StackPanel Orientation="Horizontal">
+      <TextBlock Text="{Binding Label}" />
+      <TextBlock Text="{Binding Value, StringFormat={}{0} pts}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <Style x:Key="Templated" TargetType="{x:Type Button}">
+    <Setter Property="Template" Value="{StaticResource ButtonTemplate}" />
+  </Style>
+</ResourceDictionary>

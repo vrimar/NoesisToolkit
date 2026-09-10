@@ -1,0 +1,23 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.RootFixture"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  Width="640"
+  Height="480"
+>
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <SolidColorBrush x:Key="Local" Color="#FF10B981" />
+      <ControlTemplate x:Key="Inner" TargetType="{x:Type Button}">
+        <Border x:Name="Frame" Background="{StaticResource Local}" BorderThickness="2" />
+      </ControlTemplate>
+    </ResourceDictionary>
+  </UserControl.Resources>
+
+  <Grid x:Name="Frame">
+    <StackPanel x:Name="Stack" Orientation="Vertical">
+      <TextBlock x:Name="Caption" Text="root" Foreground="{StaticResource Local}" />
+      <Button x:Name="Action" Template="{StaticResource Inner}" Width="120" Height="30" />
+    </StackPanel>
+  </Grid>
+</UserControl>

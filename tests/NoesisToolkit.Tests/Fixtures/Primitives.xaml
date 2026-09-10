@@ -1,0 +1,9 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+>
+  <sys:Double x:Key="Gap">8</sys:Double>
+  <sys:String x:Key="Title">Fuse</sys:String>
+  <sys:Boolean x:Key="Enabled">True</sys:Boolean>
+</ResourceDictionary>

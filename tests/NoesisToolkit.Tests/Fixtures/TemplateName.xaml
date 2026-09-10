@@ -1,0 +1,12 @@
+<UserControl
+  x:Class="Sample.TemplateHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <UserControl.Resources>
+    <ControlTemplate x:Key="T">
+      <Border x:Name="Inside" />
+    </ControlTemplate>
+  </UserControl.Resources>
+  <Button x:Name="event" />
+</UserControl>

@@ -1,0 +1,30 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+>
+  <t:UpperConverter x:Key="Upper" />
+  <t:JoinConverter x:Key="Join" />
+
+  <ControlTemplate x:Key="BoundTemplate" TargetType="{x:Type Button}">
+    <Border x:Name="Bg" BorderThickness="3">
+      <StackPanel>
+        <TextBlock x:Name="Own" Text="{Binding RelativeSource={RelativeSource Self}, Path=Name}" />
+        <TextBlock Text="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Width}" />
+        <TextBlock Text="{Binding RelativeSource={RelativeSource AncestorType={x:Type Border}}, Path=BorderThickness}" />
+        <TextBlock Text="{Binding ElementName=Own, Path=Name, Converter={StaticResource Upper}}" />
+        <!-- Same type on both ends: a TemplateBinding compiles to a TemplatedParent binding, which
+             differs only in that it would convert where the parser would leave the target unset. -->
+        <Border Width="{TemplateBinding Width}" Height="10" />
+        <TextBlock>
+          <TextBlock.Text>
+            <MultiBinding Converter="{StaticResource Join}" ConverterParameter="+">
+              <Binding ElementName="Own" Path="Name" />
+              <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="Width" />
+            </MultiBinding>
+          </TextBlock.Text>
+        </TextBlock>
+      </StackPanel>
+    </Border>
+  </ControlTemplate>
+</ResourceDictionary>
