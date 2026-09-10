@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <NoesisSharedFile Include="XamlFiles" />
+    <NoesisSharedFile Include="XamlMarkupParser" />
+    <NoesisSharedFile Include="XamlMarkup" />
+    <NoesisSharedFile Include="XamlScopeRules" />
+    <NoesisSharedFile Include="TypeLookup" />
+  </ItemGroup>
+
+  <Import Project="../../build/Analyzer.props" />
+
+  <PropertyGroup>
+    <PackageId>NoesisToolkit.Analyzers</PackageId>
+    <Description>Build-time validation for NoesisGUI XAML: binding paths, clr-namespace declarations and x:Static references are resolved against the compilation instead of failing silently at load.</Description>
+    <PackageTags>$(PackageTags);analyzer;binding</PackageTags>
+    <DevelopmentDependency>true</DevelopmentDependency>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(OutputPath)$(AssemblyName).dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+      Visible="false"
+    />
+    <None Include="build/*" Pack="true" PackagePath="build" />
+    <None
+      Include="../../build/CollectXamlFiles.targets"
+      Pack="true"
+      PackagePath="build/NoesisToolkit.Analyzers.targets"
+      Visible="false"
+    />
+  </ItemGroup>
+
+  <!-- Not BeforeTargets="Pack": the nuspec is generated inside Pack's depends chain, so a hook on
+       Pack itself runs after NuGet has already failed with its own NU5019. -->
+  <Target Name="VerifyPackagePayload" BeforeTargets="GenerateNuspec">
+    <Error
+      Condition="!Exists('$(OutputPath)$(AssemblyName).dll')"
+      Code="NTK9001"
+      Text="Analyzer payload missing: $(OutputPath)$(AssemblyName).dll. Build $(AssemblyName) for $(Configuration) before packing."
+    />
+    <Error
+      Condition="!Exists('../../build/CollectXamlFiles.targets')"
+      Code="NTK9001"
+      Text="MSBuild payload missing: build/CollectXamlFiles.targets, which packs as build/$(PackageId).targets."
+    />
+  </Target>
+</Project>

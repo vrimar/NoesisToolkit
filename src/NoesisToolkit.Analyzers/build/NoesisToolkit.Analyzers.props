@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <NoesisAnalyzeXamlBindings Condition="'$(NoesisAnalyzeXamlBindings)' == ''"
+      >true</NoesisAnalyzeXamlBindings>
+    <NoesisXamlExtensions Condition="'$(NoesisXamlExtensions)' == ''">.xaml</NoesisXamlExtensions>
+    <EnableDefaultNoesisXamlItems Condition="'$(EnableDefaultNoesisXamlItems)' == ''"
+      >true</EnableDefaultNoesisXamlItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="NoesisAnalyzeXamlBindings" />
+    <CompilerVisibleProperty Include="NoesisXamlExtensions" />
+  </ItemGroup>
+</Project>

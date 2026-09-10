@@ -1,0 +1,22 @@
+<Project>
+  <!--
+    The glob has to live in a target and batch over item metadata: MSBuild expands a wildcard only
+    when it appears as literal text in the Include, so an item transform or a property built from one
+    reaches csc as the unexpanded pattern. Both packages ship this same target name deliberately, so
+    installing both still adds each document exactly once.
+  -->
+  <Target
+    Name="NoesisToolkitCollectXamlFiles"
+    BeforeTargets="CoreCompile"
+    Condition="'$(EnableDefaultNoesisXamlItems)' != 'false'"
+  >
+    <ItemGroup>
+      <_NoesisXamlExtension Include="$(NoesisXamlExtensions.Replace(',', ';'))" />
+      <_NoesisXamlFile
+        Include="**\*%(_NoesisXamlExtension.Identity)"
+        Exclude="$(BaseOutputPath)**;$(BaseIntermediateOutputPath)**;bin\**;obj\**"
+      />
+      <AdditionalFiles Include="@(_NoesisXamlFile)" Exclude="@(AdditionalFiles)" />
+    </ItemGroup>
+  </Target>
+</Project>
