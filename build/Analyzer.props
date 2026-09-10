@@ -1,0 +1,43 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>$(NoesisAnalyzerTargetFramework)</TargetFramework>
+    <IsRoslynAnalyzer>true</IsRoslynAnalyzer>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- No lib output, so a symbol package would be empty and pack rejects it. -->
+    <IncludeSymbols>false</IncludeSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    An analyzer assembly has to be self-contained, so the shared helpers compile into each one — but
+    only the ones it uses: an unreferenced diagnostic descriptor still has to be release-tracked.
+  -->
+  <ItemGroup>
+    <Compile
+      Include="@(NoesisSharedFile->'$(MSBuildThisFileDirectory)../src/Shared/%(Identity).cs')"
+      LinkBase="Shared"
+    />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NoesisToolkit.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles
+      Include="AnalyzerReleases.Shipped.md"
+      Condition="Exists('AnalyzerReleases.Shipped.md')"
+    />
+    <AdditionalFiles
+      Include="AnalyzerReleases.Unshipped.md"
+      Condition="Exists('AnalyzerReleases.Unshipped.md')"
+    />
+  </ItemGroup>
+</Project>

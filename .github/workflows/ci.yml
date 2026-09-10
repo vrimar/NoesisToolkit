@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: |
+          dotnet tool restore
+          dotnet restore NoesisToolkit.slnx
+
+      - name: Verify formatting
+        run: dotnet csharpier check .
+
+      - name: Build
+        run: dotnet build NoesisToolkit.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet run --project tests/NoesisToolkit.Tests -c Release --no-build
+
+      # libNoesis.so links X11 and GL, so it does not even load without them.
+      - name: Install Noesis native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6
+
+      # Never skipped: a gate that opts out when Noesis is missing proves nothing.
+      - name: Equivalence tests
+        run: dotnet run --project tests/NoesisToolkit.Equivalence.Tests -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack NoesisToolkit.slnx -c Release --no-build -o artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*

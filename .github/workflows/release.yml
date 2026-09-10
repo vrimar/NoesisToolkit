@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, e.g. 0.2.0
+        required: true
+        type: string
+      publish:
+        description: Push to NuGet
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            value="${{ inputs.version }}"
+          else
+            value="${GITHUB_REF_NAME#v}"
+          fi
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if ! echo "$value" | grep -Eq "$semver"; then
+            echo "::error::'$value' is not a SemVer version"
+            exit 1
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: |
+          dotnet tool restore
+          dotnet restore NoesisToolkit.slnx
+
+      - name: Verify formatting
+        run: dotnet csharpier check .
+
+      - name: Build
+        run: dotnet build NoesisToolkit.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.value }}
+
+      - name: Test
+        run: dotnet run --project tests/NoesisToolkit.Tests -c Release --no-build
+
+      - name: Install Noesis native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6
+
+      - name: Equivalence tests
+        run: dotnet run --project tests/NoesisToolkit.Equivalence.Tests -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack NoesisToolkit.slnx -c Release --no-build -o artifacts -p:Version=${{ steps.version.outputs.value }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*
+
+      - name: Push to NuGet
+        if: ${{ inputs.publish || startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ -z "${{ secrets.NUGET_API_KEY }}" ]; then
+            echo "::error::NUGET_API_KEY secret missing"
+            exit 1
+          fi
+          dotnet nuget push "artifacts/*.nupkg" -k "${{ secrets.NUGET_API_KEY }}" -s https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - uses: softprops/action-gh-release@v2
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.value, '-') }}
