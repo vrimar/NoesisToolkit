@@ -1,0 +1,57 @@
+// Application-side types the analyzer fixtures resolve xmlns declarations, x:Static and binding
+// paths against.
+namespace Sample.Social
+{
+
+    public enum GuildMemberListSortBy
+    {
+        Name,
+        Level,
+    }
+}
+
+namespace Sample.Ui
+{
+
+    public class ItemDef
+    {
+        public string Family { get; set; } = "";
+    }
+
+    public class ItemViewModel
+    {
+        public int DefIdInt { get; set; }
+        public ItemDef Def { get; set; } = new ItemDef();
+        public IThing? Thing { get; set; }
+    }
+
+    public interface IThing
+    {
+        string Label { get; }
+    }
+
+    public class ListHost { }
+
+    public class TypedListHost : ListHost { }
+
+    public class ShellViewModel
+    {
+        public System.Collections.Generic.List<ItemViewModel> Items { get; } = new();
+        public System.Collections.Generic.List<DerivedViewModel> Others { get; } = new();
+    }
+
+    public abstract class AbstractViewModel
+    {
+        public string Known { get; set; } = "";
+    }
+
+    public class BaseViewModel
+    {
+        public string OnBase { get; set; } = "";
+    }
+
+    public class DerivedViewModel : BaseViewModel
+    {
+        public string OnDerived { get; set; } = "";
+    }
+}

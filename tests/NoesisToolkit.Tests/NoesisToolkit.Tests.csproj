@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Basic.Reference.Assemblies.Net80" />
+    <!-- The driver hosts generators built against 4.8; running them on a newer Roslyn is the point. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="5.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NoesisToolkit.XamlCompiler/NoesisToolkit.XamlCompiler.csproj">
+      <!-- The shared helpers compile into every analyzer assembly, so name which copy a test means. -->
+      <Aliases>global,Compiler</Aliases>
+    </ProjectReference>
+    <ProjectReference Include="../../src/NoesisToolkit.Analyzers/NoesisToolkit.Analyzers.csproj" />
+    <ProjectReference Include="../../src/NoesisToolkit.Mvvm.Generators/NoesisToolkit.Mvvm.Generators.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Fixtures/**/*.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="NoesisStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="MvvmStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="SampleStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

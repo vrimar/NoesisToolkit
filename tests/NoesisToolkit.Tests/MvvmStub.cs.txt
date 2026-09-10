@@ -1,0 +1,146 @@
+// The runtime surface the MVVM generators emit against, mirrored so the tests need no package
+// reference back to NoesisToolkit.Mvvm.
+namespace NoesisToolkit.Mvvm
+{
+    [System.AttributeUsage(System.AttributeTargets.Property)]
+    public sealed class DependencyPropertyAttribute : System.Attribute
+    {
+        public DependencyPropertyAttribute() { }
+
+        public DependencyPropertyAttribute(object? defaultValue, string? propertyChanged = null, Noesis.FrameworkPropertyMetadataOptions metadataOptions = Noesis.FrameworkPropertyMetadataOptions.None) { }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Method)]
+    public sealed class DelegateCommandAttribute : System.Attribute { }
+
+    public class DelegateCommand<T>
+    {
+        public DelegateCommand(System.Action<T?> execute) { }
+    }
+
+    public sealed class DelegateCommand : DelegateCommand<object?>
+    {
+        public DelegateCommand(System.Action execute) : base(_ => execute()) { }
+    }
+
+    public class AsyncDelegateCommand<T>
+    {
+        public AsyncDelegateCommand(System.Func<T?, System.Threading.Tasks.ValueTask> execute) { }
+    }
+
+    public sealed class AsyncDelegateCommand : AsyncDelegateCommand<object?>
+    {
+        public AsyncDelegateCommand(System.Func<System.Threading.Tasks.ValueTask> execute) : base(_ => execute()) { }
+    }
+}
+
+namespace NoesisToolkit.Mvvm.CodeGen
+{
+    public readonly struct BindingHop
+    {
+        public BindingHop(string name, System.Func<object, object?> read) { }
+
+        public static BindingHop Guarded<TOwner>(string name, System.Func<TOwner, object?> read) => default;
+    }
+
+    public static class CompiledBindingSetup
+    {
+        public static int Register(string key, System.Action<Noesis.FrameworkElement> wire) => 0;
+
+        public static void SetIndex(Noesis.DependencyObject target, int value) { }
+    }
+
+    public sealed class CompiledBindingSpec
+    {
+        public System.Func<Noesis.FrameworkElement, Noesis.FrameworkElement?>? Source { get; set; }
+        public Noesis.DependencyProperty? SourceProperty { get; set; }
+        public BindingHop[] Hops { get; set; } = System.Array.Empty<BindingHop>();
+        public System.Func<object?, object?> Convert { get; set; } = static v => v;
+        public System.Action<Noesis.FrameworkElement, object?>? Assign { get; set; }
+        public System.Action<object, object?>? Write { get; set; }
+        public Noesis.IValueConverter? Converter { get; set; }
+        public object? ConverterParameter { get; set; }
+        public System.Type? TargetType { get; set; }
+        public Noesis.BindingMode Mode { get; set; } = Noesis.BindingMode.Default;
+        public Noesis.UpdateSourceTrigger Trigger { get; set; } = Noesis.UpdateSourceTrigger.Default;
+    }
+
+    public sealed class CompiledBinding
+    {
+        public static CompiledBinding Bind(
+            Noesis.FrameworkElement target,
+            Noesis.DependencyProperty property,
+            CompiledBindingSpec spec) => new CompiledBinding();
+
+        public static CompiledBinding Bind(
+            Noesis.FrameworkElement anchor,
+            System.Func<Noesis.FrameworkElement, Noesis.DependencyObject?> receiver,
+            Noesis.DependencyProperty property,
+            CompiledBindingSpec spec) => new CompiledBinding();
+
+        public static Noesis.FrameworkElement? FindAncestor(Noesis.FrameworkElement element, System.Type type) => null;
+
+        public static Noesis.FrameworkElement? FindNamed(Noesis.FrameworkElement element, string name) => null;
+
+        public static Noesis.DependencyObject? BehaviorAt(Noesis.FrameworkElement element, int index) => null;
+
+        public static Noesis.DependencyObject? InputBindingAt(Noesis.FrameworkElement element, int index) => null;
+
+        public static Noesis.DependencyObject? ActionAt(Noesis.FrameworkElement element, int trigger, int action) => null;
+    }
+
+    public sealed class CompiledBindingPart
+    {
+        public System.Func<Noesis.FrameworkElement, Noesis.FrameworkElement?>? Source { get; set; }
+        public Noesis.DependencyProperty? SourceProperty { get; set; }
+        public BindingHop[] Hops { get; set; } = System.Array.Empty<BindingHop>();
+    }
+
+    public sealed class CompiledMultiBindingSpec
+    {
+        public CompiledBindingPart[] Parts { get; set; } = System.Array.Empty<CompiledBindingPart>();
+        public Noesis.IMultiValueConverter? Converter { get; set; }
+        public object? ConverterParameter { get; set; }
+        public System.Type? TargetType { get; set; }
+        public System.Func<object?[], object?>? Format { get; set; }
+        public System.Func<object?, object?> Convert { get; set; } = static v => v;
+        public System.Action<Noesis.FrameworkElement, object?>? Assign { get; set; }
+    }
+
+    public sealed class CompiledMultiBinding
+    {
+        public static CompiledMultiBinding Bind(
+            Noesis.FrameworkElement target,
+            Noesis.DependencyProperty property,
+            CompiledMultiBindingSpec spec) => new CompiledMultiBinding();
+    }
+
+    public sealed class CompiledTriggerCondition
+    {
+        public CompiledBindingPart Part { get; set; } = new CompiledBindingPart();
+        public object? Value { get; set; }
+    }
+
+    public sealed class CompiledSetter
+    {
+        public Noesis.DependencyProperty Property { get; set; } = null!;
+        public object? Value { get; set; }
+        public System.Action<Noesis.FrameworkElement, object?>? Assign { get; set; }
+        public string? TargetName { get; set; }
+    }
+
+    public sealed class CompiledTriggerSpec
+    {
+        public CompiledTriggerCondition[] Conditions { get; set; } = System.Array.Empty<CompiledTriggerCondition>();
+        public CompiledSetter[] Setters { get; set; } = System.Array.Empty<CompiledSetter>();
+        public bool TemplateScoped { get; set; }
+        public bool PropertyDriven { get; set; }
+    }
+
+    public sealed class CompiledTriggerSet
+    {
+        public static CompiledTriggerSet Bind(
+            Noesis.FrameworkElement target,
+            CompiledTriggerSpec[] triggers) => new CompiledTriggerSet();
+    }
+}

@@ -1,0 +1,601 @@
+// A compile-only stand-in for the Noesis surface the generated code touches. Only the shape matters:
+// the tests assert that emitted C# binds and compiles, never that it renders.
+namespace Noesis
+{
+
+public class DependencyProperty
+{
+    public string Name = "";
+
+    public static DependencyProperty Register(string name, System.Type propertyType, System.Type ownerType, PropertyMetadata metadata) => new DependencyProperty { Name = name };
+
+    public static DependencyProperty RegisterAttached(string name, System.Type propertyType, System.Type ownerType, PropertyMetadata metadata) => new DependencyProperty { Name = name };
+}
+
+public class PropertyMetadata
+{
+    public PropertyMetadata() { }
+
+    public PropertyMetadata(object? defaultValue) { }
+
+    public PropertyMetadata(object? defaultValue, PropertyChangedCallback? callback) { }
+}
+
+public class FrameworkPropertyMetadata : PropertyMetadata
+{
+    public FrameworkPropertyMetadata() { }
+
+    public FrameworkPropertyMetadata(object? defaultValue) : base(defaultValue) { }
+
+    public FrameworkPropertyMetadata(object? defaultValue, FrameworkPropertyMetadataOptions options) : base(defaultValue) { }
+
+    public FrameworkPropertyMetadata(object? defaultValue, FrameworkPropertyMetadataOptions options, PropertyChangedCallback? callback) : base(defaultValue, callback) { }
+
+    public FrameworkPropertyMetadata(object? defaultValue, PropertyChangedCallback? callback) : base(defaultValue, callback) { }
+}
+
+[System.Flags]
+public enum FrameworkPropertyMetadataOptions
+{
+    None = 0,
+    AffectsMeasure = 1,
+    AffectsArrange = 2,
+    AffectsRender = 4,
+    BindsTwoWayByDefault = 8,
+}
+
+public delegate void PropertyChangedCallback(DependencyObject d, DependencyPropertyChangedEventArgs e);
+
+public class DependencyPropertyChangedEventArgs : System.EventArgs
+{
+    public object? OldValue;
+    public object? NewValue;
+}
+
+public class DependencyObject
+{
+    readonly System.Collections.Generic.Dictionary<DependencyProperty, object?> _values = new();
+
+    public object? GetValue(DependencyProperty dp) => _values.TryGetValue(dp, out var v) ? v : null;
+
+    public void SetValue(DependencyProperty dp, object? value) => _values[dp] = value;
+
+    public void SetResourceReference(DependencyProperty dp, object key) { }
+}
+
+[System.AttributeUsage(System.AttributeTargets.Class)]
+public sealed class ContentPropertyAttribute : System.Attribute
+{
+    public ContentPropertyAttribute(string name) { }
+}
+
+public class InputBindingCollection : System.Collections.Generic.List<InputBinding> { }
+
+public class InputBinding : DependencyObject
+{
+    public static readonly DependencyProperty CommandProperty = DependencyProperty.Register("Command", typeof(System.Windows.Input.ICommand), typeof(InputBinding), new PropertyMetadata());
+
+    public System.Windows.Input.ICommand? Command { get => (System.Windows.Input.ICommand?)GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
+}
+
+public class KeyBinding : InputBinding
+{
+    public string? Key { get; set; }
+    public string? Modifiers { get; set; }
+}
+
+public class NameScope
+{
+    public static void SetNameScope(DependencyObject target, NameScope? scope) { }
+
+    public void RegisterName(string name, object element) { }
+}
+
+public class FrameworkElement : DependencyObject
+{
+    public BindingExpressionBase? SetBinding(DependencyProperty dp, BindingBase binding) => null;
+
+    public static readonly DependencyProperty WidthProperty = DependencyProperty.Register("Width", typeof(float), typeof(FrameworkElement), new FrameworkPropertyMetadata());
+    public static readonly DependencyProperty HeightProperty = DependencyProperty.Register("Height", typeof(float), typeof(FrameworkElement), new FrameworkPropertyMetadata());
+
+    public static readonly DependencyProperty VisibilityProperty = DependencyProperty.Register("Visibility", typeof(Visibility), typeof(FrameworkElement), new FrameworkPropertyMetadata());
+
+    public string? Name { get; set; }
+
+    public Style? Style { get; set; }
+
+    public Visibility Visibility { get => (Visibility)(GetValue(VisibilityProperty) ?? Visibility.Visible); set => SetValue(VisibilityProperty, value); }
+
+    public float Width { get => (float)(GetValue(WidthProperty) ?? 0f); set => SetValue(WidthProperty, value); }
+
+    public float Height { get => (float)(GetValue(HeightProperty) ?? 0f); set => SetValue(HeightProperty, value); }
+
+    public ResourceDictionary Resources { get; set; } = new ResourceDictionary();
+
+    public InputBindingCollection InputBindings { get; } = new InputBindingCollection();
+
+    public static readonly DependencyProperty DataContextProperty = DependencyProperty.Register("DataContext", typeof(object), typeof(FrameworkElement), new FrameworkPropertyMetadata());
+
+    public object? DataContext { get => GetValue(DataContextProperty); set => SetValue(DataContextProperty, value); }
+
+    public object? FindName(string name) => null;
+
+    public event System.EventHandler? Loaded;
+
+    protected virtual bool ConnectEvent(object source, string eventName, string handlerName) => false;
+
+    protected void RaiseLoaded() => Loaded?.Invoke(this, System.EventArgs.Empty);
+}
+
+[ContentProperty("Content")]
+public class ContentControl : FrameworkElement
+{
+    public object? Content { get; set; }
+
+    public DataTemplate? ContentTemplate { get; set; }
+}
+
+public class Control : ContentControl
+{
+    public static readonly DependencyProperty BackgroundProperty = DependencyProperty.Register("Background", typeof(Brush), typeof(Control), new FrameworkPropertyMetadata());
+    public static readonly DependencyProperty TemplateProperty = DependencyProperty.Register("Template", typeof(ControlTemplate), typeof(Control), new FrameworkPropertyMetadata());
+
+    public Brush? Background { get => (Brush?)GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
+
+    public ControlTemplate? Template { get => (ControlTemplate?)GetValue(TemplateProperty); set => SetValue(TemplateProperty, value); }
+}
+
+public class UserControl : Control { }
+
+public class Button : Control
+{
+    public event System.EventHandler? Click;
+
+    protected void RaiseClick() => Click?.Invoke(this, System.EventArgs.Empty);
+}
+
+[ContentProperty("Children")]
+public class Panel : FrameworkElement
+{
+    public UIElementCollection Children { get; } = new UIElementCollection();
+}
+
+public class StackPanel : Panel { }
+
+public class UIElementCollection : System.Collections.Generic.List<FrameworkElement> { }
+
+public class SetterBaseCollection : System.Collections.Generic.List<Setter> { }
+
+public class Setter
+{
+    public DependencyProperty? Property { get; set; }
+    public object? Value { get; set; }
+    public string? TargetName { get; set; }
+}
+
+[ContentProperty("Setters")]
+public class Style
+{
+    public System.Type? TargetType { get; set; }
+    public Style? BasedOn { get; set; }
+    public SetterBaseCollection Setters { get; } = new SetterBaseCollection();
+    public TriggerCollection Triggers { get; } = new TriggerCollection();
+}
+
+public class TriggerCollection : System.Collections.Generic.List<TriggerBase> { }
+
+public class TriggerBase { }
+
+public class DataTrigger : TriggerBase
+{
+    public BindingBase? Binding { get; set; }
+    public object? Value { get; set; }
+    public SetterBaseCollection Setters { get; } = new SetterBaseCollection();
+}
+
+public class MultiDataTrigger : TriggerBase
+{
+    public ConditionCollection Conditions { get; } = new ConditionCollection();
+    public SetterBaseCollection Setters { get; } = new SetterBaseCollection();
+}
+
+public class ConditionCollection : System.Collections.Generic.List<Condition> { }
+
+public class Condition
+{
+    public BindingBase? Binding { get; set; }
+    public object? Value { get; set; }
+}
+
+public class ResourceDictionary
+{
+    readonly System.Collections.Generic.Dictionary<object, object?> _entries = new();
+
+    public System.Collections.Generic.List<ResourceDictionary> MergedDictionaries { get; } = new();
+
+    public object? Source { get; set; }
+
+    public bool Contains(object key) => _entries.ContainsKey(key);
+
+    public object? this[object key]
+    {
+        get => _entries.TryGetValue(key, out var v) ? v : null;
+        set => _entries[key] = value;
+    }
+
+    public void Add(object key, object? value) => _entries[key] = value;
+}
+
+public class SolidColorBrush : Brush
+{
+    public SolidColorBrush() { }
+
+    public SolidColorBrush(Color color) { Color = color; }
+
+    public Color Color { get; set; }
+}
+
+public class Brush
+{
+    public static Brush Parse(string value) => new Brush();
+}
+
+public enum Visibility
+{
+    Visible,
+    Hidden,
+    Collapsed,
+}
+
+[ContentProperty("Child")]
+public class Border : FrameworkElement
+{
+    public static readonly DependencyProperty BackgroundProperty = DependencyProperty.Register("Background", typeof(Brush), typeof(Border), new FrameworkPropertyMetadata());
+
+    public static readonly DependencyProperty BorderBrushProperty = DependencyProperty.Register("BorderBrush", typeof(Brush), typeof(Border), new FrameworkPropertyMetadata());
+
+    public static readonly DependencyProperty CornerRadiusProperty = DependencyProperty.Register("CornerRadius", typeof(CornerRadius), typeof(Border), new FrameworkPropertyMetadata());
+
+    public FrameworkElement? Child { get; set; }
+
+    public CornerRadius CornerRadius { get => (CornerRadius)(GetValue(CornerRadiusProperty) ?? default(CornerRadius)); set => SetValue(CornerRadiusProperty, value); }
+
+    public object? Tag { get; set; }
+
+    public Brush? Background { get => (Brush?)GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
+
+    public Brush? BorderBrush { get => (Brush?)GetValue(BorderBrushProperty); set => SetValue(BorderBrushProperty, value); }
+}
+
+public class ToggleButton : Button
+{
+    public static readonly DependencyProperty IsCheckedProperty = DependencyProperty.Register("IsChecked", typeof(bool), typeof(ToggleButton), new FrameworkPropertyMetadata());
+
+    public bool IsChecked { get => (bool)(GetValue(IsCheckedProperty) ?? false); set => SetValue(IsCheckedProperty, value); }
+}
+
+public class CheckBox : ToggleButton { }
+
+public class TextBlock : FrameworkElement
+{
+    public static readonly DependencyProperty TextProperty = DependencyProperty.Register("Text", typeof(string), typeof(TextBlock), new FrameworkPropertyMetadata());
+
+    public static readonly DependencyProperty TagProperty = DependencyProperty.Register("Tag", typeof(object), typeof(TextBlock), new FrameworkPropertyMetadata());
+
+    public string? Text { get => (string?)GetValue(TextProperty); set => SetValue(TextProperty, value); }
+
+    public object? Tag { get => GetValue(TagProperty); set => SetValue(TagProperty, value); }
+}
+
+public struct Color
+{
+    public static Color Parse(string value) => default;
+
+    public static Color FromArgb(byte a, byte r, byte g, byte b) => default;
+}
+
+public class BaseComponent { }
+
+public class Uri
+{
+    public Uri() { }
+
+    public Uri(string uri) { }
+}
+
+public abstract class MarkupExtension
+{
+    public abstract object? ProvideValue(object? provider);
+}
+
+public enum BindingMode { Default, OneWay, TwoWay, OneWayToSource, OneTime }
+
+public enum UpdateSourceTrigger { Default, PropertyChanged, LostFocus, Explicit }
+
+public enum RelativeSourceMode { PreviousData, TemplatedParent, Self, FindAncestor }
+
+public class RelativeSource
+{
+    public RelativeSource() { }
+
+    public RelativeSource(RelativeSourceMode mode) { Mode = mode; }
+
+    public RelativeSource(RelativeSourceMode mode, System.Type? ancestorType, int ancestorLevel) { Mode = mode; }
+
+    public static RelativeSource Self { get; } = new RelativeSource(RelativeSourceMode.Self);
+    public static RelativeSource TemplatedParent { get; } = new RelativeSource(RelativeSourceMode.TemplatedParent);
+    public static RelativeSource PreviousData { get; } = new RelativeSource(RelativeSourceMode.PreviousData);
+
+    public RelativeSourceMode Mode { get; set; }
+    public System.Type? AncestorType { get; set; }
+    public int AncestorLevel { get; set; }
+}
+
+public interface IValueConverter
+{
+    object? Convert(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture);
+    object? ConvertBack(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture);
+}
+
+public interface IMultiValueConverter
+{
+    object? Convert(object?[] values, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture);
+    object?[] ConvertBack(object? value, System.Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture);
+}
+
+public class PropertyPath
+{
+    public PropertyPath() { }
+
+    public PropertyPath(string path) { Path = path; }
+
+    public string? Path { get; set; }
+}
+
+public class BindingBase
+{
+    public object? FallbackValue { get; set; }
+    public object? TargetNullValue { get; set; }
+    public string? StringFormat { get; set; }
+}
+
+public class Binding : BindingBase
+{
+    public Binding() { }
+
+    public Binding(string path) { Path = new PropertyPath(path); }
+
+    public PropertyPath? Path { get; set; }
+    public object? Source { get; set; }
+    public string? ElementName { get; set; }
+    public RelativeSource? RelativeSource { get; set; }
+    public IValueConverter? Converter { get; set; }
+    public object? ConverterParameter { get; set; }
+    public BindingMode Mode { get; set; }
+    public UpdateSourceTrigger UpdateSourceTrigger { get; set; }
+    public int Delay { get; set; }
+}
+
+public class MultiBinding : BindingBase
+{
+    public System.Collections.Generic.List<BindingBase> Bindings { get; } = new();
+    public IMultiValueConverter? Converter { get; set; }
+    public object? ConverterParameter { get; set; }
+    public BindingMode Mode { get; set; }
+}
+
+public class BindingExpressionBase { }
+
+public static class BindingOperations
+{
+    public static BindingExpressionBase? SetBinding(DependencyObject target, DependencyProperty dp, BindingBase binding) => null;
+}
+
+public class DynamicResourceExtension : MarkupExtension
+{
+    public DynamicResourceExtension() { }
+
+    public DynamicResourceExtension(object key) { ResourceKey = key; }
+
+    public object? ResourceKey { get; set; }
+
+    public override object? ProvideValue(object? provider) => null;
+}
+
+public static class Colors
+{
+    public static Color Red => default;
+    public static Color Green => default;
+    public static Color Blue => default;
+    public static Color Black => default;
+    public static Color White => default;
+    public static Color Transparent => default;
+}
+
+public class GradientBrush : Brush { }
+
+public class ImageSource { }
+
+public class BitmapImage : ImageSource
+{
+    public BitmapImage() { }
+
+    public BitmapImage(System.Uri uri) { }
+
+    public System.Uri? UriSource { get; set; }
+}
+
+public class Image : FrameworkElement
+{
+    public static readonly DependencyProperty SourceProperty = DependencyProperty.Register("Source", typeof(ImageSource), typeof(Image), new FrameworkPropertyMetadata());
+
+    public ImageSource? Source { get => (ImageSource?)GetValue(SourceProperty); set => SetValue(SourceProperty, value); }
+}
+
+public struct CornerRadius
+{
+    public CornerRadius(float radius) { }
+
+    public CornerRadius(float topLeft, float topRight, float bottomRight, float bottomLeft) { }
+}
+
+public struct GridLength
+{
+    public GridLength(float pixels) { }
+}
+
+public class FontFamily
+{
+    public FontFamily() { }
+
+    public FontFamily(string name) { }
+
+    public FontFamily(Uri baseUri, string name) { }
+}
+
+public class Cursor { }
+
+public static class Cursors
+{
+    public static Cursor Arrow { get; } = new Cursor();
+    public static Cursor Hand { get; } = new Cursor();
+}
+
+public class Geometry
+{
+    public static Geometry Parse(string value) => new Geometry();
+}
+
+public class PathFigureCollection
+{
+    public static PathFigureCollection Parse(string value) => new PathFigureCollection();
+}
+
+public class PathGeometry : Geometry
+{
+    public PathFigureCollection? Figures { get; set; }
+}
+
+public class RoutedEvent { }
+
+public class RoutedCommand { }
+
+[ContentProperty("VisualTree")]
+public class FrameworkTemplate
+{
+    public FrameworkElement? VisualTree { get; set; }
+
+    public TriggerCollection Triggers { get; } = new TriggerCollection();
+
+    public void RegisterName(string name, object element) { }
+}
+
+public class ControlTemplate : FrameworkTemplate
+{
+    public System.Type? TargetType { get; set; }
+}
+
+public class DataTemplate : FrameworkTemplate
+{
+    public object? DataType { get; set; }
+}
+
+public class ItemsControl : Control
+{
+    public object? ItemsSource { get; set; }
+    public DataTemplate? ItemTemplate { get; set; }
+}
+
+[ContentProperty("Child")]
+public class Decorator : FrameworkElement
+{
+    public FrameworkElement? Child { get; set; }
+}
+
+public class Inline { }
+
+public class Run : Inline
+{
+    public Run() { }
+
+    public Run(string text) { Text = text; }
+
+    public string? Text { get; set; }
+}
+
+public class AnimationTimeline
+{
+    public string? Name { get; set; }
+}
+
+public class TimelineGroup : AnimationTimeline
+{
+    public System.Collections.Generic.List<AnimationTimeline> Children { get; } = new();
+}
+
+public class Storyboard : TimelineGroup { }
+
+public class BeginStoryboard
+{
+    public Storyboard? Storyboard { get; set; }
+}
+
+public class VisualState
+{
+    public string? Name { get; set; }
+    public Storyboard? Storyboard { get; set; }
+}
+
+public class VisualStateGroup
+{
+    public string? Name { get; set; }
+    public System.Collections.Generic.List<VisualState> States { get; } = new();
+}
+
+public static class GUI
+{
+    static ResourceDictionary _application = new ResourceDictionary();
+
+    public static void LoadComponent(object component, string uri) { }
+
+    public static void SetApplicationResources(ResourceDictionary resources) => _application = resources;
+
+    public static ResourceDictionary GetApplicationResources() => _application;
+
+    public static object? ParseXaml(string xaml) => null;
+}
+}
+
+namespace Noesis.Interactivity
+{
+public class AttachableObject : Noesis.DependencyObject { }
+
+public class Behavior : AttachableObject { }
+
+public class Behavior<T> : Behavior where T : Noesis.DependencyObject { }
+
+public class TriggerAction : AttachableObject { }
+
+public class TriggerAction<T> : TriggerAction where T : Noesis.DependencyObject { }
+
+public class TriggerActionCollection : System.Collections.Generic.List<TriggerAction> { }
+
+[Noesis.ContentProperty("Actions")]
+public class TriggerBase : AttachableObject
+{
+    public TriggerActionCollection Actions { get; } = new TriggerActionCollection();
+}
+
+public class TriggerBase<T> : TriggerBase where T : Noesis.DependencyObject { }
+
+public class BehaviorCollection : System.Collections.Generic.List<Behavior> { }
+
+public class TriggerCollection : System.Collections.Generic.List<TriggerBase> { }
+
+public static class Interaction
+{
+    public static BehaviorCollection GetBehaviors(Noesis.DependencyObject obj) => new BehaviorCollection();
+
+    public static TriggerCollection GetTriggers(Noesis.DependencyObject obj) => new TriggerCollection();
+}
+}

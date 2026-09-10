@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net9.0</TargetFrameworks>
+    <RootNamespace>NoesisToolkit.Mvvm</RootNamespace>
+    <PackageId>NoesisToolkit.Mvvm</PackageId>
+    <Description>MVVM boilerplate for NoesisGUI: [DependencyProperty] generates the DP registration and accessors, [DelegateCommand] turns a method into a bindable command, and DelegateCommand/AsyncDelegateCommand back them.</Description>
+    <PackageTags>$(PackageTags);mvvm;dependency-property;command</PackageTags>
+    <!-- Noesis.GUI ships win10-* RIDs the modern SDK no longer probes; nothing here consumes them. -->
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Noesis.GUI" />
+    <PackageReference
+      Include="System.Threading.Tasks.Extensions"
+      Condition="'$(TargetFramework)' == 'netstandard2.0'"
+    />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="../NoesisToolkit.Mvvm.Generators/NoesisToolkit.Mvvm.Generators.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
+  </ItemGroup>
+
+  <!-- The framework is stated once, in Directory.Build.props: a literal here stops matching in
+       silence and the package ships with no generator. -->
+  <PropertyGroup>
+    <NoesisGeneratorPayload>../NoesisToolkit.Mvvm.Generators/bin/$(Configuration)/$(NoesisAnalyzerTargetFramework)/NoesisToolkit.Mvvm.Generators.dll</NoesisGeneratorPayload>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None
+      Include="$(NoesisGeneratorPayload)"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+      Visible="false"
+    />
+  </ItemGroup>
+
+  <!-- Not BeforeTargets="Pack": the nuspec is generated inside Pack's depends chain, so a hook on
+       Pack itself runs after NuGet has already failed with its own NU5019. -->
+  <Target Name="VerifyPackagePayload" BeforeTargets="GenerateNuspec">
+    <Error
+      Condition="!Exists('$(NoesisGeneratorPayload)')"
+      Code="NTK9001"
+      Text="Generator payload missing: $(NoesisGeneratorPayload). Build NoesisToolkit.Mvvm.Generators for $(Configuration)/$(NoesisAnalyzerTargetFramework) before packing."
+    />
+  </Target>
+</Project>

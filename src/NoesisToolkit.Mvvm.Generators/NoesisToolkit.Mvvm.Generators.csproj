@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <NoesisSharedFile Include="CodeWriter" />
+    <NoesisSharedFile Include="Output" />
+    <NoesisSharedFile Include="PartialTypeEmitter" />
+    <NoesisSharedFile Include="SymbolFormats" />
+    <NoesisSharedFile Include="IsExternalInitPolyfill" />
+  </ItemGroup>
+
+  <Import Project="../../build/Analyzer.props" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>
