@@ -33,6 +33,9 @@
         </MultiTrigger.Conditions>
         <Setter TargetName="Caption" Property="Opacity" Value="0.25" />
       </MultiTrigger>
+      <DataTrigger Binding="{Binding Label, RelativeSource={RelativeSource Self}}" Value="flagged">
+        <Setter TargetName="Caption" Property="FontStyle" Value="Italic" />
+      </DataTrigger>
     </ControlTemplate.Triggers>
   </ControlTemplate>
 </ResourceDictionary>
