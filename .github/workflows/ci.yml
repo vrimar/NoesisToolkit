@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: dotnet run --project tests/NoesisToolkit.Tests -c Release --no-build
 
+      - name: Native AOT publish
+        run: dotnet publish tests/NoesisToolkit.AotSmoke -c Release -r linux-x64
+
       # libNoesis.so links X11 and GL, so it does not even load without them.
       - name: Install Noesis native dependencies
         run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6
