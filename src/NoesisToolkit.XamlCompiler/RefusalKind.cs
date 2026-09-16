@@ -35,6 +35,10 @@ static class Refusals
         ["write-back-through-a-conversion"] = RefusalKind.Boundary,
         ["multi-binding-is-one-way-only"] = RefusalKind.Boundary,
 
+        // The receiver is found by position each time and may be gone, so there is nothing stable
+        // to watch for a write back.
+        ["write-back-through-a-detached-receiver"] = RefusalKind.Boundary,
+
         // The document asked to write a path that has nowhere to write.
         ["write-back-has-no-setter"] = RefusalKind.Author,
 

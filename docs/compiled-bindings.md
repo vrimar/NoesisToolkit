@@ -116,7 +116,7 @@ which is why the named form does compile.
 | a trigger setter whose value is a resource lookup | boundary | the parser resolves it and `SetValue` does not |
 | a template trigger setter with no `TargetName` | boundary | it writes the templated parent below that element's local value |
 | a write back to a source read straight off a dependency property | gap | `SetValue` on that property would serve; only hop writes are emitted |
-| a write back through a template's wiring | gap | the detached receiver is one-way by construction |
+| a write back to a behavior, input binding or trigger action | boundary | the receiver is found by position each time, so nothing stable can be watched |
 | `Mode=OneTime` or `OneWayToSource`, `UpdateSourceTrigger=Explicit` | gap | not implemented |
 | `FallbackValue`, `TargetNullValue` | gap | not implemented |
 | `RelativeSource PreviousData`, or `AncestorLevel` past 1 | gap | not resolved yet |
