@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.1.1] - 2026-09-16
+
+### Added
+
+- **NTK2005** — an enum-valued attribute naming a member the enum does not declare. Noesis parses
+  these from their string at load time, so a member left behind by a rename reaches the lookup as a
+  name nothing maps. Enums declared by Noesis itself are exempt, because its converters accept
+  aliases they never declare.
+
+### Changed
+
+- A write back to a behavior, input binding or trigger action is now classed a boundary rather than
+  a gap. The receiver is found by position each time and may be gone, so nothing stable can be
+  watched to drive one.
+
 ## [0.1.0] - 2026-09-16
 
 First release.
