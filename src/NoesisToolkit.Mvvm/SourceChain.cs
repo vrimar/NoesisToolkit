@@ -69,7 +69,9 @@ sealed class SourceChain
             : _source.GetValue(_sourceProperty);
 
         root = current;
-        broke = current is null;
+
+        // A null root is a value the binding writes; only a hop with nothing to read off breaks it.
+        broke = _source is null;
 
         for (var i = 0; i < _hops.Length; i++)
         {

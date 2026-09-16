@@ -444,17 +444,45 @@ sealed partial class XamlEmitter
             return null;
         }
 
+        // Evaluated on the templated parent, where TemplatedParent names whatever that one is in.
+        if (templateScoped && RelativeMode(call) == "TemplatedParent")
+        {
+            Note("trigger-condition-past-the-templated-parent");
+            return null;
+        }
+
         // A condition is not written on an element, so its Self is the element the template is
         // applied to rather than the root the trigger set is anchored on.
         var from =
-            templateScoped && SelfRelative(call)
-                ? TemplatedSource(owner)
-                : ResolveSource(owner, call);
+            templateScoped && SelfRelative(call) ? TemplatedSource(owner)
+            : templateScoped && AncestorRelative(call) ? AncestorOfTemplatedParent(owner, call)
+            : ResolveSource(owner, call);
         if (from is not { } source)
             return null;
 
+        // Each reads the templated parent's DataContext, not the one the root rebinds for itself.
+        if (
+            templateScoped
+            && RebindsDataContext(owner)
+            && (
+                source.Resolver is null
+                || (SelfRelative(call) && TrySplitDataContextHop(path, out _))
+            )
+        )
+        {
+            Note("trigger-condition-context-rebound");
+            return null;
+        }
+
         if (ResolvePath(source, path) is not { } resolved)
             return null;
+
+        // Native converts the constant to whatever an object path holds at run time.
+        if (resolved.Type.SpecialType == SpecialType.System_Object && !IsNullMarkup(rawValue))
+        {
+            Note("trigger-condition-path-is-object");
+            return null;
+        }
 
         var constant = TriggerConstant(owner, rawValue, resolved.Type);
         if (constant is null)
@@ -471,6 +499,45 @@ sealed partial class XamlEmitter
     static bool SelfRelative(MarkupCall call) =>
         NamedValue(call, "RelativeSource") is MarkupCall relative
         && RelativeSourceParts(relative).Mode == "Self";
+
+    static string? RelativeMode(MarkupCall call) =>
+        NamedValue(call, "RelativeSource") is MarkupCall relative
+            ? RelativeSourceParts(relative).Mode
+            : null;
+
+    static bool AncestorRelative(MarkupCall call) =>
+        NamedValue(call, "RelativeSource") is MarkupCall relative
+        && RelativeSourceParts(relative).AncestorType is not null;
+
+    // The walk starts above the templated parent, so nothing in the document says what it reaches.
+    BindingSource? AncestorOfTemplatedParent(XElement owner, MarkupCall call)
+    {
+        if (ResolveSource(owner, call) is null)
+            return null;
+
+        var relative = (MarkupCall)NamedValue(call, "RelativeSource")!;
+        if (ResolveTypeSymbol(owner, RelativeSourceParts(relative).AncestorType!) is not { } type)
+            return null;
+
+        return new BindingSource(
+            $"__s => {CompiledBindingFqn}.TemplatedParent(__s) is {{ }} __p"
+                + $" ? {CompiledBindingFqn}.FindAncestor(__p, typeof({XamlTypeResolver.Fqn(type)}))"
+                + " : null",
+            owner,
+            type,
+            detached: true
+        );
+    }
+
+    static bool RebindsDataContext(XElement element) =>
+        element.Attribute("DataContext") is not null
+        || element
+            .Elements()
+            .Any(e => e.Name.LocalName.EndsWith(".DataContext", StringComparison.Ordinal));
+
+    static bool IsNullMarkup(string raw) =>
+        XamlMarkupParser.IsMarkup(raw)
+        && XamlMarkupParser.Parse(raw) is { Name: "x:Null" or "Null" };
 
     (string Spec, string Key)? CompileTriggerSetter(
         XElement owner,
@@ -537,32 +604,11 @@ sealed partial class XamlEmitter
         if (PlainSlot(property) is not { } slot)
             return null;
 
-        // A local value on the element outranks a native style trigger; a compiled write is itself
-        // a local value and would win instead. A template attribute sits below a template trigger,
-        // so the named-target form needs no such refusal.
-        if (!templateScoped)
+        // A template's own values rank below its triggers: a named target is never outranked.
+        if (!templateScoped && StyleSetterOutranked(owner, type, propertyName))
         {
-            if (
-                owner
-                    .Attributes()
-                    .Any(a => !a.IsNamespaceDeclaration && a.Name.LocalName == propertyName)
-            )
-            {
-                Note("trigger-setter-outranked");
-                return null;
-            }
-
-            if (
-                owner
-                    .Elements()
-                    .Any(e =>
-                        e.Name.LocalName.EndsWith("." + propertyName, StringComparison.Ordinal)
-                    )
-            )
-            {
-                Note("trigger-setter-outranked");
-                return null;
-            }
+            Note("trigger-setter-outranked");
+            return null;
         }
 
         var value = TriggerConstant(owner, rawValue, slot.Type);
@@ -581,9 +627,86 @@ sealed partial class XamlEmitter
         return ($"new {CompiledSetterFqn} {{ {fields} }}", SetterKey(targetName, propertyName));
     }
 
+    // Each of these ranks above a native style trigger, which a compiled local write would beat.
+    bool StyleSetterOutranked(XElement owner, INamedTypeSymbol type, string property)
+    {
+        if (
+            owner
+                .Attributes()
+                .Any(a =>
+                    !a.IsNamespaceDeclaration && SetterPropertyName(a.Name.LocalName) == property
+                )
+        )
+            return true;
+
+        if (
+            owner
+                .Elements()
+                .Any(e => e.Name.LocalName.EndsWith("." + property, StringComparison.Ordinal))
+        )
+            return true;
+
+        var implicitContent =
+            owner.Elements().Any(e => e.Name.LocalName.IndexOf('.') < 0)
+            || owner.Nodes().OfType<XText>().Any(t => !string.IsNullOrWhiteSpace(t.Value));
+        if (implicitContent && ContentPropertyOf(type) == property)
+            return true;
+
+        return NamedByTemplateTrigger(owner, property);
+    }
+
+    bool NamedByTemplateTrigger(XElement element, string property)
+    {
+        var name = (
+            element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))
+            ?? element.Attribute("Name")
+        )?.Value.Trim();
+        if (name is null || TemplateOwner(element) is not { } template)
+            return false;
+
+        foreach (
+            var wrapper in template
+                .Elements()
+                .Where(e => e.Name.LocalName.EndsWith(".Triggers", StringComparison.Ordinal))
+        )
+        {
+            foreach (var setter in wrapper.Elements().SelectMany(TriggerSetters))
+            {
+                if (setter.Attribute("TargetName")?.Value.Trim() != name)
+                    continue;
+
+                // Unreadable counts as touching everything.
+                if (
+                    setter.Attribute("Property")?.Value is not { } written
+                    || SetterPropertyName(written) == property
+                )
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    static IEnumerable<XElement> TriggerSetters(XElement trigger) =>
+        trigger
+            .Elements()
+            .SelectMany(child =>
+                child.Name.LocalName == "Setter" ? new[] { child }
+                : Array.IndexOf(SetterWrappers, child.Name.LocalName) >= 0
+                    ? child.Elements().Where(e => e.Name.LocalName == "Setter")
+                : Enumerable.Empty<XElement>()
+            );
+
+    // Compared by name alone: an AddOwner alias is the same property under another owner.
+    static string SetterPropertyName(string written)
+    {
+        var name = written.Trim().Trim('(', ')');
+        return name.Substring(name.LastIndexOf('.') + 1);
+    }
+
     INamedTypeSymbol? NamedInTemplate(XElement nameRoot, string name)
     {
-        foreach (var element in nameRoot.DescendantsAndSelf())
+        foreach (var element in NameScopeOf(nameRoot))
         {
             if (
                 element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))?.Value.Trim()
@@ -653,7 +776,12 @@ sealed partial class XamlEmitter
                 if (setter.Attribute("Property")?.Value.Trim() is not { } name)
                     return null;
 
-                names.Add(SetterKey(setter.Attribute("TargetName")?.Value.Trim(), name));
+                names.Add(
+                    SetterKey(
+                        setter.Attribute("TargetName")?.Value.Trim(),
+                        SetterPropertyName(name)
+                    )
+                );
             }
         }
 

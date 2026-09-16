@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
@@ -12,32 +11,55 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// Change notification for a <see cref="DependencyProperty"/>, which Noesis otherwise raises none of.
 /// </summary>
 /// <remarks>
-/// <para>Two routes, chosen by who registered the property. A property declared in managed code has
-/// metadata this library can read and rewrite, so it is watched by overriding that metadata with a
-/// callback — process-global, uninstallable, and free per instance.</para>
-/// <para>A property Noesis itself registered is never overridden. Its record carries callbacks the
-/// managed side can neither read nor put back, so replacing it on the owner corrupts native state —
-/// claiming <c>Noesis.Border.BorderThickness</c> on <c>Border</c> breaks layout for every Border in
-/// the process — while overriding it on a subclass is inert on some properties and simply never
-/// fires, which is worse than crashing because nothing says so. Such a property is watched instead
-/// through a hidden attached property bound to it: a reader alongside the native record rather than
-/// a replacement of it, which cannot crash and cannot silently go dead.</para>
-/// <para>An override is process-global and cannot be uninstalled, so a property is claimed once and
-/// fanned out to instances through a table this class owns.</para>
+/// <para>Two routes, chosen by how the property was registered. One the <c>[DependencyProperty]</c>
+/// generator registered carries a callback from <see cref="Notifying"/>, so it reports here from the
+/// start at no cost per instance. Any other property is watched through a hidden attached property
+/// bound to it: a reader alongside the property's record rather than a replacement of it.</para>
+/// <para>Overriding the metadata instead would be free per instance, but it changes what the engine
+/// does. On a property Noesis registered it replaces callbacks the managed side can neither read nor
+/// put back, which corrupts native state for every instance in the process, and on any property it
+/// lands on the owner that already holds metadata, which Noesis reports as a warning the parsed
+/// document never raises.</para>
 /// </remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class DependencyWatcher
 {
-    static readonly Dictionary<DependencyProperty, PropertyMetadata> Claimed =
-        new Dictionary<DependencyProperty, PropertyMetadata>();
-
     static readonly Dictionary<DependencyProperty, DependencyProperty> Probes =
         new Dictionary<DependencyProperty, DependencyProperty>();
 
     static readonly ConditionalWeakTable<DependencyObject, Subscriptions> Table =
         new ConditionalWeakTable<DependencyObject, Subscriptions>();
 
+    static readonly HashSet<DependencyProperty> Notifies = new HashSet<DependencyProperty>();
+
     static int _probes;
+
+    /// <summary>Marks <paramref name="property"/> as one whose registered metadata already reports
+    /// every change here, so watching it needs no probe bound to it.</summary>
+    /// <param name="property">A property registered with a callback from <see cref="Notifying"/>.</param>
+    /// <returns><paramref name="property"/>, so the call can wrap a registration.</returns>
+    public static DependencyProperty SelfNotifying(DependencyProperty property)
+    {
+        Guard.NotNull(property, nameof(property));
+
+        lock (Notifies)
+            Notifies.Add(property);
+
+        return property;
+    }
+
+    /// <summary>A change callback that runs <paramref name="inner"/> and then reports the change
+    /// here, for a registration to carry from the start.</summary>
+    /// <param name="inner">The property's own change callback, or null.</param>
+    /// <returns>The callback to register the property with.</returns>
+    public static PropertyChangedCallback Notifying(PropertyChangedCallback? inner) =>
+        inner is null
+            ? OnChanged
+            : (target, e) =>
+            {
+                inner(target, e);
+                OnChanged(target, e);
+            };
 
     /// <summary>Calls <paramref name="handler"/> whenever <paramref name="property"/> changes on
     /// <paramref name="target"/>.</summary>
@@ -54,10 +76,8 @@ public static class DependencyWatcher
 
         var subscriptions = Table.GetOrCreateValue(target);
 
-        if (NeedsProbe(property))
+        if (!AlreadyNotifies(property))
             subscriptions.Probe(target, property, ProbeFor(property));
-        else
-            Claim(property);
 
         subscriptions.Add(property, handler);
     }
@@ -76,68 +96,10 @@ public static class DependencyWatcher
             subscriptions.Remove(target, property, handler);
     }
 
-    static readonly System.Reflection.Assembly Engine = typeof(FrameworkElement).Assembly;
-
-    static bool NeedsProbe(DependencyProperty property) => property.OwnerType.Assembly == Engine;
-
-    // An attached property is not a member of the element, so its bare name resolves against
-    // nothing and the probe would silently never fire.
-    static string PathTo(DependencyProperty property) =>
-        IsAttached(property) ? $"({property.OwnerType.Name}.{property.Name})" : property.Name;
-
-    [UnconditionalSuppressMessage(
-        "Trimming",
-        "IL2075:DynamicallyAccessedMembers",
-        Justification = "NeedsProbe admits only a property owned by the Noesis assembly, and a "
-            + "Noesis application has to root that assembly whole because the engine resolves XAML "
-            + "types reflectively at load."
-    )]
-    static bool IsAttached(DependencyProperty property) =>
-        property.OwnerType.GetProperty(
-            property.Name,
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
-        )
-            is null
-        && property.OwnerType.GetMethod(
-            "Get" + property.Name,
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static
-        )
-            is not null;
-
-    static void Claim(DependencyProperty property)
+    static bool AlreadyNotifies(DependencyProperty property)
     {
-        if (Claimed.ContainsKey(property))
-            return;
-
-        var owner = property.OwnerType;
-        var replacement = Replacement(property.GetMetadata(owner));
-        Claimed[property] = replacement;
-        property.OverrideMetadata(owner, replacement);
-    }
-
-    // An override supplies a whole record, so every flag the property was registered with has to be
-    // carried across or layout silently stops invalidating on it. The default value is left unset
-    // because the registered one survives an override that states none.
-    static PropertyMetadata Replacement(PropertyMetadata? existing)
-    {
-        if (existing is not FrameworkPropertyMetadata framework)
-            return new PropertyMetadata(OnChanged);
-
-        return new FrameworkPropertyMetadata(OnChanged)
-        {
-            AffectsMeasure = framework.AffectsMeasure,
-            AffectsArrange = framework.AffectsArrange,
-            AffectsParentMeasure = framework.AffectsParentMeasure,
-            AffectsParentArrange = framework.AffectsParentArrange,
-            AffectsRender = framework.AffectsRender,
-            Inherits = framework.Inherits,
-            OverridesInheritanceBehavior = framework.OverridesInheritanceBehavior,
-            IsNotDataBindable = framework.IsNotDataBindable,
-            BindsTwoWayByDefault = framework.BindsTwoWayByDefault,
-            Journal = framework.Journal,
-            SubPropertiesDoNotAffectRender = framework.SubPropertiesDoNotAffectRender,
-            DefaultUpdateSourceTrigger = framework.DefaultUpdateSourceTrigger,
-        };
+        lock (Notifies)
+            return Notifies.Contains(property);
     }
 
     static DependencyProperty ProbeFor(DependencyProperty property)
@@ -185,10 +147,7 @@ public static class DependencyWatcher
                 return;
 
             _probed.Add(property);
-            target.SetBinding(
-                probe,
-                new Binding(PathTo(property)) { Source = target, Mode = BindingMode.OneWay }
-            );
+            target.SetBinding(probe, new Binding(property, target) { Mode = BindingMode.OneWay });
         }
 
         internal void Add(DependencyProperty property, Action handler)

@@ -61,7 +61,7 @@ sealed partial class XamlEmitter(
     {
         var scope = new Dictionary<string, XElement>(StringComparer.Ordinal);
 
-        foreach (var element in root.DescendantsAndSelf())
+        foreach (var element in NameScopeOf(root))
         {
             var name = element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs));
             if (name is null)
@@ -73,6 +73,28 @@ sealed partial class XamlEmitter(
 
         _nameScopes.Add(scope);
     }
+
+    IEnumerable<XElement> NameScopeOf(XElement root)
+    {
+        var pending = new Stack<XElement>();
+        pending.Push(root);
+
+        while (pending.Count > 0)
+        {
+            var element = pending.Pop();
+            yield return element;
+
+            foreach (var child in element.Elements().Reverse())
+            {
+                if (resolver.SymbolOf(child) is not { } symbol || !PushesNameScope(symbol))
+                    pending.Push(child);
+            }
+        }
+    }
+
+    static bool PushesNameScope(INamedTypeSymbol symbol) =>
+        XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style")
+        || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
 
     XElement? LookupNamed(string name)
     {
@@ -98,6 +120,7 @@ sealed partial class XamlEmitter(
         _lines.Add("global::Noesis.NameScope.SetNameScope(this, null);");
         _lines.Add($"var {RootScope} = new global::Noesis.NameScope();");
         _lines.Add($"global::Noesis.NameScope.SetNameScope(this, {RootScope});");
+        PlanTemplateBindings(root, null);
 
         foreach (var attribute in root.Attributes())
             ApplyAttribute(root, "this", rootType, attribute);
@@ -114,6 +137,7 @@ sealed partial class XamlEmitter(
         var name = NextName("dict");
         _dictionaries.Add(name);
         _lines.Add($"var {name} = new global::Noesis.ResourceDictionary();");
+        PlanTemplateBindings(root, null);
         EmitDictionaryBody(root, name);
 
         Finish();
@@ -127,6 +151,9 @@ sealed partial class XamlEmitter(
             _lines.Insert(1, ResourcesHelper);
 
         EmitLookupHelpers();
+
+        if (_usesTemplated)
+            _lines.Add(TemplatedHelper);
 
         if (_deferredGlobal.Count > 0)
         {

@@ -11,6 +11,9 @@ internal static class XamlScopeRules
     // Noesis drops an attribute in an xmlns it does not know, so these never reach the graph.
     internal const string ToolkitNamespace = "https://github.com/vrimar/NoesisToolkit";
 
+    internal static bool? CompileBindings(string value) =>
+        bool.TryParse(value.Trim(), out var on) ? on : null;
+
     /// <summary>A property whose value is a template, and the property whose value supplies the
     /// DataContext that template is stamped against.</summary>
     internal readonly struct TemplateHost(string sourceProperty, bool isCollection)

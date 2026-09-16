@@ -1,0 +1,12 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:NoesisToolkit.Equivalence.Tests"
+>
+  <local:ResContext x:Key="Res.Context" />
+  <DataTemplate x:Key="Res.ContextTemplate">
+    <StackPanel DataContext="{StaticResource Res.Context}">
+      <TextBlock Text="{Binding Name}" />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

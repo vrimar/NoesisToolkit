@@ -5,6 +5,8 @@ namespace Noesis
 
 public class DependencyProperty
 {
+    public static readonly object UnsetValue = new object();
+
     public string Name = "";
 
     public static DependencyProperty Register(string name, System.Type propertyType, System.Type ownerType, PropertyMetadata metadata) => new DependencyProperty { Name = name };
@@ -59,6 +61,8 @@ public class DependencyObject
     public object? GetValue(DependencyProperty dp) => _values.TryGetValue(dp, out var v) ? v : null;
 
     public void SetValue(DependencyProperty dp, object? value) => _values[dp] = value;
+
+    public void ClearValue(DependencyProperty dp) => _values.Remove(dp);
 
     public void SetResourceReference(DependencyProperty dp, object key) { }
 }
@@ -117,6 +121,10 @@ public class FrameworkElement : DependencyObject
     public static readonly DependencyProperty DataContextProperty = DependencyProperty.Register("DataContext", typeof(object), typeof(FrameworkElement), new FrameworkPropertyMetadata());
 
     public object? DataContext { get => GetValue(DataContextProperty); set => SetValue(DataContextProperty, value); }
+
+    public static readonly DependencyProperty TagProperty = DependencyProperty.Register("Tag", typeof(object), typeof(FrameworkElement), new FrameworkPropertyMetadata());
+
+    public object? Tag { get => GetValue(TagProperty); set => SetValue(TagProperty, value); }
 
     public object? FindName(string name) => null;
 
@@ -215,6 +223,8 @@ public class ResourceDictionary
 
     public object? Source { get; set; }
 
+    public System.Collections.ICollection Keys => _entries.Keys;
+
     public bool Contains(object key) => _entries.ContainsKey(key);
 
     public object? this[object key]
@@ -280,11 +290,7 @@ public class TextBlock : FrameworkElement
 {
     public static readonly DependencyProperty TextProperty = DependencyProperty.Register("Text", typeof(string), typeof(TextBlock), new FrameworkPropertyMetadata());
 
-    public static readonly DependencyProperty TagProperty = DependencyProperty.Register("Tag", typeof(object), typeof(TextBlock), new FrameworkPropertyMetadata());
-
     public string? Text { get => (string?)GetValue(TextProperty); set => SetValue(TextProperty, value); }
-
-    public object? Tag { get => GetValue(TagProperty); set => SetValue(TagProperty, value); }
 }
 
 public struct Color

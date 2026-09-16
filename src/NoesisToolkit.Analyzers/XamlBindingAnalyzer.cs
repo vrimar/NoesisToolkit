@@ -66,7 +66,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         UndeclaredContextId,
         title: "Binding has no declared DataContext type",
         messageFormat: "'{0}' cannot be checked: annotate the enclosing template with an "
-            + "'ntk:DataType' comment naming the type its DataContext resolves to",
+            + "'ntk:DataType' attribute naming the type its DataContext resolves to",
         category: "Reliability",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,

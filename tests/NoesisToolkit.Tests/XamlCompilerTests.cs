@@ -70,19 +70,25 @@ public partial class XamlCompilerTests
     }
 
     [Test]
-    public async Task A_dictionary_defers_a_sibling_key_until_Flush()
+    public async Task A_dictionary_reads_a_key_where_it_is_referenced_and_defers_only_a_miss()
     {
         var run = Theme();
 
         await Assert.That(run.Errors).IsEmpty();
         var source = run.Source("Theme");
 
-        // Built before its graph is assembled, so the sibling lookup has to wait for the flushed root.
+        var scoped = source.IndexOf(
+            "__scoped(new global::Noesis.ResourceDictionary[] { __dict0 }, \"BaseButton\")",
+            StringComparison.Ordinal
+        );
         var defer = source.IndexOf("__XamlResources.Defer(__root =>", StringComparison.Ordinal);
-        var basedOn = source.IndexOf(".BasedOn =", StringComparison.Ordinal);
-        await Assert.That(defer).IsGreaterThan(-1);
-        await Assert.That(basedOn).IsGreaterThan(defer);
-        await Assert.That(source).Contains("__resolveIn(__root");
+        var outer = source.IndexOf(
+            "__outer(__root, __dict0, \"BaseButton\", false)",
+            StringComparison.Ordinal
+        );
+        await Assert.That(scoped).IsGreaterThan(-1);
+        await Assert.That(defer).IsGreaterThan(scoped);
+        await Assert.That(outer).IsGreaterThan(defer);
     }
 
     [Test]
@@ -136,7 +142,7 @@ public partial class XamlCompilerTests
         // The one in the untyped template: an object slot needs no declared context.
         await Assert
             .That(run.AllSources)
-            .Contains("Bind(__e, global::Noesis.TextBlock.TagProperty");
+            .Contains("Bind(__e, global::Noesis.FrameworkElement.TagProperty");
     }
 
     [Test]
@@ -147,7 +153,12 @@ public partial class XamlCompilerTests
         await Assert.That(run.Errors).IsEmpty();
         var source = run.AllSources;
 
-        await Assert.That(source).Contains("Convert = __v => __v?.ToString()");
+        await Assert
+            .That(source)
+            .Contains(
+                "Convert = __v => __v is null ? null : (object)((int)__v)"
+                    + ".ToString(global::System.Globalization.CultureInfo.InvariantCulture)"
+            );
         await Assert
             .That(source)
             .Contains("Convert = __v => __v is double __t ? (object)(float)__t");
@@ -183,13 +194,14 @@ public partial class XamlCompilerTests
         await Assert.That(run.Errors).IsEmpty();
         var source = run.AllSources;
 
-        await Assert.That(source).Contains("CompiledBinding.BehaviorAt(__a, 0)");
-        await Assert.That(source).Contains("CompiledBinding.ActionAt(__a, 0, 0)");
+        await Assert.That(source).Contains("CompiledBinding.MarkedBehavior(__a, ");
+        await Assert.That(source).Contains("CompiledBinding.MarkedAction(__a, ");
         await Assert
             .That(source)
             .Contains(
-                "Bind(this, __a => global::NoesisToolkit.Mvvm.CodeGen.CompiledBinding.InputBindingAt(__a, 0)"
+                "Bind(this, __a => global::NoesisToolkit.Mvvm.CodeGen.CompiledBinding.MarkedInputBinding(__a, "
             );
+        await Assert.That(source).Contains("CompiledBinding.MarkReceiver(");
         await Assert.That(source).Contains("global::Sample.Ui.PokeBehavior.TextProperty");
         await Assert.That(source).Contains("global::Sample.Ui.PokeAction.ParameterProperty");
     }
@@ -244,7 +256,9 @@ public partial class XamlCompilerTests
             .That(source)
             .Contains(
                 "Format = __vs => string.Format(global::System.Globalization.CultureInfo"
-                    + ".CurrentCulture, \"{0}/{1}\", __vs[0], __vs[1])"
+                    + ".InvariantCulture, \"{0}/{1}\", __vs[0] is null ? (object)\"\" : __vs[0],"
+                    + " __vs[1] is null ? (object)\"\" : ((int)__vs[1])"
+                    + ".ToString(global::System.Globalization.CultureInfo.InvariantCulture))"
             );
         await Assert.That(source).Contains("Converter = (global::Noesis.IMultiValueConverter)");
         await Assert.That(source).Contains("Converter = new global::Sample.Ui.JoinConverter()");
@@ -643,9 +657,7 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .DoesNotContain("SetResourceReference(global::Noesis.Border.BackgroundProperty");
-        await Assert
-            .That(source)
-            .Contains(".Background = (global::Noesis.Brush)__resolveIn(__root");
+        await Assert.That(source).Contains(".Background = (global::Noesis.Brush)__found");
     }
 
     const string UnresolvedHostPartial = """
@@ -666,6 +678,28 @@ public partial class XamlCompilerTests
         """;
 
     // Lazy, not a field: tests run in parallel and a shared run must be built exactly once.
+    [Test]
+    public async Task A_template_binding_is_built_by_the_parser_once_per_template()
+    {
+        var run = Run(["TemplateBound.xaml"]);
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.Source("TemplateBound");
+
+        await Assert
+            .That(source.Split("__templated(global::Noesis.GUI.ParseXaml(").Length)
+            .IsEqualTo(2);
+        await Assert.That(source).Contains("TargetType=\"\"{x:Type Button}\"\"");
+        await Assert.That(source).Contains("Background=\"\"{TemplateBinding Background}\"\"");
+        await Assert.That(source).DoesNotContain("RelativeSource.TemplatedParent");
+        await Assert.That(source).DoesNotContain("Padding=\"\"2\"\"");
+        await Assert
+            .That(run.GeneratorDiagnostics.Select(d => d.GetMessage()))
+            .Contains(
+                "DEAD TemplateBound.xaml :: a {TemplateBinding} that is not an element's attribute is left unset"
+            );
+    }
+
     static readonly Lazy<GeneratorRun> CompiledBindingsRun = new(() =>
         Run(["CompiledBindings.xaml"], [Host("CompiledHost"), SampleUi, Stubs.Mvvm])
     );

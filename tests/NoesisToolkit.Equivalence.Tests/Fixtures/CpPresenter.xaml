@@ -1,0 +1,21 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="OnControl" TargetType="{x:Type t:SpikeControl}">
+    <ContentPresenter
+      x:Name="Presenter"
+      Content="{Binding Label, RelativeSource={RelativeSource TemplatedParent}}"
+    />
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="OnContentControl" TargetType="{x:Type t:CpHost}">
+    <ContentPresenter
+      x:Name="Presenter"
+      Content="{Binding Extra, RelativeSource={RelativeSource TemplatedParent}}"
+    />
+  </ControlTemplate>
+</ResourceDictionary>

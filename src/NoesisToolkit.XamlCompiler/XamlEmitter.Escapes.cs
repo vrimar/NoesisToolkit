@@ -53,24 +53,35 @@ sealed partial class XamlEmitter
             .FirstOrDefault(a => a is not null)
             ?.Value;
 
-        // A trigger inside a template has no TargetType; the named element supplies one.
         var scopeNamespace = (string?)null;
         var attached = setter.Attribute("Property")?.Value.Contains('.') == true;
+        var named = setter.Attribute("TargetName")?.Value;
 
-        if (declared is null && !attached)
+        // A named target resolves Property against its own type, not the template's.
+        if (!attached && named is not null && LookupNamed(named) is { } target)
         {
-            var named = setter.Attribute("TargetName")?.Value;
-            var symbol = named is null ? null : LookupName(named);
-            if (symbol is null)
+            var ns =
+                target.Name.NamespaceName.Length == 0
+                    ? DefaultNamespace(target)
+                    : target.Name.NamespaceName;
+
+            // Rebinding a namespace the fragment already maps would re-prefix its own elements.
+            string prefix;
+            if (ns == DefaultNamespace(setter))
+                prefix = "";
+            else if (setter.GetPrefixOfNamespace(ns) is { } bound)
+                prefix = bound + ":";
+            else
             {
-                return Fail("a Setter with a live value needs a TargetType or TargetName in scope");
+                prefix = "__probe:";
+                scopeNamespace = ns;
             }
 
-            declared = "{x:Type __probe:" + symbol.Name + "}";
-            scopeNamespace =
-                "clr-namespace:"
-                + symbol.ContainingNamespace.ToDisplayString()
-                + (symbol.ContainingAssembly is { } assembly ? ";assembly=" + assembly.Name : "");
+            declared = "{x:Type " + prefix + target.Name.LocalName + "}";
+        }
+        else if (declared is null && !attached)
+        {
+            return Fail("a Setter with a live value needs a TargetType or TargetName in scope");
         }
 
         var style = StyleProbe(declared, new XElement(setter));
@@ -153,6 +164,136 @@ sealed partial class XamlEmitter
         return false;
     }
 
+    // The managed API cannot install a template-binding expression, so the parser builds each element
+    // that carries one from those attributes alone, in a template of the same kind.
+    void PlanTemplateBindings(XElement scope, XElement? template)
+    {
+        var carried = new List<XElement>();
+        foreach (var element in OwnContent(scope))
+        {
+            if (TemplateBindingsOf(element).Any() && Graftable(element))
+                carried.Add(element);
+        }
+
+        if (carried.Count == 0)
+            return;
+
+        var carriers = new XElement(XName.Get("Grid", XamlTypeResolver.PresentationNs));
+        foreach (var element in carried)
+        {
+            var shell = new XElement(
+                element.Name,
+                TemplateBindingsOf(element).Select(a => new XAttribute(a))
+            );
+            if (TextConstructorOf(element, resolver.SymbolOf(element)!) != TextConstructor.None)
+                shell.Add(TextOf(element));
+
+            CopyNamespaces(shell, element);
+            carriers.Add(
+                new XElement(
+                    XName.Get("ContentControl", XamlTypeResolver.PresentationNs),
+                    new XElement(
+                        XName.Get("ContentControl.Tag", XamlTypeResolver.PresentationNs),
+                        shell
+                    )
+                )
+            );
+        }
+
+        var probe = template is null
+            ? carriers
+            : new XElement(template.Name, TargetTypeOf(template), carriers);
+        CopyNamespaces(probe, scope);
+
+        var parts = NextName("templated");
+        _lines.Add(
+            $"var {parts} = __templated(global::Noesis.GUI.ParseXaml({Verbatim(probe.ToString())}), {carried.Count});"
+        );
+        _usesTemplated = true;
+
+        for (var i = 0; i < carried.Count; i++)
+            _grafts[carried[i]] = $"{parts}[{i}]";
+    }
+
+    readonly Dictionary<XElement, string> _grafts = new Dictionary<XElement, string>();
+
+    readonly HashSet<XElement> _grafted = new HashSet<XElement>();
+
+    bool _usesTemplated;
+
+    const string TemplatedHelper =
+        "static object[] __templated(object parsed, int count)\n"
+        + "{\n"
+        + "    var carriers = (global::Noesis.Panel)(parsed is global::Noesis.FrameworkTemplate t ? t.VisualTree : parsed);\n"
+        + "    var parts = new object[count];\n"
+        + "    for (var i = 0; i < count; i++)\n"
+        + "    {\n"
+        + "        var carrier = (global::Noesis.ContentControl)carriers.Children[i];\n"
+        + "        parts[i] = carrier.Tag;\n"
+        + "        carrier.ClearValue(global::Noesis.FrameworkElement.TagProperty);\n"
+        + "    }\n"
+        + "    return parts;\n"
+        + "}";
+
+    static bool IsTemplateBinding(XAttribute attribute) =>
+        !attribute.IsNamespaceDeclaration
+        && attribute.Name.NamespaceName != XamlTypeResolver.DirectiveNs
+        && XamlMarkupParser.IsMarkup(attribute.Value)
+        && XamlMarkupParser.Parse(attribute.Value) is { Name: "TemplateBinding" };
+
+    static IEnumerable<XAttribute> TemplateBindingsOf(XElement element) =>
+        element.Attributes().Where(IsTemplateBinding);
+
+    // A nested template is planned when it is built; a property element is not an object.
+    IEnumerable<XElement> OwnContent(XElement scope)
+    {
+        var pending = new Stack<XElement>(scope.Elements().Reverse());
+        while (pending.Count > 0)
+        {
+            var element = pending.Pop();
+            var symbol = resolver.SymbolOf(element);
+            if (!element.Name.LocalName.Contains("."))
+                yield return element;
+
+            if (
+                symbol is not null
+                && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate")
+            )
+                continue;
+
+            foreach (var child in element.Elements().Reverse())
+                pending.Push(child);
+        }
+    }
+
+    // Mirrors the constructing path: any element built another way would leave its instance unused.
+    bool Graftable(XElement element) =>
+        element.Name.LocalName is not ("StaticResource" or "DynamicResource")
+        && !(
+            element.Name.LocalName == "ResourceDictionary"
+            && element.Attribute("Source") is not null
+        )
+        && resolver.SymbolOf(element) is { } symbol
+        && !IsSetterLike(symbol)
+        && !HasUnassignableSlot(element, symbol)
+        && !NeedsParsedSetter(element, symbol)
+        && !(
+            !element.HasElements
+            && (symbol.SpecialType != SpecialType.None || symbol.TypeKind == TypeKind.Struct)
+            && LiteralOf(element, symbol) is not null
+        )
+        && !symbol.IsAbstract
+        && resolver.HasConstructor(symbol);
+
+    // A ControlTemplate set through a Style's Template setter resolves its bindings against the Style's type.
+    static XAttribute? TargetTypeOf(XElement template) =>
+        (template.Attribute("TargetType") is null ? SetterStyle(template) : template)?.Attribute(
+            "TargetType"
+        )
+            is { } target
+            ? new XAttribute(target)
+            : null;
+
     /// <summary>Some Noesis types exist only natively and have no managed class to construct,
     /// so that subtree stays on the XAML parser.</summary>
     string? EmitParserFallback(XElement element, ITypeSymbol? expected)
@@ -208,10 +349,67 @@ sealed partial class XamlEmitter
             $"var {name} = ({cast})global::Noesis.GUI.ParseXaml({Verbatim(clone.ToString())});"
         );
 
+        RegisterParsedNames(element, name);
+
         foreach (var attribute in deferred)
             ApplyAttribute(element, name, parsedType!, attribute);
 
         return name;
+    }
+
+    // A parsed fragment registers its names into its own scope, which the document never reaches.
+    void RegisterParsedNames(XElement fragment, string parsed)
+    {
+        if (_templates.Count == 0 && _rootClass is null)
+            return;
+
+        var named = fragment
+            .DescendantsAndSelf()
+            .Where(e =>
+                !e.Ancestors()
+                    .TakeWhile(a => a != fragment.Parent)
+                    .Any(a =>
+                        resolver.SymbolOf(a) is { } owner
+                        && XamlTypeResolver.DerivesFrom(owner, "global::Noesis.FrameworkTemplate")
+                    )
+            )
+            .Select(e =>
+                (
+                    Element: e,
+                    Name: e.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))?.Value
+                )
+            )
+            .Where(n => n.Name is not null)
+            .ToList();
+
+        if (named.Count == 0)
+            return;
+
+        var scope = NextName("parsedscope");
+        _lines.Add(
+            $"var {scope} = global::Noesis.NameScope.GetNameScope((global::Noesis.DependencyObject)(object){parsed});"
+        );
+
+        foreach (var (element, name) in named)
+        {
+            var found = element == fragment ? parsed : $"{scope}.FindName({Quote(name!)})";
+
+            if (_templates.Count > 0)
+            {
+                _lines.Add(
+                    $"{_templates[_templates.Count - 1]}.RegisterName({Quote(name!)}, {found});"
+                );
+                continue;
+            }
+
+            if (resolver.SymbolOf(element) is { } symbol)
+            {
+                _lines.Add($"this._{name} = ({XamlTypeResolver.Fqn(symbol)}){found};");
+                found = $"this._{name}";
+            }
+
+            _lines.Add($"{RootScope}.RegisterName({Quote(name!)}, {found});");
+        }
     }
 
     static XElement StyleProbe(string? targetType, object content) =>

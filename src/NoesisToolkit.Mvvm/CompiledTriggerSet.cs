@@ -95,6 +95,7 @@ public sealed class CompiledTriggerSet
         new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
 
     bool _pushing;
+    bool _moved;
 
     // A clone's name scope can fill after the first pass, so keep retrying rather than drop it.
     bool _targetMissing;
@@ -137,8 +138,22 @@ public sealed class CompiledTriggerSet
     {
         // A setter can write a property one of these conditions watches, which re-enters here.
         if (_pushing)
+        {
+            _moved = true;
             return;
+        }
 
+        for (var pass = 0; pass <= _triggers.Length; pass++)
+        {
+            _moved = false;
+            Apply();
+            if (!_moved)
+                return;
+        }
+    }
+
+    void Apply()
+    {
         _parts.Unwatch();
 
         var active = new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();

@@ -111,7 +111,7 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
-    public async Task A_keyed_template_takes_the_type_of_the_site_that_names_it()
+    public async Task A_keyed_template_is_not_typed_by_the_site_that_names_it()
     {
         var diagnostics = await Document(
             """
@@ -124,7 +124,8 @@ public class XamlBindingAnalyzerTests
             """
         );
 
-        await Assert.That(diagnostics).IsEmpty();
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("DefIdInt");
     }
 
     [Test]
@@ -153,7 +154,7 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
-    public async Task A_keyed_template_is_checked_against_every_site_that_names_it()
+    public async Task A_keyed_template_named_from_several_sites_is_checked_against_none()
     {
         var diagnostics = await AnalyzerHarness.Analyze(
             new XamlBindingAnalyzer(),
@@ -178,16 +179,15 @@ public class XamlBindingAnalyzerTests
         );
 
         await Assert
-            .That(diagnostics.Where(d => d.Id == XamlBindingAnalyzer.UndeclaredContextId))
+            .That(diagnostics.Where(d => d.Id == XamlBindingAnalyzer.UnresolvedBindingId))
             .IsEmpty();
 
-        var unresolved = diagnostics
-            .Where(d => d.Id == XamlBindingAnalyzer.UnresolvedBindingId)
+        var undeclared = diagnostics
+            .Where(d => d.Id == XamlBindingAnalyzer.UndeclaredContextId)
             .ToImmutableArray();
 
-        await Assert.That(unresolved.Length).IsEqualTo(1);
-        await Assert.That(unresolved[0].GetMessage()).Contains("DerivedViewModel");
-        await Assert.That(unresolved[0].GetMessage()).Contains("DefIdInt");
+        await Assert.That(undeclared.Length).IsEqualTo(1);
+        await Assert.That(undeclared[0].GetMessage()).Contains("DefIdInt");
     }
 
     [Test]

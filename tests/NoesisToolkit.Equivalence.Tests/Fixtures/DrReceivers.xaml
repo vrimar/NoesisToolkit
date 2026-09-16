@@ -1,0 +1,68 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:b="http://schemas.microsoft.com/xaml/behaviors"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <DataTemplate x:Key="Plain" ntk:DataType="t:DrModel">
+    <Grid x:Name="Host">
+      <Grid.InputBindings>
+        <KeyBinding Key="F2" CommandParameter="{Binding Name}" />
+      </Grid.InputBindings>
+      <b:Interaction.Behaviors>
+        <t:DrBehavior Payload="{Binding Name}" />
+      </b:Interaction.Behaviors>
+      <b:Interaction.Triggers>
+        <t:DrTrigger>
+          <t:DrAction Parameter="{Binding Name}" />
+        </t:DrTrigger>
+      </b:Interaction.Triggers>
+    </Grid>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ancestor" ntk:DataType="t:DrModel">
+    <Grid Tag="outer">
+      <Grid x:Name="Host" Tag="host">
+        <b:Interaction.Behaviors>
+          <t:DrBehavior Payload="{Binding Tag, RelativeSource={RelativeSource AncestorType=Grid}}" />
+        </b:Interaction.Behaviors>
+      </Grid>
+    </Grid>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Self" ntk:DataType="t:DrModel">
+    <Grid x:Name="Host" Tag="host">
+      <b:Interaction.Behaviors>
+        <t:DrBehavior Note="99" Payload="{Binding Note, RelativeSource={RelativeSource Self}}" />
+      </b:Interaction.Behaviors>
+    </Grid>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Presenter" ntk:DataType="t:DrModel">
+    <StackPanel>
+      <ContentPresenter x:Name="Host" Content="{Binding Child}">
+        <b:Interaction.Behaviors>
+          <t:DrBehavior Payload="{Binding Name}" />
+        </b:Interaction.Behaviors>
+      </ContentPresenter>
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Constructed" ntk:DataType="t:DrModel">
+    <t:DrHost x:Name="Host">
+      <b:Interaction.Behaviors>
+        <t:DrBehavior Payload="{Binding Name}" />
+      </b:Interaction.Behaviors>
+    </t:DrHost>
+  </DataTemplate>
+
+  <ControlTemplate x:Key="Templated" TargetType="{x:Type t:SpikeControl}">
+    <Grid x:Name="Host">
+      <b:Interaction.Behaviors>
+        <t:DrBehavior Payload="{Binding Label, RelativeSource={RelativeSource TemplatedParent}}" />
+      </b:Interaction.Behaviors>
+    </Grid>
+  </ControlTemplate>
+</ResourceDictionary>

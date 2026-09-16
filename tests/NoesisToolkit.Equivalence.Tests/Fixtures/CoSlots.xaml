@@ -1,0 +1,157 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <t:CoSwitch x:Key="WidthSwitch" />
+  <t:CoSwitch x:Key="OpacitySwitch" />
+  <t:CoSwitch x:Key="BrushSwitch" />
+  <t:CoSwitch x:Key="LabelSwitch" />
+  <t:CoSwitch x:Key="VisibilitySwitch" Result="Collapsed" />
+  <t:CoMultiSwitch x:Key="MultiSwitch" />
+  <t:CoRecorder x:Key="Recorder" />
+
+  <DataTemplate x:Key="Sentinels" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border
+        x:Name="Switched"
+        Height="5"
+        Width="{Binding Tick, Converter={StaticResource WidthSwitch}}"
+      />
+      <t:SpikeControl x:Name="SwitchedMulti">
+        <t:SpikeControl.Label>
+          <MultiBinding Converter="{StaticResource MultiSwitch}">
+            <Binding Path="Tick" />
+          </MultiBinding>
+        </t:SpikeControl.Label>
+      </t:SpikeControl>
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Nulls" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border x:Name="NullWidth" Height="5" Width="{Binding MaybeCount}" />
+      <Border x:Name="NullOpacity" Height="5" Opacity="{Binding MaybeRatio}" />
+      <t:SpikeControl x:Name="NullCount" Count="{Binding MaybeCount}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Results" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border
+        x:Name="Opacity"
+        Height="5"
+        Opacity="{Binding Tick, Converter={StaticResource OpacitySwitch}}"
+      />
+      <Border
+        x:Name="Brush"
+        Height="5"
+        Background="{Binding Tick, Converter={StaticResource BrushSwitch}}"
+      />
+      <t:SpikeControl
+        x:Name="Label"
+        Label="{Binding Tick, Converter={StaticResource LabelSwitch}}"
+      />
+      <Border
+        x:Name="Visibility"
+        Height="5"
+        Visibility="{Binding Tick, Converter={StaticResource VisibilitySwitch}}"
+      />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Targets" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border
+        x:Name="Tagged"
+        Height="5"
+        Tag="{Binding Tick, Converter={StaticResource Recorder}, ConverterParameter=Tag}"
+      />
+      <UniformGrid
+        x:Name="Gridded"
+        Columns="{Binding Tick, Converter={StaticResource Recorder}, ConverterParameter=Columns}"
+      />
+      <Border
+        x:Name="Sized"
+        Height="5"
+        Width="{Binding Tick, Converter={StaticResource Recorder}, ConverterParameter=Width}"
+      />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Registered" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <PasswordBox
+        x:Name="Pwd"
+        ShowLastCharacterDuration="{Binding Duration}"
+        PasswordChar="{Binding Mask}"
+      />
+      <UniformGrid x:Name="Uni" Columns="3" />
+      <t:SpikeControl x:Name="Counted" Count="{Binding Columns, ElementName=Uni}" />
+      <Border x:Name="Layered" Height="5" Panel.ZIndex="{Binding Columns, ElementName=Uni}" />
+      <TextBlock x:Name="Masked" Text="{Binding PasswordChar, ElementName=Pwd}" />
+      <GridSplitter x:Name="Splitter" ResizeDirection="{Binding Direction}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Popup" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border x:Name="Src" Height="5" IsHitTestVisible="True" />
+      <Popup x:Name="Pop" IsOpen="{Binding IsHitTestVisible, ElementName=Src}" />
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="TwoWay" ntk:DataType="t:CoModel">
+    <StackPanel>
+      <Border x:Name="Off" Height="5" Width="3" IsHitTestVisible="False" />
+      <Expander x:Name="Direction" ExpandDirection="Up" />
+      <ComboBox
+        x:Name="IsDropDownOpen"
+        IsDropDownOpen="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <Expander
+        x:Name="ExpandDirection"
+        ExpandDirection="{Binding ExpandDirection, ElementName=Direction}"
+      />
+      <Popup x:Name="IsOpen" IsOpen="{Binding IsHitTestVisible, ElementName=Off}" />
+      <ContextMenu
+        x:Name="ContextMenuIsOpen"
+        IsOpen="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <ToolTip x:Name="ToolTipIsOpen" IsOpen="{Binding IsHitTestVisible, ElementName=Off}" />
+      <MenuItem x:Name="IsChecked" IsChecked="{Binding IsHitTestVisible, ElementName=Off}" />
+      <MenuItem
+        x:Name="IsSubmenuOpen"
+        IsSubmenuOpen="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <ListBoxItem
+        x:Name="ListBoxItemIsSelected"
+        IsSelected="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <TabItem
+        x:Name="TabItemIsSelected"
+        IsSelected="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <TreeViewItem
+        x:Name="TreeViewItemIsSelected"
+        IsSelected="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <ToolBar
+        x:Name="IsOverflowOpen"
+        IsOverflowOpen="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+      <Slider x:Name="SliderSelectionStart" SelectionStart="{Binding Width, ElementName=Off}" />
+      <Slider x:Name="SliderSelectionEnd" SelectionEnd="{Binding Width, ElementName=Off}" />
+      <TickBar x:Name="TickBarSelectionStart" SelectionStart="{Binding Width, ElementName=Off}" />
+      <TickBar x:Name="TickBarSelectionEnd" SelectionEnd="{Binding Width, ElementName=Off}" />
+      <Track x:Name="Value" Value="{Binding Width, ElementName=Off}" />
+      <Border
+        x:Name="SelectorIsSelected"
+        Height="5"
+        Selector.IsSelected="{Binding IsHitTestVisible, ElementName=Off}"
+      />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

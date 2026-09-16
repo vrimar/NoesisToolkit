@@ -10,6 +10,7 @@
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve |
 | `NTK2004` | Error | binding has no declared DataContext type, in a document marked `ntk:CompileBindings` |
+| `NTK2005` | Error | enum-valued attribute names a member the enum does not declare |
 | `NTK2101` | Warning | Noesis element event subscription is never unsubscribed |
 | `NTK3001` | Error | `[DependencyProperty]` owner is not partial |
 | `NTK3101` | Error | `[DelegateCommand]` owner is not a partial class |

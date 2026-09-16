@@ -22,10 +22,18 @@ sealed partial class XamlEmitter
         )
         {
             var merged = NextName("merged");
-            _lines.Add(
-                $"var {merged} = __resources({Quote(LogicalFor(source.Value))}, {Quote(source.Value)});"
-            );
+            var logical = LogicalFor(source.Value);
+
+            // The fallback loads with no base uri, so a relative source goes rooted the way the parser names it.
+            var fallback =
+                source.Value.Contains(";") || !logical.Contains(";") ? source.Value : "/" + logical;
+
+            _lines.Add($"var {merged} = __resources({Quote(logical)}, {Quote(fallback)});");
             _usesResourceLookup = true;
+
+            if (element.HasElements)
+                EmitScopedDictionaryBody(element, merged);
+
             return merged;
         }
 
@@ -55,16 +63,15 @@ sealed partial class XamlEmitter
             return EmitSetterProbe(element);
 
         if (
-            element.Nodes().OfType<XText>().FirstOrDefault() is { } literal
-            && !element.HasElements
+            !element.HasElements
             && (symbol.SpecialType != SpecialType.None || symbol.TypeKind == TypeKind.Struct)
+            && LiteralOf(element, symbol) is { } literal
         )
         {
-            var text = literal.Value.Trim();
             var converted =
                 symbol.SpecialType == SpecialType.System_Double
-                    ? NumberLiteral(text, "F")
-                    : ConvertValue(element, text, symbol);
+                    ? NumberLiteral(literal, "F")
+                    : ConvertValue(element, literal, symbol);
 
             if (converted is null)
                 return null;
@@ -93,9 +100,25 @@ sealed partial class XamlEmitter
 
         var name = NextName(element.Name.LocalName);
         _elementVars[element] = name;
-        _lines.Add(
-            $"var {name} = new {XamlTypeResolver.Fqn(symbol)}({StringArgument(element, symbol)});"
-        );
+        if (_grafts.TryGetValue(element, out var grafted))
+        {
+            _grafted.Add(element);
+            _lines.Add($"var {name} = ({XamlTypeResolver.Fqn(symbol)}){grafted};");
+        }
+        else
+        {
+            _lines.Add(
+                $"var {name} = new {XamlTypeResolver.Fqn(symbol)}({StringArgument(element, symbol)});"
+            );
+        }
+
+        // A parsed template carries only what its markup sets, not content a constructor loaded.
+        if (
+            _templates.Count > 0
+            && symbol.ContainingAssembly?.Name != "Noesis.GUI"
+            && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ContentControl")
+        )
+            _lines.Add($"{name}.ClearValue(global::Noesis.ContentControl.ContentProperty);");
 
         var pushed = PushStyleTarget(element, symbol);
         var isTemplate = XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
@@ -105,6 +128,7 @@ sealed partial class XamlEmitter
         {
             _templates.Add(name);
             PlanTemplateTriggers(element);
+            PlanTemplateBindings(element, element);
         }
 
         // Value converts against the type Property names, so Property applies first either way.
@@ -112,7 +136,7 @@ sealed partial class XamlEmitter
             ApplyAttribute(element, name, symbol, attribute);
 
         if (XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ResourceDictionary"))
-            EmitDictionaryBody(element, name);
+            EmitScopedDictionaryBody(element, name);
         else
             ApplyChildren(element, name, symbol);
 
@@ -151,6 +175,10 @@ sealed partial class XamlEmitter
         if (element.HasElements || TextOf(element) is null)
             return TextConstructor.None;
 
+        // The parser turns the text into an inline, which a Style's Text setter adds to, not replaces.
+        if (ContentSlot(symbol).Property is { } content && IsInlineCollection(content.Type))
+            return TextConstructor.None;
+
         if (filePath.Length > 0 && resolver.HasConstructor(symbol, "System.Uri", "System.String"))
             return TextConstructor.BaseUriAndSource;
 
@@ -159,10 +187,24 @@ sealed partial class XamlEmitter
             : TextConstructor.None;
     }
 
-    static string? TextOf(XElement element)
+    // Text a property element splits keeps only its last run, as the parser reads it.
+    string? TextOf(XElement element) =>
+        ContentNodes(element, null).OfType<string>().LastOrDefault();
+
+    // Whitespace alone still makes an empty string, where every other type has nothing to convert.
+    string? LiteralOf(XElement element, INamedTypeSymbol symbol) =>
+        TextOf(element)
+        ?? (
+            symbol.SpecialType == SpecialType.System_String && element.Nodes().OfType<XText>().Any()
+                ? ""
+                : null
+        );
+
+    void EmitScopedDictionaryBody(XElement element, string dictionary)
     {
-        var text = element.Nodes().OfType<XText>().FirstOrDefault()?.Value.Trim();
-        return string.IsNullOrEmpty(text) ? null : text;
+        _dictionaries.Add(dictionary);
+        EmitDictionaryBody(element, dictionary);
+        _dictionaries.RemoveAt(_dictionaries.Count - 1);
     }
 
     // A relative source only means anything against the file that wrote it, named the way the

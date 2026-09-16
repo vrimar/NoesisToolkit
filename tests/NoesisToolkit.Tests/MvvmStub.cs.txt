@@ -36,6 +36,13 @@ namespace NoesisToolkit.Mvvm
 
 namespace NoesisToolkit.Mvvm.CodeGen
 {
+    public static class DependencyWatcher
+    {
+        public static Noesis.DependencyProperty SelfNotifying(Noesis.DependencyProperty property) => property;
+
+        public static Noesis.PropertyChangedCallback Notifying(Noesis.PropertyChangedCallback? inner) => static (_, _) => { };
+    }
+
     public readonly struct BindingHop
     {
         public BindingHop(string name, System.Func<object, object?> read) { }
@@ -80,13 +87,30 @@ namespace NoesisToolkit.Mvvm.CodeGen
 
         public static Noesis.FrameworkElement? FindAncestor(Noesis.FrameworkElement element, System.Type type) => null;
 
+        public static Noesis.FrameworkElement? FindAncestorOrSelf(Noesis.FrameworkElement element, System.Type type) => null;
+
         public static Noesis.FrameworkElement? FindNamed(Noesis.FrameworkElement element, string name) => null;
 
-        public static Noesis.DependencyObject? BehaviorAt(Noesis.FrameworkElement element, int index) => null;
+        public static void MarkReceiver(Noesis.DependencyObject receiver, string key) { }
 
-        public static Noesis.DependencyObject? InputBindingAt(Noesis.FrameworkElement element, int index) => null;
+        public static Noesis.DependencyObject? MarkedBehavior(Noesis.FrameworkElement element, string key) => null;
 
-        public static Noesis.DependencyObject? ActionAt(Noesis.FrameworkElement element, int trigger, int action) => null;
+        public static Noesis.DependencyObject? MarkedInputBinding(Noesis.FrameworkElement element, string key) => null;
+
+        public static Noesis.DependencyObject? MarkedAction(Noesis.FrameworkElement element, string key) => null;
+    }
+
+    public static class SlotConversion
+    {
+        public static readonly object Unconverted = new object();
+
+        public static string Text(double value) => "";
+
+        public static string Text(float value) => "";
+
+        public static string Text(double value, string format) => "";
+
+        public static string Text(float value, string format) => "";
     }
 
     public sealed class CompiledBindingPart

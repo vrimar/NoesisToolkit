@@ -44,7 +44,7 @@ public class GeneratedResourcesTests
     }
 
     [Test]
-    public async Task A_sibling_key_is_unresolved_until_Flush()
+    public async Task A_key_declared_earlier_in_the_document_resolves_as_it_is_built()
     {
         var assembly = Build("Theme.xaml");
         var resources = Resources(assembly);
@@ -59,10 +59,6 @@ public class GeneratedResourcesTests
         var dictionary = Call(resources, "Resolve", "SampleApp;Theme.xaml")!;
         var wide = Indexer(dictionary, "WideButton")!;
         var basedOn = wide.GetType().GetProperty("BasedOn")!;
-
-        await Assert.That(basedOn.GetValue(wide)).IsNull();
-
-        Call(resources, "Flush", dictionary);
 
         await Assert.That(basedOn.GetValue(wide)).IsEqualTo(Indexer(dictionary, "BaseButton"));
     }

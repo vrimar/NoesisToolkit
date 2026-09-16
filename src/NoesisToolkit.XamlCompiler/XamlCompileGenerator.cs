@@ -279,7 +279,8 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             w.Line(
                 "static readonly global::System.Collections.Generic.List<global::System.Action<global::Noesis.ResourceDictionary>> __pending = new();"
             );
-            w.Line("static global::Noesis.ResourceDictionary __graph;");
+            w.Line("static global::Noesis.ResourceDictionary __flushing;");
+            w.Line("static bool __flushed;");
 
             // Built after the flush: nothing of its own is sealed, and no drain is coming.
             using (
@@ -288,16 +289,28 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 )
             )
             {
-                w.Line("if (__graph != null) { fixup(__graph); return; }");
+                w.Line("if (__flushing != null) { fixup(__flushing); return; }");
+                // Not the flushed root: a reload installs a new graph and the parser reads that one.
+                w.Line(
+                    "if (__flushed) { fixup(global::Noesis.GUI.GetApplicationResources()); return; }"
+                );
                 w.Line("__pending.Add(fixup);");
             }
 
             using (w.Block("public static void Flush(global::Noesis.ResourceDictionary root)"))
             {
-                w.Line("__graph = root;");
-                // Indexed: settling one entry can build another dictionary, which appends.
-                w.Line("for (var i = 0; i < __pending.Count; i++) __pending[i](root);");
-                w.Line("__pending.Clear();");
+                w.Line("__flushing = root;");
+                using (w.Block("try"))
+                {
+                    // Indexed: settling one entry can build another dictionary, which appends.
+                    w.Line("for (var i = 0; i < __pending.Count; i++) __pending[i](root);");
+                    w.Line("__pending.Clear();");
+                }
+                using (w.Block("finally"))
+                {
+                    w.Line("__flushing = null;");
+                }
+                w.Line("__flushed = true;");
                 foreach (var link in chain)
                     w.Line($"{link}.Flush(root);");
             }
@@ -444,7 +457,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         XDocument parsed;
         try
         {
-            parsed = XDocument.Parse(text, LoadOptions.None);
+            parsed = XDocument.Parse(text, LoadOptions.PreserveWhitespace);
         }
         catch (Exception ex)
         {
@@ -545,7 +558,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         var scan = XamlCodeBehind.Read(root, resolver);
         if (XamlCodeBehind.NameConflict(scan, rootClass) is { } conflict)
         {
-            document.Errors = [conflict];
+            emitter.Errors.Add(conflict);
             document.Gated = true;
             return;
         }

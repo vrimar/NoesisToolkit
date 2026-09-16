@@ -1,0 +1,9 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.CbLoaderRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <StackPanel ButtonBase.Click="OnAnyClick">
+    <Button x:Name="Target" Width="20" Height="20" />
+  </StackPanel>
+</UserControl>

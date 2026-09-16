@@ -1,0 +1,15 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <Image x:Key="MkImageRelative" Source="probe.png" />
+  <Image x:Key="MkImageDotted" Source="./img/../probe.png" />
+  <Image x:Key="MkImageParent" Source="../probe.png" />
+  <Image x:Key="MkImageBackslash" Source="img\probe.png" />
+  <Image x:Key="MkImageColonInQuery" Source="probe.png?at=a:b" />
+  <Image x:Key="MkImageRooted" Source="/Other;img/probe.png" />
+  <Image x:Key="MkImageScheme" Source="file:///tmp/probe.png" />
+  <Image x:Key="MkImagePack" Source="pack://application:,,,/Other;component/probe.png" />
+  <Image x:Key="MkImageDrive" Source="C:\img\probe.png" />
+  <ImageBrush x:Key="MkImageBrush" ImageSource=" probe.png " />
+</ResourceDictionary>

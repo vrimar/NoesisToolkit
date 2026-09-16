@@ -27,6 +27,8 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
 
     public ITypeSymbol ObjectType => compilation.GetSpecialType(SpecialType.System_Object);
 
+    public ITypeSymbol UInt32Type => compilation.GetSpecialType(SpecialType.System_UInt32);
+
     /// <summary>The type an element's tag names.</summary>
     public INamedTypeSymbol? SymbolOf(System.Xml.Linq.XElement element) =>
         Resolve(element.Name.NamespaceName, element.Name.LocalName);

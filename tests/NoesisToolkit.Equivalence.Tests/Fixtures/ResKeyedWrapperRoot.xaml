@@ -1,0 +1,11 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.ResKeyedWrapperRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <UserControl.Resources>
+    <ResourceDictionary x:Key="Res.Nested">
+      <SolidColorBrush x:Key="Res.InNested" Color="#FF010101" />
+    </ResourceDictionary>
+  </UserControl.Resources>
+</UserControl>

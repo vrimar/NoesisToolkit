@@ -1,0 +1,10 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.TcLoadedControl"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <Grid>
+    <Border x:Name="Part" MouseLeftButtonUp="Part_Click" />
+    <Rectangle x:Name="Other" />
+  </Grid>
+</UserControl>

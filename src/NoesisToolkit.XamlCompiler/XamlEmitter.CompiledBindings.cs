@@ -35,7 +35,8 @@ sealed partial class XamlEmitter
         ITypeSymbol type,
         string name,
         bool twoWayByDefault,
-        string? assign = null
+        string? assign = null,
+        ITypeSymbol? registered = null
     )
     {
         public string Reference { get; } = reference;
@@ -46,6 +47,10 @@ sealed partial class XamlEmitter
         /// <summary>Set where the property has to be written through its own accessor rather than
         /// SetValue.</summary>
         public string? Assign { get; } = assign;
+
+        /// <summary>Set where the native side registered the property under another type than the
+        /// CLR one it shows.</summary>
+        public ITypeSymbol? Registered { get; } = registered;
     }
 
     // SetValue dispatches on the slot's declared type: an enum rides a 64-bit slot the native side
@@ -54,14 +59,35 @@ sealed partial class XamlEmitter
     static bool NeedsAccessor(ITypeSymbol type) =>
         type.TypeKind == TypeKind.Enum || XamlTypeResolver.Fqn(type) == "global::Noesis.GridLength";
 
-    // Slots whose CLR surface lies about the registered type (int property, uint registration), so
-    // the typed SetValue route throws on the box and the write dies inside a swallowed callback.
+    // The CLR surface lies about the registered uint type, so a typed SetValue dies silently.
     static readonly (string Owner, string Name)[] MismatchedNativeSlots =
     {
         ("global::Noesis.UniformGrid", "Rows"),
         ("global::Noesis.UniformGrid", "Columns"),
         ("global::Noesis.UniformGrid", "FirstColumn"),
+        ("global::Noesis.PasswordBox", "ShowLastCharacterDuration"),
+        ("global::Noesis.PasswordBox", "PasswordChar"),
     };
+
+    // PropertyType throws for these, so the managed side can neither read nor write such a slot.
+    static readonly string[] UnregisteredNativeEnums =
+    {
+        "global::Noesis.GridResizeDirection",
+        "global::Noesis.GridResizeBehavior",
+        "global::Noesis.SweepDirection",
+        "global::Noesis.BlendingMode",
+        "global::Noesis.InputScope",
+        "global::Noesis.Interactivity.ForwardChaining",
+    };
+
+    bool Unregistered(ITypeSymbol type)
+    {
+        if (Array.IndexOf(UnregisteredNativeEnums, XamlTypeResolver.Fqn(Wrapped(type) ?? type)) < 0)
+            return false;
+
+        Note("native-enum-unregistered");
+        return true;
+    }
 
     static bool Listed(IPropertySymbol property, (string Owner, string Name)[] table)
     {
@@ -90,6 +116,9 @@ sealed partial class XamlEmitter
             return null;
         }
 
+        if (Unregistered(property.Type))
+            return null;
+
         string? assign = null;
         if (NeedsAccessor(property.Type) || MismatchedSlot(property))
         {
@@ -99,9 +128,16 @@ sealed partial class XamlEmitter
                 return null;
             }
 
+            // The slot's own default arrives boxed as the registered uint.
+            var narrowed = MismatchedSlot(property)
+                ? $"__v is {XamlTypeResolver.Fqn(property.Type)} __a ? __a : __v is uint __u"
+                    + $" ? ({XamlTypeResolver.Fqn(property.Type)})__u"
+                    + $" : default({XamlTypeResolver.Fqn(property.Type)})"
+                : NarrowTo(property.Type, "__v", "__a");
+
             assign =
                 $"(__t, __v) => (({XamlTypeResolver.Fqn(property.ContainingType)})__t)."
-                + $"{property.Name} = {NarrowTo(property.Type, "__v", "__a")}";
+                + $"{property.Name} = {narrowed}";
         }
 
         return new BindingSlot(
@@ -109,7 +145,8 @@ sealed partial class XamlEmitter
             property.Type,
             property.Name,
             BindsTwoWayByDefault(property),
-            assign
+            assign,
+            MismatchedSlot(property) ? resolver.UInt32Type : null
         );
     }
 
@@ -126,12 +163,17 @@ sealed partial class XamlEmitter
         if (resolver.FindDependencyPropertyOwner(owner, name) is null)
             Note("attached-target-is-not-a-dependency-property");
 
+        if (Unregistered(value))
+            return null;
+
         return resolver.FindDependencyPropertyOwner(owner, name) is not null
             ? new BindingSlot(
                 SlotReference(owner, name),
                 value,
                 name,
-                false,
+                TwoWayByDefault.Any(t =>
+                    t.Property == name && XamlTypeResolver.DerivesFrom(owner, t.Owner)
+                ),
                 NeedsAccessor(value)
                     ? $"(__t, __v) => {XamlTypeResolver.Fqn(owner)}.Set{name}"
                         + $"(__t, {NarrowTo(value, "__v", "__a")})"
@@ -231,6 +273,7 @@ sealed partial class XamlEmitter
             return No("opted-out");
 
         var anchor = target;
+        var anchorType = type;
         string? receiver = null;
         if (!XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement"))
         {
@@ -242,11 +285,22 @@ sealed partial class XamlEmitter
                 return No("detached-receiver-needs-accessor");
 
             anchor = detached.Anchor;
+            anchorType = detached.AnchorType;
             receiver = detached.Receiver;
         }
 
+        if (NamedByTemplateTrigger(element, slot.Name))
+            return No("binding-outranked-by-template-trigger");
+
+        if (PresenterContentInTemplate(type, slot.Name))
+            return No("presenter-content-in-a-template");
+
         if (PlainPath(call) is not { } path)
             return No("path-not-plain");
+
+        // Self is the attached object, not its host.
+        if (receiver is not null && SelfRelative(call))
+            return No("self-is-the-attached-object");
 
         if (ResolveSource(element, call) is not { } source)
             return No("source-unresolved");
@@ -254,6 +308,12 @@ sealed partial class XamlEmitter
         // Writing the slot the path is read through would feed the next read its own result.
         if (source.Resolver is null && slot.Name == "DataContext")
             return No("target-is-the-data-context");
+
+        if (
+            source.Resolver is null
+            && XamlTypeResolver.DerivesFrom(anchorType, "global::Noesis.ContentPresenter")
+        )
+            return No("target-adopts-its-content-as-data-context");
 
         var walked = ResolvePath(source, path);
 
@@ -306,7 +366,10 @@ sealed partial class XamlEmitter
             return false;
         }
 
-        if (Shape(call, slot.Type, coercion) is not { } convert)
+        if (
+            Shape(call, slot.Type, resolved.Type, converter is not null, coercion)
+            is not { } convert
+        )
             return No("shape-unsupported");
 
         // A format is one-way arithmetic, and so is most coercion; the numeric/enum widening is the
@@ -343,7 +406,7 @@ sealed partial class XamlEmitter
         {
             fields.Add($"Converter = {converter}");
             fields.Add($"ConverterParameter = {ConverterParameter(call)}");
-            fields.Add($"TargetType = typeof({XamlTypeResolver.Fqn(slot.Type)})");
+            fields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
         }
 
         if (write is not null)
@@ -357,6 +420,10 @@ sealed partial class XamlEmitter
 
         var spec = $"new {SpecFqn} {{ {string.Join(", ", fields.ToArray())} }}";
         Tally.Compiled++;
+
+        if (receiver is not null && _markedReceivers.Add(element))
+            _lines.Add($"{CompiledBindingFqn}.MarkReceiver({target}, {ReceiverKey(element)});");
+
         EmitCompiledBind(
             anchor,
             r =>
@@ -367,43 +434,60 @@ sealed partial class XamlEmitter
         return true;
     }
 
-    // Document position is the only stable identity a clone's attached object has.
-    (string Anchor, string Receiver)? DetachedReceiver(XElement element)
+    // Found by a mark rather than a position: the host's own code can add objects ahead of these.
+    (string Anchor, INamedTypeSymbol AnchorType, string Receiver)? DetachedReceiver(
+        XElement element
+    )
     {
-        var parent = element.Parent;
-        if (parent is null)
+        if (
+            AttachedTo(element) is not { } attached
+            || AnchorVar(attached.Host) is not { } anchor
+            || resolver.SymbolOf(attached.Host) is not { } anchorType
+        )
             return null;
 
-        if (parent.Name.LocalName == "Interaction.Behaviors")
-        {
-            if (AnchorVar(parent.Parent) is not { } host)
-                return null;
+        return (
+            anchor,
+            anchorType,
+            $"__a => {CompiledBindingFqn}.{attached.Lookup}(__a, {ReceiverKey(element)})"
+        );
+    }
 
-            var index = IndexAmong(parent, element);
-            return (host, $"__a => {CompiledBindingFqn}.BehaviorAt(__a, {index})");
-        }
+    static (XElement Host, string Lookup)? AttachedTo(XElement element)
+    {
+        if (element.Parent is not { } parent)
+            return null;
 
-        if (parent.Name.LocalName.EndsWith(".InputBindings", StringComparison.Ordinal))
-        {
-            if (AnchorVar(parent.Parent) is not { } host)
-                return null;
+        if (parent.Name.LocalName == "Interaction.Behaviors" && parent.Parent is { } behaved)
+            return (behaved, "MarkedBehavior");
 
-            var index = IndexAmong(parent, element);
-            return (host, $"__a => {CompiledBindingFqn}.InputBindingAt(__a, {index})");
-        }
+        if (
+            parent.Name.LocalName.EndsWith(".InputBindings", StringComparison.Ordinal)
+            && parent.Parent is { } bound
+        )
+            return (bound, "MarkedInputBinding");
 
-        var wrapper = parent.Parent;
-        if (wrapper?.Name.LocalName == "Interaction.Triggers")
-        {
-            if (AnchorVar(wrapper.Parent) is not { } host)
-                return null;
-
-            var trigger = IndexAmong(wrapper, parent);
-            var action = IndexAmong(parent, element);
-            return (host, $"__a => {CompiledBindingFqn}.ActionAt(__a, {trigger}, {action})");
-        }
+        if (
+            parent.Parent is { Name.LocalName: "Interaction.Triggers" } wrapper
+            && wrapper.Parent is { } triggered
+        )
+            return (triggered, "MarkedAction");
 
         return null;
+    }
+
+    readonly Dictionary<XElement, string> _receiverKeys = new Dictionary<XElement, string>();
+
+    readonly HashSet<XElement> _markedReceivers = new HashSet<XElement>();
+
+    string ReceiverKey(XElement element)
+    {
+        if (!_receiverKeys.TryGetValue(element, out var key))
+            _receiverKeys[element] = key = Quote(
+                $"{XamlPaths.LogicalName(filePath, packPrefix, projectDir)}#r{_receiverKeys.Count}"
+            );
+
+        return key;
     }
 
     string? AnchorVar(XElement? host)
@@ -426,21 +510,6 @@ sealed partial class XamlEmitter
             && XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement")
             ? name
             : null;
-    }
-
-    static int IndexAmong(XElement parent, XElement child)
-    {
-        var index = 0;
-        foreach (var candidate in parent.Elements())
-        {
-            if (ReferenceEquals(candidate, child))
-                return index;
-
-            if (candidate.Name.LocalName.IndexOf('.') < 0)
-                index++;
-        }
-
-        return -1;
     }
 
     void EmitCompiledBind(string target, Func<string, string> bind)
@@ -537,8 +606,9 @@ sealed partial class XamlEmitter
         {
             // One container type serves a different view model per use site, so only the
             // annotation can say; inferring it from the document's ancestry would be a guess.
-            var context = source.Detached
-                ? AncestorContext(source.Scope)
+            var context =
+                source.Detached ? AncestorContext(source.Scope)
+                : source.Templated ? TemplatedContext(source.Scope)
                 : DeclaredContext(source.Scope);
 
             if (context is null)
@@ -610,9 +680,16 @@ sealed partial class XamlEmitter
             return null;
         }
 
+        if (Unregistered(first.Type))
+            return null;
+
         var slot = $"{XamlTypeResolver.Fqn(owner)}.{segments[0]}Property";
         if (segments.Length == 1)
-            return new ResolvedPath(slot, new List<Hop>(), first.Type);
+            return new ResolvedPath(
+                slot,
+                new List<Hop>(),
+                MismatchedSlot(first) ? resolver.UInt32Type : first.Type
+            );
 
         if (first.Type is not INamedTypeSymbol root)
             return null;
@@ -776,7 +853,8 @@ sealed partial class XamlEmitter
         XElement scope,
         INamedTypeSymbol? type = null,
         bool detached = false,
-        bool structural = false
+        bool structural = false,
+        bool templated = false
     )
     {
         public string? Resolver { get; } = resolver;
@@ -793,15 +871,14 @@ sealed partial class XamlEmitter
         /// <summary>Set where the scope element only locates the binding, not the source, so the
         /// source's DataContext cannot be typed from it.</summary>
         public bool Detached { get; } = detached;
+
+        public bool Templated { get; } = templated;
     }
 
     BindingSource? ResolveSource(XElement element, MarkupCall call)
     {
         var named = NamedValue(call, "ElementName") as string;
         var relative = NamedValue(call, "RelativeSource");
-
-        if (call.Name == "TemplateBinding")
-            return TemplatedSource(element);
 
         if (named is null && relative is null)
             return new BindingSource(null, element);
@@ -856,7 +933,8 @@ sealed partial class XamlEmitter
                 $"__s => {CompiledBindingFqn}.TemplatedParent(__s)",
                 element,
                 target,
-                structural: true
+                structural: true,
+                templated: true
             )
             : null;
 
@@ -880,8 +958,10 @@ sealed partial class XamlEmitter
         if (reference is null || ResolveTypeSymbol(element, reference) is not { } type)
             return null;
 
+        // A walk from an attached object counts the element it hangs off.
+        var walk = AttachedTo(element) is null ? "FindAncestor" : "FindAncestorOrSelf";
         var lookup =
-            $"__s => {CompiledBindingFqn}.FindAncestor(__s, typeof({XamlTypeResolver.Fqn(type)}))";
+            $"__s => {CompiledBindingFqn}.{walk}(__s, typeof({XamlTypeResolver.Fqn(type)}))";
         if (AncestorScope(element, type) is { } scope)
             return new BindingSource(lookup, scope);
 
@@ -958,15 +1038,30 @@ sealed partial class XamlEmitter
             : $"new {BindingHopFqn}({Quote(hop.Name)}, __o => (({owner})__o).{hop.Name})";
     }
 
-    bool OptedIntoCompiledBindings(XElement element) =>
-        CompiledBindingsAvailable
-        && element
-            .AncestorsAndSelf()
-            .Select(e => e.Attribute(XName.Get("CompileBindings", XamlTypeResolver.ToolkitNs)))
-            .FirstOrDefault(a => a is not null)
-            ?.Value.Trim()
-            is { } value
-        && value != "False";
+    // A presenter the template gives no Content of its own takes the templated parent's content and template.
+    bool PresenterContentInTemplate(INamedTypeSymbol type, string slot) =>
+        _templates.Count > 0
+        && slot == "Content"
+        && XamlTypeResolver.DerivesFrom(type, "global::Noesis.ContentPresenter");
+
+    bool OptedIntoCompiledBindings(XElement element)
+    {
+        if (
+            !CompiledBindingsAvailable
+            || element
+                .AncestorsAndSelf()
+                .Select(e => e.Attribute(XName.Get("CompileBindings", XamlTypeResolver.ToolkitNs)))
+                .FirstOrDefault(a => a is not null)
+                is not { } marker
+        )
+            return false;
+
+        if (XamlScopeRules.CompileBindings(marker.Value) is { } on)
+            return on;
+
+        Note("compile-bindings-is-not-a-boolean");
+        return false;
+    }
 
     // A template hands its content a different DataContext, so an un-annotated one has to stop the
     // walk: continuing would silently bind against the type of an enclosing scope.
@@ -993,7 +1088,7 @@ sealed partial class XamlEmitter
 
     INamedTypeSymbol? DeclaredContext(XElement element)
     {
-        // A keyed template can be used from inside itself, and the lookup would chase its own tail.
+        // A template's source can be read off an element inside it, and the lookup would loop.
         if (!_resolving.Add(element))
             return null;
 
@@ -1020,7 +1115,10 @@ sealed partial class XamlEmitter
 
             if (!XamlScopeRules.ScopeBreakers.Contains(scope.Name.LocalName))
             {
-                if (Redirection(scope) is { } path)
+                if (Redirection(scope) is not { } path)
+                    return null;
+
+                if (path.Length > 0)
                     redirects.Add(path);
 
                 continue;
@@ -1032,8 +1130,9 @@ sealed partial class XamlEmitter
             )
                 return Redirected(ResolveTypeSymbol(scope, declared.Value), redirects);
 
-            if (scope.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is { } key)
-                return Redirected(KeyedContext(scope, key.Value), redirects);
+            // Any document or code can apply a key, so the uses seen here prove nothing.
+            if (scope.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is not null)
+                return null;
 
             return Redirected(HostedContext(scope), redirects);
         }
@@ -1041,23 +1140,35 @@ sealed partial class XamlEmitter
         return null;
     }
 
+    // Empty keeps the inherited DataContext; null replaces it with one the compiler cannot type.
     string? Redirection(XElement element)
     {
-        if (element.Attribute("DataContext") is not { } written)
+        if (
+            element
+                .Elements()
+                .Any(e => e.Name.LocalName.EndsWith(".DataContext", StringComparison.Ordinal))
+        )
             return null;
+
+        if (element.Attribute("DataContext") is not { } written)
+            return "";
 
         if (XamlMarkupParser.Parse(written.Value) is not { Name: "Binding" } call)
             return null;
 
-        if (call.Named.Any(p => p.Key is "ElementName" or "RelativeSource" or "Source"))
+        if (
+            call.Named.Any(p =>
+                p.Key is not ("Path" or "Mode" or "UpdateSourceTrigger")
+                || p is { Key: "Mode", Value: string mode } && mode.Trim() == "OneWayToSource"
+            )
+        )
             return null;
 
         var was = _quiet;
         _quiet = true;
         try
         {
-            // An identity DataContext hands the same context down, so there is nothing to redirect.
-            return PlainPath(call) is { Length: > 0 } path ? path : null;
+            return PlainPath(call);
         }
         finally
         {
@@ -1096,48 +1207,6 @@ sealed partial class XamlEmitter
         return SourcedContext(slot, host);
     }
 
-    // A keyed template is reached by lookup, so the sites that name it are what settle its type.
-    // Sites disagreeing is two DataContexts through one template, and neither can be assumed.
-    INamedTypeSymbol? KeyedContext(XElement template, string key)
-    {
-        INamedTypeSymbol? agreed = null;
-
-        foreach (
-            var element in template.Document?.Root?.DescendantsAndSelf()
-                ?? Enumerable.Empty<XElement>()
-        )
-        {
-            foreach (var attribute in element.Attributes())
-            {
-                if (
-                    !XamlScopeRules.TemplateHosts.TryGetValue(
-                        attribute.Name.LocalName,
-                        out var host
-                    )
-                )
-                    continue;
-
-                if (!NamesKey(attribute.Value, key))
-                    continue;
-
-                if (SourcedContext(element, host) is not { } found)
-                    return null;
-
-                if (agreed is null)
-                    agreed = found;
-                else if (!SymbolEqualityComparer.Default.Equals(agreed, found))
-                    return null;
-            }
-        }
-
-        return agreed;
-    }
-
-    static bool NamesKey(string value, string key) =>
-        XamlMarkupParser.Parse(value) is { Name: "StaticResource" or "DynamicResource" } call
-        && call.Positional.FirstOrDefault() is string named
-        && named.Trim() == key;
-
     // A cell template sits under the column rather than the list, so the source is the nearest one
     // named above -- but never past a breaker, which renders something else entirely.
     INamedTypeSymbol? SourcedContext(XElement slot, XamlScopeRules.TemplateHost host)
@@ -1170,6 +1239,10 @@ sealed partial class XamlEmitter
         if (call.Name == "TemplateBinding")
             return TemplatedType(element, call.Positional.FirstOrDefault() as string);
 
+        // What a converter or a format hands the host is not the type its path reads.
+        if (call.Named.Any(p => p.Key is "Converter" or "StringFormat"))
+            return null;
+
         // A pathless {Binding} hands on the DataContext itself, so the host renders what is here.
         if (call is { Name: "Binding", Positional.Count: 0, Named.Count: 0 })
             return DeclaredContext(element);
@@ -1189,11 +1262,61 @@ sealed partial class XamlEmitter
     {
         foreach (var scope in element.AncestorsAndSelf())
         {
-            if (scope.Name.LocalName is not ("ControlTemplate" or "Style"))
+            if (resolver.SymbolOf(scope) is not { } symbol)
                 continue;
 
-            if (scope.Attribute("TargetType") is { } target)
-                return ResolveTypeSymbol(scope, target.Value);
+            if (XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style"))
+                return null;
+
+            if (!XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate"))
+                continue;
+
+            // Content of any other template is templated by whatever presents it.
+            if (!XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ControlTemplate"))
+                return null;
+
+            var stating = scope.Attribute("TargetType") is null ? SetterStyle(scope) : scope;
+            return stating?.Attribute("TargetType") is { } target
+                ? ResolveTypeSymbol(stating, target.Value)
+                : null;
+        }
+
+        return null;
+    }
+
+    static XElement? SetterStyle(XElement template)
+    {
+        if (
+            template.Parent is not { Name.LocalName: "Setter.Value" } value
+            || value.Parent is not { Name.LocalName: "Setter" } setter
+            || setter.Attribute("Property")?.Value.Trim() is not { } property
+            || property.Substring(property.LastIndexOf('.') + 1) != "Template"
+        )
+            return null;
+
+        var owner = setter.Parent is { Name.LocalName: "Style.Setters" } setters
+            ? setters.Parent
+            : setter.Parent;
+        return owner?.Name.LocalName == "Style" ? owner : null;
+    }
+
+    // The templated parent's DataContext is what the content inherits, before any redirect in it.
+    INamedTypeSymbol? TemplatedContext(XElement element)
+    {
+        XElement? stated = null;
+
+        foreach (var scope in element.AncestorsAndSelf())
+        {
+            if (XamlScopeRules.ScopeBreakers.Contains(scope.Name.LocalName))
+                return stated is null ? DeclaredContext(scope) : DeclaredContext(stated);
+
+            if (Redirection(scope) is not "")
+                stated = null;
+            else if (
+                stated is null
+                && scope.Attribute(XName.Get("DataType", XamlTypeResolver.ToolkitNs)) is not null
+            )
+                stated = scope;
         }
 
         return null;
@@ -1231,19 +1354,6 @@ sealed partial class XamlEmitter
     // Mode and UpdateSourceTrigger are read out of it separately, and may still refuse.
     string? PlainPath(MarkupCall call)
     {
-        if (call.Name == "TemplateBinding")
-        {
-            if (
-                call.Positional.FirstOrDefault() is string only
-                && call.Named.Count == 0
-                && XamlMarkup.IsIdentifier(only.Trim())
-            )
-                return only.Trim();
-
-            Note("template-binding-path-not-plain");
-            return null;
-        }
-
         if (call.Name != "Binding" || call.PositionalCalls.Count > 0)
         {
             Note("binding-argument-is-markup");
@@ -1379,36 +1489,336 @@ sealed partial class XamlEmitter
     static readonly (string Owner, string Property)[] TwoWayByDefault =
     {
         ("global::Noesis.ToggleButton", "IsChecked"),
+        ("global::Noesis.Selector", "IsSelected"),
         ("global::Noesis.Selector", "SelectedIndex"),
         ("global::Noesis.Selector", "SelectedItem"),
         ("global::Noesis.Selector", "SelectedValue"),
         ("global::Noesis.RangeBase", "Value"),
+        ("global::Noesis.Track", "Value"),
         ("global::Noesis.TextBox", "Text"),
-        ("global::Noesis.PasswordBox", "Password"),
         ("global::Noesis.ComboBox", "Text"),
+        ("global::Noesis.ComboBox", "IsDropDownOpen"),
         ("global::Noesis.Expander", "IsExpanded"),
+        ("global::Noesis.Expander", "ExpandDirection"),
+        ("global::Noesis.Popup", "IsOpen"),
+        ("global::Noesis.ContextMenu", "IsOpen"),
+        ("global::Noesis.ToolTip", "IsOpen"),
+        ("global::Noesis.MenuItem", "IsChecked"),
+        ("global::Noesis.MenuItem", "IsSubmenuOpen"),
+        ("global::Noesis.ListBoxItem", "IsSelected"),
+        ("global::Noesis.TabItem", "IsSelected"),
+        ("global::Noesis.TreeViewItem", "IsSelected"),
+        ("global::Noesis.TreeViewItem", "IsSelectionActive"),
+        ("global::Noesis.ToolBar", "IsOverflowOpen"),
+        ("global::Noesis.Slider", "SelectionStart"),
+        ("global::Noesis.Slider", "SelectionEnd"),
+        ("global::Noesis.TickBar", "SelectionStart"),
+        ("global::Noesis.TickBar", "SelectionEnd"),
     };
 
     static bool BindsTwoWayByDefault(IPropertySymbol property) => Listed(property, TwoWayByDefault);
 
+    const string UnsetValueFqn = "global::Noesis.DependencyProperty.UnsetValue";
+
+    const string SlotConversionFqn = "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion";
+
+    const string InvariantFqn = "global::System.Globalization.CultureInfo.InvariantCulture";
+
     // StringFormat runs after the converter, and only where the slot actually holds a string.
-    string? Shape(MarkupCall call, ITypeSymbol slot, string? coercion)
+    string? Shape(
+        MarkupCall call,
+        ITypeSymbol slot,
+        ITypeSymbol source,
+        bool converted,
+        string? coercion
+    )
     {
         if (NamedValue(call, "StringFormat") is not { } raw)
-            return coercion ?? Coerce(slot);
+            return coercion ?? (converted ? ConverterFit(slot) : Coerce(slot));
 
         if (raw is not string format || slot.SpecialType != SpecialType.System_String)
             return null;
 
-        var literal = Quote(XamlMarkupParser.Unescape(format));
-        return $"__v => string.Format(global::System.Globalization.CultureInfo.CurrentCulture, {literal}, __v)";
+        if (converted)
+        {
+            Note("text-conversion-unlike-native");
+            return null;
+        }
+
+        if (FormatHoles(XamlMarkupParser.Unescape(format), 1) is not { } parsed)
+            return null;
+
+        var args = new List<string>();
+        foreach (var (_, spec) in parsed.Holes)
+        {
+            if (FormatArgument(source, spec, "__v") is not { } arg)
+                return null;
+
+            args.Add(arg);
+        }
+
+        var formatted = FormatCall(parsed.Format, args);
+
+        // The engine fails the whole format on a null it does not hold as a string.
+        return source.SpecialType == SpecialType.System_String
+            ? $"__v => {formatted}"
+            : $"__v => __v is null ? {UnsetValueFqn} : {formatted}";
+    }
+
+    static string FormatCall(string format, List<string> args) =>
+        $"string.Format({InvariantFqn}, {Quote(format)}"
+        + string.Concat(args.Select(a => ", " + a).ToArray())
+        + ")";
+
+    // Only the plain shape reads alike in .NET and the engine: numbered holes, brace-free formats.
+    (string Format, List<(int Index, string Spec)> Holes)? FormatHoles(string format, int count)
+    {
+        if (format.IndexOf('{') < 0)
+            format = "{0:" + format + "}";
+
+        var rewritten = "";
+        var holes = new List<(int Index, string Spec)>();
+        for (var i = 0; i < format.Length; i++)
+        {
+            var c = format[i];
+            if ((c is '{' or '}') && i + 1 < format.Length && format[i + 1] == c)
+            {
+                rewritten += new string(c, 2);
+                i++;
+                continue;
+            }
+
+            if (c == '}')
+                return FormatUnlikeNative();
+
+            if (c != '{')
+            {
+                rewritten += c;
+                continue;
+            }
+
+            var close = format.IndexOf('}', i);
+            if (close < 0)
+                return FormatUnlikeNative();
+
+            var body = format.Substring(i + 1, close - i - 1);
+            var colon = body.IndexOf(':');
+            var head = colon < 0 ? body : body.Substring(0, colon);
+            var comma = head.IndexOf(',');
+            var index = FormatIndex(comma < 0 ? head : head.Substring(0, comma));
+            var alignment = comma < 0 ? "" : head.Substring(comma + 1);
+
+            // A doubled brace after a format would be read as part of that format.
+            if (
+                body.IndexOf('{') >= 0
+                || index is not { } at
+                || at >= count
+                || (comma >= 0 && FormatIndex(alignment.TrimStart('-')) is null)
+                || (colon >= 0 && close + 1 < format.Length && format[close + 1] == '}')
+            )
+                return FormatUnlikeNative();
+
+            rewritten +=
+                "{" + holes.Count.ToString(Invariant) + (comma < 0 ? "" : "," + alignment) + "}";
+            holes.Add((at, colon < 0 ? "" : body.Substring(colon + 1)));
+            i = close;
+        }
+
+        return (rewritten, holes);
+    }
+
+    static int? FormatIndex(string digits) =>
+        int.TryParse(
+            digits,
+            global::System.Globalization.NumberStyles.None,
+            Invariant,
+            out var number
+        )
+            ? number
+            : null;
+
+    (string, List<(int, string)>)? FormatUnlikeNative()
+    {
+        Note("string-format-unlike-native");
+        return null;
+    }
+
+    // The engine applies a format only to a number it boxes itself; any other value it shows whole.
+    string? FormatArgument(ITypeSymbol source, string spec, string value)
+    {
+        var type = Wrapped(source) ?? source;
+        var fqn = XamlTypeResolver.Fqn(type);
+
+        if (spec.Length > 0 && IsInteger(type))
+        {
+            // The engine boxes an sbyte as a short, which shows in hex.
+            return
+                NumberFormat(spec, "DNFPX")
+                && !(type.SpecialType == SpecialType.System_SByte && spec[0] is 'X' or 'x')
+                ? $"(({fqn}){value}).ToString({Quote(spec)}, {InvariantFqn})"
+                : SpecUnlikeNative();
+        }
+
+        if (
+            spec.Length > 0
+            && type.SpecialType is SpecialType.System_Single or SpecialType.System_Double
+        )
+        {
+            return NumberFormat(spec, "NFP")
+                ? $"{SlotConversionFqn}.Text(({fqn}){value}, {Quote(spec)})"
+                : SpecUnlikeNative();
+        }
+
+        return TextOf(source, value, "\"\"");
+    }
+
+    static bool NumberFormat(string spec, string kinds) =>
+        kinds.IndexOf(char.ToUpperInvariant(spec[0])) >= 0
+        && spec.Length <= 3
+        && spec.Skip(1).All(d => d is >= '0' and <= '9');
+
+    string? SpecUnlikeNative()
+    {
+        Note("string-format-unlike-native");
+        return null;
+    }
+
+    // Numbers show in the engine's invariant form; any other value only through a ToString override.
+    string? TextOf(ITypeSymbol source, string value, string undefined)
+    {
+        var type = Wrapped(source) ?? source;
+        var fqn = XamlTypeResolver.Fqn(type);
+
+        if (type.SpecialType == SpecialType.System_String)
+            return value;
+
+        if (type.SpecialType == SpecialType.System_Boolean)
+            return $"((bool){value} ? \"True\" : \"False\")";
+
+        if (IsInteger(type))
+            return $"(({fqn}){value}).ToString({InvariantFqn})";
+
+        if (type.SpecialType is SpecialType.System_Single or SpecialType.System_Double)
+            return $"{SlotConversionFqn}.Text(({fqn}){value})";
+
+        if (type.TypeKind == TypeKind.Enum && OrdinaryEnum(type))
+            return $"(global::System.Enum.IsDefined(typeof({fqn}), {value})"
+                + $" ? (object){value}.ToString() : {undefined})";
+
+        if (
+            type.TypeKind is TypeKind.Struct or TypeKind.Class
+            && type.SpecialType is not (SpecialType.System_Char or SpecialType.System_Decimal)
+            && !fqn.StartsWith("global::Noesis.", StringComparison.Ordinal)
+            && !XamlTypeResolver.DerivesFrom(type, "global::Noesis.BaseComponent")
+            && !XamlTypeResolver.DerivesFrom(type, "global::System.Type")
+            && (type.IsValueType || OverridesToString(type))
+        )
+            return $"{value}.ToString()";
+
+        Note("text-conversion-unlike-native");
+        return null;
+    }
+
+    static bool IsInteger(ITypeSymbol type) =>
+        type.SpecialType
+            is SpecialType.System_SByte
+                or SpecialType.System_Byte
+                or SpecialType.System_Int16
+                or SpecialType.System_UInt16
+                or SpecialType.System_Int32
+                or SpecialType.System_UInt32
+                or SpecialType.System_Int64
+                or SpecialType.System_UInt64;
+
+    // The engine names a value by the first member holding it, and fails to box a negative one.
+    static bool OrdinaryEnum(ITypeSymbol type)
+    {
+        var seen = new HashSet<object>();
+        foreach (var field in type.GetMembers().OfType<IFieldSymbol>())
+        {
+            if (field.ConstantValue is not { } constant)
+                continue;
+
+            if (constant is sbyte and < 0 or short and < 0 or int and < 0 or long and < 0)
+                return false;
+
+            if (!seen.Add(constant))
+                return false;
+        }
+
+        return true;
+    }
+
+    static bool OverridesToString(ITypeSymbol type)
+    {
+        for (
+            var current = type;
+            current is not null && current.SpecialType != SpecialType.System_Object;
+            current = current.BaseType
+        )
+        {
+            if (
+                current
+                    .GetMembers("ToString")
+                    .OfType<IMethodSymbol>()
+                    .Any(m => m.IsOverride && m.Parameters.Length == 0)
+            )
+                return true;
+        }
+
+        return false;
+    }
+
+    // A result of another type is the engine's to convert; a null it cannot hold means the default.
+    static string ConverterFit(ITypeSymbol slot)
+    {
+        if (slot.SpecialType == SpecialType.System_Object)
+            return "__v => __v";
+
+        return $"__v => __v is {XamlTypeResolver.Fqn(Wrapped(slot) ?? slot)} ? __v"
+            + $" : __v is null ? {NullInto(slot)} : {SlotConversionFqn}.Unconverted";
+    }
+
+    // A multi-binding's result reaches the slot only where the registered type accepts it as is.
+    static string MultiFit(BindingSlot slot)
+    {
+        var target = slot.Registered ?? slot.Type;
+        if (
+            target.SpecialType == SpecialType.System_Object
+            || target.TypeKind == TypeKind.Interface
+        )
+            return "__v => __v";
+
+        var fits = $"__v => __v is {XamlTypeResolver.Fqn(Wrapped(target) ?? target)} ? __v";
+        return NullInto(target) == UnsetValueFqn
+            ? $"{fits} : {UnsetValueFqn}"
+            : $"{fits} : __v is null ? null : {UnsetValueFqn}";
+    }
+
+    static string NullInto(ITypeSymbol slot) =>
+        (slot.IsValueType && Wrapped(slot) is null) || slot.SpecialType == SpecialType.System_String
+            ? UnsetValueFqn
+            : "null";
+
+    // The engine passes the registered type, which is BaseComponent for anything held as an object.
+    static string ConverterTargetType(BindingSlot slot)
+    {
+        var target = slot.Registered ?? slot.Type;
+        return
+            target.SpecialType == SpecialType.System_Object || target.TypeKind == TypeKind.Interface
+            ? "global::Noesis.BaseComponent"
+            : XamlTypeResolver.Fqn(target);
     }
 
     // The value arrives boxed and unboxes to nothing but its own type, so the cast runs off that.
-    static string? Conversion(ITypeSymbol source, ITypeSymbol slot)
+    string? Conversion(ITypeSymbol source, ITypeSymbol slot)
     {
         if (slot.SpecialType == SpecialType.System_String)
-            return "__v => __v?.ToString()";
+        {
+            return TextOf(source, "__v", UnsetValueFqn) is { } text
+                ? $"__v => __v is null ? null : (object){text}"
+                : null;
+        }
 
         var from = Wrapped(source) ?? source;
         if (Constructed(from, Wrapped(slot) ?? slot) is { } constructed)
@@ -1419,7 +1829,7 @@ sealed partial class XamlEmitter
 
         var fromFqn = XamlTypeResolver.Fqn(from);
         var toFqn = XamlTypeResolver.Fqn(slot);
-        return $"__v => __v is {fromFqn} __t ? (object)({toFqn})__t : (object)default({toFqn})";
+        return $"__v => __v is {fromFqn} __t ? (object)({toFqn})__t : {NullInto(slot)}";
     }
 
     // The slots the native binding fills through a type converter; the constructor is that
@@ -1439,7 +1849,7 @@ sealed partial class XamlEmitter
 
         var fromFqn = XamlTypeResolver.Fqn(from);
         return toFqn is "global::Noesis.CornerRadius" or "global::Noesis.GridLength"
-            ? $"__v => __v is {fromFqn} __t ? (object)new {toFqn}((float)__t) : (object)default({toFqn})"
+            ? $"__v => __v is {fromFqn} __t ? (object)new {toFqn}((float)__t) : {UnsetValueFqn}"
             : null;
     }
 
@@ -1461,14 +1871,17 @@ sealed partial class XamlEmitter
                 or SpecialType.System_Decimal
                 or SpecialType.System_Char;
 
-    static string? Coerce(ITypeSymbol slot)
+    static string Coerce(ITypeSymbol slot)
     {
         if (slot.SpecialType == SpecialType.System_Object)
             return "__v => __v";
 
-        return slot.IsValueType
-            ? $"__v => (object)({NarrowTo(slot, "__v", "__t")})"
-            : $"__v => {NarrowTo(slot, "__v", "__t")}";
+        if (!slot.IsValueType)
+            return $"__v => {NarrowTo(slot, "__v", "__t")}";
+
+        return Wrapped(slot) is null
+            ? $"__v => __v is {XamlTypeResolver.Fqn(slot)} __t ? (object)__t : {UnsetValueFqn}"
+            : $"__v => (object)({NarrowTo(slot, "__v", "__t")})";
     }
 
     string? ConverterExpression(XElement element, MarkupCall call) =>
@@ -1550,6 +1963,12 @@ sealed partial class XamlEmitter
         if (!XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement"))
             return No("target-not-an-element");
 
+        if (NamedByTemplateTrigger(element, slot.Name))
+            return No("multi-binding-outranked-by-template-trigger");
+
+        if (PresenterContentInTemplate(type, slot.Name))
+            return No("multi-binding-presenter-content-in-a-template");
+
         string? converter = null;
         string? parameter = null;
         string? format = null;
@@ -1602,6 +2021,7 @@ sealed partial class XamlEmitter
             return No("string-format-into-a-non-string-slot");
 
         var parts = new List<string>();
+        var partTypes = new List<ITypeSymbol>();
         foreach (var child in multi.Elements())
         {
             if (child.Name.LocalName == "MultiBinding.Converter")
@@ -1637,10 +2057,20 @@ sealed partial class XamlEmitter
             if (ResolveSource(element, call) is not { } source)
                 return No("child-source-unresolved");
 
+            if (source.Resolver is null && slot.Name == "DataContext")
+                return No("target-is-the-data-context");
+
+            if (
+                source.Resolver is null
+                && XamlTypeResolver.DerivesFrom(type, "global::Noesis.ContentPresenter")
+            )
+                return No("target-adopts-its-content-as-data-context");
+
             if (ResolvePath(source, path) is not { } resolved)
                 return No("child-path-unresolved");
 
             parts.Add(PartExpression(source, resolved));
+            partTypes.Add(resolved.Type);
         }
 
         if (parts.Count == 0)
@@ -1658,22 +2088,27 @@ sealed partial class XamlEmitter
         {
             specFields.Add($"Converter = {converter}");
             specFields.Add($"ConverterParameter = {parameter ?? "null"}");
-            specFields.Add($"TargetType = typeof({XamlTypeResolver.Fqn(slot.Type)})");
+            specFields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
         }
         else
         {
-            var args = string.Join(
-                ", ",
-                Enumerable.Range(0, parts.Count).Select(i => $"__vs[{i}]").ToArray()
-            );
-            specFields.Add(
-                "Format = __vs => string.Format(global::System.Globalization.CultureInfo"
-                    + $".CurrentCulture, {Quote(format!)}, {args})"
-            );
+            if (FormatHoles(format!, parts.Count) is not { } parsed)
+                return No("string-format-unlike-native");
+
+            var args = new List<string>();
+            foreach (var (index, held) in parsed.Holes)
+            {
+                if (FormatArgument(partTypes[index], held, $"__vs[{index}]") is not { } arg)
+                    return No("string-format-unlike-native");
+
+                // A null part shows as nothing rather than failing the whole format.
+                args.Add($"__vs[{index}] is null ? (object)\"\" : {arg}");
+            }
+
+            specFields.Add($"Format = __vs => {FormatCall(parsed.Format, args)}");
         }
 
-        if (Coerce(slot.Type) is { } coerce)
-            specFields.Add($"Convert = {coerce}");
+        specFields.Add($"Convert = {(converter is not null ? MultiFit(slot) : Coerce(slot.Type))}");
 
         if (slot.Assign is not null)
             specFields.Add($"Assign = {slot.Assign}");

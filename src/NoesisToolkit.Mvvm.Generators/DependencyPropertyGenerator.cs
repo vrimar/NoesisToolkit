@@ -13,6 +13,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 {
     private const string AttributeMetadataName = "NoesisToolkit.Mvvm.DependencyPropertyAttribute";
 
+    private const string WatcherFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyWatcher";
+
     private static readonly DiagnosticDescriptor NotPartial = new(
         id: "NTK3001",
         title: "Containing type must be partial",
@@ -192,13 +194,18 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     {
         using (w.Indented())
         {
-            w.Line($"DependencyProperty.Register{(attached ? "Attached" : "")}(");
+            w.Line($"{WatcherFqn}.SelfNotifying(");
             using (w.Indented())
             {
-                w.Line(attached ? $"\"{m.PropertyName}\"," : $"nameof({m.PropertyName}),");
-                w.Line($"typeof({m.TypeFqn}),");
-                w.Line($"typeof({m.Owner.Fqn}),");
-                w.Line(BuildMetadata(m));
+                w.Line($"DependencyProperty.Register{(attached ? "Attached" : "")}(");
+                using (w.Indented())
+                {
+                    w.Line(attached ? $"\"{m.PropertyName}\"," : $"nameof({m.PropertyName}),");
+                    w.Line($"typeof({m.TypeFqn}),");
+                    w.Line($"typeof({m.Owner.Fqn}),");
+                    w.Line(BuildMetadata(m));
+                }
+                w.Line(")");
             }
             w.Line(");");
         }
@@ -241,7 +248,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     private static string BuildMetadata(Model m)
     {
         string def = m.DefaultValue ?? $"default({m.TypeFqn})";
-        string changed = m.PropertyChanged ?? "null";
+        string changed = $"{WatcherFqn}.Notifying({m.PropertyChanged ?? "null"})";
         string opts = m.MetadataOptions ?? "FrameworkPropertyMetadataOptions.None";
 
         return $"new FrameworkPropertyMetadata({def}, {opts}, {changed})";

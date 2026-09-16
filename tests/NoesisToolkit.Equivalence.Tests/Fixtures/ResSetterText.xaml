@@ -1,0 +1,22 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <Style x:Key="Res.SetterText" TargetType="Border">
+    <Setter Property="Background">
+      <Setter.Value>#FF00FF00</Setter.Value>
+    </Setter>
+    <Setter Property="Width">
+      <Setter.Value>42</Setter.Value>
+    </Setter>
+    <Setter Property="Tag">
+      <Setter.Value>two words</Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Height">
+        <Trigger.Value>12</Trigger.Value>
+        <Setter Property="Opacity" Value="0.5" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+</ResourceDictionary>

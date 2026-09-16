@@ -1,0 +1,54 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <t:StPickSubConverter x:Key="Pick" />
+
+  <ControlTemplate x:Key="Nested" TargetType="{x:Type t:SpikeControl}">
+    <StackPanel>
+      <TextBlock x:Name="Direct" Text="{TemplateBinding Label}" />
+      <ItemsControl ItemsSource="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <StackPanel>
+              <TextBlock
+                x:Name="ByRelative"
+                Text="{Binding Label, RelativeSource={RelativeSource TemplatedParent}}"
+              />
+              <Border
+                x:Name="Counted"
+                Height="5"
+                Width="{Binding Count, RelativeSource={RelativeSource TemplatedParent}}"
+              />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Redirected" TargetType="{x:Type t:StHost}">
+    <StackPanel ntk:DataType="t:StModel">
+      <Border
+        x:Name="Redirected"
+        DataContext="{Binding Child}"
+        Tag="{Binding DataContext.Name, RelativeSource={RelativeSource TemplatedParent}}"
+      />
+    </StackPanel>
+  </ControlTemplate>
+
+  <DataTemplate x:Key="ContextMulti" ntk:DataType="t:StModel">
+    <StackPanel>
+      <Border x:Name="ContextMulti">
+        <Border.DataContext>
+          <MultiBinding Converter="{StaticResource Pick}">
+            <Binding Path="Child" />
+          </MultiBinding>
+        </Border.DataContext>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

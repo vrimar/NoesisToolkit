@@ -18,7 +18,9 @@ sealed partial class XamlEmitter
 
     bool _usesResolve;
 
-    bool _usesRootResolve;
+    bool _usesGraphResolve;
+
+    HashSet<string>? _ownKeys;
 
     string ResolveExpression(string key)
     {
@@ -26,20 +28,31 @@ sealed partial class XamlEmitter
         return $"__resolveIn(null, {ScopeArray()}, {key})";
     }
 
-    // Only legal from _deferredGlobal, whose statements run with the merged root in hand.
-    string RootResolveExpression(string key)
+    // Resolved where the reference sits, as the parser does; only a miss waits for the flush.
+    void AddGraphStatement(Func<string, string> statement, string key, bool skipMissing = false)
     {
-        _usesRootResolve = true;
-        return $"__resolveIn(__root, {ScopeArray()}, {key})";
-    }
-
-    // A dictionary waits for Flush; a root is built after install and reads the graph inline.
-    void AddGraphStatement(Func<string, string> statement, string key)
-    {
-        if (_rootClass is null)
-            _deferredGlobal.Add(statement(RootResolveExpression(key)));
-        else
+        if (_rootClass is not null)
+        {
             _lines.Add(statement(ResolveExpression(key)));
+            return;
+        }
+
+        _usesGraphResolve = true;
+        var found = NextName("found");
+        var outer = NextName("outer");
+        var shared = _ownKeys?.Contains(key) == true ? "false" : "true";
+
+        _lines.Add($"var {found} = __scoped({ScopeArray()}, {key});");
+        _lines.Add($"if ({found} != null) {{ {statement(found)} }}");
+        _deferredGlobal.Add(
+            $"if ({found} == null) {{ var {outer} = __outer(__root, {_dictionaries[0]}, {key}, {shared}); "
+                + (
+                    skipMissing
+                        ? $"if ({outer} != null) {{ {statement(outer)} }}"
+                        : statement(outer)
+                )
+                + " }"
+        );
     }
 
     string ScopeArray()
@@ -60,11 +73,20 @@ sealed partial class XamlEmitter
 
     void EmitLookupHelpers()
     {
-        if (!_usesResolve && !_usesRootResolve)
+        if (!_usesResolve && !_usesGraphResolve)
             return;
 
         _lines.Add(LookupHelper);
-        _lines.Add(ResolveInHelper);
+
+        if (_usesResolve)
+            _lines.Add(ResolveInHelper);
+
+        if (_usesGraphResolve)
+        {
+            _lines.Add(ScopedHelper);
+            _lines.Add(OutsideHelper);
+            _lines.Add(OuterHelper);
+        }
     }
 
     static readonly string LookupHelper = XamlLookupHelper.Emit("__lookup");
@@ -82,8 +104,44 @@ sealed partial class XamlEmitter
         + "    return __lookup(root, k) ?? __lookup(global::Noesis.GUI.GetApplicationResources(), k) ?? __XamlResources.SharedByKey(k);\n"
         + "}";
 
+    const string ScopedHelper =
+        "static object __scoped(global::Noesis.ResourceDictionary[] scopes, object k)\n"
+        + "{\n"
+        + "    foreach (var s in scopes) { var v = __lookup(s, k); if (v != null) return v; }\n"
+        + "    return null;\n"
+        + "}";
+
+    // Contains and the indexer see merged dictionaries, so skipping one walks them in indexer order.
+    const string OutsideHelper =
+        "static object __outside(global::Noesis.ResourceDictionary d, global::Noesis.ResourceDictionary own, object k)\n"
+        + "{\n"
+        + "    if (d == null || d == own || !d.Contains(k)) return null;\n"
+        + "    if (!own.Contains(k)) return d[k];\n"
+        + "    var name = k is global::System.Type t ? t.FullName : k;\n"
+        + "    foreach (var e in d.Keys) if (object.Equals(e is global::System.Type u ? u.FullName : e, name)) return d[k];\n"
+        + "    for (var i = d.MergedDictionaries.Count - 1; i >= 0; i--) { var v = __outside(d.MergedDictionaries[i], own, k); if (v != null) return v; }\n"
+        + "    return null;\n"
+        + "}";
+
+    const string OuterHelper =
+        "static object __outer(global::Noesis.ResourceDictionary root, global::Noesis.ResourceDictionary own, object k, bool shared)\n"
+        + "{\n"
+        + "    return __outside(root, own, k) ?? __outside(global::Noesis.GUI.GetApplicationResources(), own, k) ?? (shared ? __XamlResources.SharedByKey(k) : null);\n"
+        + "}";
+
     void EmitDictionaryBody(XElement root, string target)
     {
+        if (_rootClass is null && _ownKeys is null && root.Document?.Root is { } document)
+        {
+            using (Speculate())
+                _ownKeys = new HashSet<string>(
+                    DeclaredKeys(document).Select(k => k.Key),
+                    StringComparer.Ordinal
+                );
+        }
+
+        var escaped = new List<string>();
+
         foreach (var child in root.Elements())
         {
             var local = child.Name.LocalName;
@@ -112,20 +170,32 @@ sealed partial class XamlEmitter
 
             if (resourceKey.Key is not { } key)
             {
-                EmitUnmanagedKeyEntry(child, target);
+                escaped.Add(EmitUnmanagedKeyEntry(child));
                 continue;
             }
 
+            var deferred = _deferredGlobal.Count;
             var value = EmitObject(child);
             if (value is null)
                 continue;
 
             _lines.Add($"{target}.Add({key}, {value});");
+
+            // Add boxed a copy, so a member settled later has to be stored again.
+            if (
+                _deferredGlobal.Count > deferred
+                && resolver.SymbolOf(child) is { TypeKind: TypeKind.Struct }
+            )
+                _deferredGlobal.Add($"{target}[{key}] = {value};");
         }
+
+        // An entry of the dictionary's own outranks every merged one, which these ride in as.
+        foreach (var parsed in escaped)
+            _lines.Add($"{target}.MergedDictionaries.Add({parsed});");
     }
 
     // Add takes only string and Type keys; anything else rides in as a merged dictionary.
-    void EmitUnmanagedKeyEntry(XElement entry, string target)
+    string EmitUnmanagedKeyEntry(XElement entry)
     {
         var escaped = new XElement(entry);
         foreach (var declaration in Namespaces(entry))
@@ -157,7 +227,7 @@ sealed partial class XamlEmitter
                 basedOnKey
             );
 
-        _lines.Add($"{target}.MergedDictionaries.Add({parsed});");
+        return parsed;
     }
 
     /// <summary>The keys this file declares, as the expressions a lookup compares against.</summary>
@@ -199,7 +269,7 @@ sealed partial class XamlEmitter
     // Handed out without building the declaring dictionary, so it is reachable from inside that build.
     string? LeafType(XElement element)
     {
-        if (element.HasElements || element.Nodes().OfType<XText>().Any())
+        if (element.HasElements || TextOf(element) is not null)
             return null;
 
         foreach (var attribute in element.Attributes())
@@ -240,24 +310,24 @@ sealed partial class XamlEmitter
                 return new ResourceKeyResult(Quote(raw));
 
             var typeKey = ResolveTypeSymbol(element, raw);
-            if (typeKey is null)
+            if (typeKey is null || UnknownToParser(typeKey))
             {
                 return new ResourceKeyResult(null);
             }
 
-            return new ResourceKeyResult($"typeof({XamlTypeResolver.Fqn(typeKey)})");
+            return new ResourceKeyResult(KeyExpressionFor(typeKey));
         }
 
         var dataType = element.Attribute("DataType");
         if (dataType is not null)
         {
-            var type = ResolveTypeReference(element, dataType.Value);
+            var type = ResolveTypeSymbol(element, dataType.Value);
             if (type is null)
             {
                 return Failed($"could not resolve DataType '{dataType.Value}'");
             }
 
-            return new ResourceKeyResult($"typeof({type})");
+            return new ResourceKeyResult(UnknownToParser(type) ? null : KeyExpressionFor(type));
         }
 
         var targetType = element.Attribute("TargetType");
@@ -275,12 +345,35 @@ sealed partial class XamlEmitter
         return Failed($"<{element.Name.LocalName}> has no x:Key, DataType or TargetType");
     }
 
-    /// <summary>Must match how the implicit style was keyed on the way in: a native type keys by
-    /// bare name, a managed one by Type.</summary>
+    /// <summary>Must match how the implicit style was keyed on the way in: a native type, or a System
+    /// type the parser maps to one, keys by its native name; a managed one by Type.</summary>
     static string KeyExpressionFor(INamedTypeSymbol symbol) =>
-        symbol.ContainingAssembly?.Name == "Noesis.GUI"
-            ? Quote(symbol.Name)
-            : $"typeof({XamlTypeResolver.Fqn(symbol)})";
+        symbol.ContainingAssembly?.Name == "Noesis.GUI" ? Quote(symbol.Name)
+        : NativeSystemName(symbol) is { } native ? Quote(native)
+        : $"typeof({XamlTypeResolver.Fqn(symbol)})";
+
+    // The parser's own names for the System types it maps natively; the rest it keys by full name.
+    static string? NativeSystemName(INamedTypeSymbol symbol) =>
+        symbol.SpecialType switch
+        {
+            SpecialType.System_String => "String",
+            SpecialType.System_Boolean => "Bool",
+            SpecialType.System_Int16 => "Int16",
+            SpecialType.System_UInt16 => "UInt16",
+            SpecialType.System_Int32 => "Int32",
+            SpecialType.System_UInt32 => "UInt32",
+            SpecialType.System_Single => "Single",
+            SpecialType.System_Double => "Double",
+            _ => XamlTypeResolver.Fqn(symbol) == "global::System.TimeSpan" ? "TimeSpan" : null,
+        };
+
+    // The parser drops an entry keyed by one of these as an unknown type.
+    static bool UnknownToParser(INamedTypeSymbol symbol) =>
+        symbol.SpecialType
+            is SpecialType.System_Object
+                or SpecialType.System_Int64
+                or SpecialType.System_UInt64
+        || XamlTypeResolver.Fqn(symbol) is "global::System.Uri" or "global::System.Type";
 
     string? ResourceKeyExpression(XElement element, MarkupCall call)
     {

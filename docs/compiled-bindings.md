@@ -19,6 +19,19 @@ declared type, and the value reaching the target property is one that property's
 dispatches `SetValue` on the property's declared type, so a near-enough value is a crash rather than a
 coercion, and an unshaped mismatch falls back.
 
+## Values and text
+
+A compiled binding has to write what the engine would have written, not what .NET would. The two
+disagree on text: the engine shows numbers in its own invariant form whatever the current culture,
+rounds a formatted number from its shortest round-trip digits, and shows nothing for a value that is
+not a number and has no `ToString` of its own. So a number reaching a text slot, and a `StringFormat`
+the compiler can reproduce exactly, are emitted through that rule; a source whose text depends on its
+run-time type, and a format the engine applies by rules of its own, keep their native binding.
+
+A converter's result is written as it is when the slot's type holds it. A result of another type is
+handed to the engine to convert, as a native binding would; `DependencyProperty.UnsetValue` writes
+the slot's default and `Binding.DoNothing` leaves the slot alone.
+
 ## Bindings sourced from another element
 
 `ElementName` and `RelativeSource AncestorType` compile too. The source element is found at run time
@@ -66,13 +79,23 @@ does a property that binds two way without saying so:
 
 `BindsTwoWayByDefault` and `DefaultUpdateSourceTrigger` are read from the property itself rather than
 from a list in the compiler, so the policy cannot drift from what the engine does. `UpdateSourceTrigger`
-written in the markup overrides the property's default.
+written in the markup overrides the property's default. The compiler still lists the properties that
+bind two way by metadata, only to refuse a path into one that has nothing to write back to.
 
-Watching the target property means overriding its metadata, which is process-global and cannot be
-uninstalled. `DependencyWatcher` claims each property exactly once, on its owner type, and fans out to
-instances from a table of its own. Two consequences worth knowing: anything that overrides metadata
-for the same property *after* the first compiled binding on it silently takes the callback, and there
-is no way to read back whether that happened.
+After every write back the source is read again, as the engine does, so a setter that clamps, rounds
+or refuses shows its own value in the target, and a setter that throws restores the old one. A
+`ConvertBack` that returns `Binding.DoNothing` or `DependencyProperty.UnsetValue` writes nothing.
+
+A value the binding wrote itself is never written back. That matters for an element built before it
+is shown: a dependency property reports nothing outside a live view, so the target's first value
+reports only as the element enters one, long after the binding put it there. A `LostFocus` binding
+writes back on every blur, edited or not, because the engine does.
+
+Watching the target property touches no metadata. A property the `[DependencyProperty]` generator
+registered reports its own changes; any other is watched through a hidden attached property bound
+to it, one per element and property. Overriding the metadata instead would be free per instance, but
+Noesis warns that the owner already has metadata, and on a property the engine registered it corrupts
+native state for every instance in the process.
 
 ## Multi-bindings and triggers
 
@@ -87,7 +110,8 @@ evaluates the style's triggers together because they share precedence: a later t
 an earlier one's on the same property, and a property no active trigger sets falls back to whatever
 the style's ordinary setters give it. The style's own setters stay native — only the triggers are
 stripped. A trigger the compiler cannot resolve whole keeps its native form, and the rest of the
-style still compiles.
+style still compiles. A setter that moves a condition of its own set is evaluated again until the set
+settles, as the engine does as it applies each setter.
 
 ## What does not compile
 
@@ -107,6 +131,13 @@ templated parent, which the control's own local value outranks. `TemplateTrigger
 proves both halves: the trigger loses to a local value, and wins over the template's own attribute,
 which is why the named form does compile.
 
+The same fact has a consequence that stays compiled on purpose. Natively, code that calls `SetValue`
+on a one-way bound property replaces the binding, and the value it wrote stays. A compiled binding is
+not an expression the engine can replace, so it keeps running: the next source change overwrites the
+code's value, and a compiled trigger that deactivates clears it. Detecting such a write would mean
+watching every compiled target, which costs about what the compiled binding saves. Code that owns a
+property should not also bind it.
+
 | Form | Kind | Why |
 |---|---|---|
 | a path off an element that is not one of its dependency properties | boundary | nothing else about an element can be watched |
@@ -116,13 +147,28 @@ which is why the named form does compile.
 | a trigger setter whose value is a resource lookup | boundary | the parser resolves it and `SetValue` does not |
 | a template trigger setter with no `TargetName` | boundary | it writes the templated parent below that element's local value |
 | a write back to a source read straight off a dependency property | gap | `SetValue` on that property would serve; only hop writes are emitted |
-| a write back to a behavior, input binding or trigger action | boundary | the receiver is found by position each time, so nothing stable can be watched |
+| a write back to a behavior, input binding or trigger action | boundary | the receiver is found again each time, so nothing stable can be watched |
+| `RelativeSource Self` on a behavior, input binding or trigger action | gap | the chain would have to root at the receiver, not its host |
+| `{TemplateBinding}` | boundary | a one-way expression that converts nothing; the parser builds it, see [xaml-compiler.md](xaml-compiler.md) |
+| a binding on a template element that a template trigger names for the same property | boundary | the compiled local write would outrank the trigger |
+| a binding on `ContentPresenter.Content` inside a template | boundary | a presenter the template gives no `Content` takes the templated parent's content and template, and a compiled write arrives after that is decided |
+| a style trigger setter on a property the element sets itself — attribute, property element or content — or that a template trigger names | boundary | either one outranks a native style trigger, and a compiled local write would win |
+| a template trigger condition read off a root that rebinds `DataContext`, or off `TemplatedParent` | gap | its source type is not what the document states |
+| a `DataTrigger` on an `object` path with a non-null `Value` | gap | the engine converts the constant to whatever the path holds at run time |
+| a `MultiBinding` into `DataContext`, or on a `ContentPresenter` reading its own `DataContext` | boundary | the write feeds its own read, or the presenter replaces the context with its content |
+| text from a `char`, `decimal`, `object`, interface, or a type with no `ToString` override | boundary | what the engine shows depends on the run-time type, or it shows nothing |
+| a `StringFormat` other than numbered holes with F, N, P, D or X | gap | the engine formats it by rules of its own the compiler does not mirror |
+| an enum slot whose native type the managed side never registered | boundary | the managed side can neither read nor write it |
 | `Mode=OneTime` or `OneWayToSource`, `UpdateSourceTrigger=Explicit` | gap | not implemented |
 | `FallbackValue`, `TargetNullValue` | gap | not implemented |
 | `RelativeSource PreviousData`, or `AncestorLevel` past 1 | gap | not resolved yet |
 | a path stepping through an open generic | gap | not resolved yet |
 | `Mode=TwoWay` on a path that genuinely has no setter | author | there is nothing to write back to |
 | a `DataTemplate` with no declared `ntk:DataType` | author | falls back until the type is stated |
+| a keyed template or style with no declared `ntk:DataType` | author | any document or code can apply the key, so the uses one document shows prove nothing |
+| bindings below a `DataContext` the compiler cannot type — a converter, a knob, another source, a resource or a property element | author | state the type with `ntk:DataType` below it |
+| a template hosted through a `Content`, `ItemsSource` or `Header` binding with a converter or format | author | what the host is handed is not the type its path reads |
+| an `ntk:CompileBindings` value that is not a boolean | author | the document has to say which it means |
 | an `ElementName` naming an element in another template | boundary | a clone's name scope answers for its own template only |
 | an ancestor reached past a `Style` | boundary | a style detaches content from where it was written |
 

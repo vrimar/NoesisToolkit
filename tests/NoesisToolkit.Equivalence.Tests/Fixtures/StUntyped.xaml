@@ -1,0 +1,17 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="Outer" TargetType="{x:Type t:SpikeControl}">
+    <Button x:Name="Inner">
+      <Button.Template>
+        <ControlTemplate>
+          <TextBlock x:Name="Untyped" Text="{TemplateBinding Label}" />
+        </ControlTemplate>
+      </Button.Template>
+    </Button>
+  </ControlTemplate>
+</ResourceDictionary>

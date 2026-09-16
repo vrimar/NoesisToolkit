@@ -1,0 +1,86 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+>
+  <Style x:Key="Ws.TextStyle" TargetType="TextBlock">
+    <Setter Property="Text" Value="Styled" />
+  </Style>
+
+  <sys:String x:Key="Ws.String">  Hello
+      World   again  </sys:String>
+
+  <DataTemplate x:Key="Ws.RunGap">
+    <TextBlock HorizontalAlignment="Left">
+      <Run
+        Foreground="Red"
+        Text="5"
+        />
+      <Run
+        Foreground="Blue"
+        Text=" Damage Reduced"
+        />
+    </TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.RunTextRun">
+    <TextBlock HorizontalAlignment="Left">
+      <Run
+        Foreground="Red"
+        Text="5 "
+        />
+      SuperTortoiseGem(s) are required to upgrade to
+      <Run
+        Foreground="Red"
+        Text=" -3 bless."
+        />
+    </TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.LineBreaks">
+    <TextBlock HorizontalAlignment="Left">
+      Benefits:
+      <LineBreak />
+      1. Stamina increased by 50 points.
+      <LineBreak />
+      2. Revive wherever you are.
+    </TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.Mixed">
+    <TextBlock HorizontalAlignment="Left">Hello <Bold>World</Bold> again</TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.Spans">
+    <TextBlock HorizontalAlignment="Left">
+      <Span> a <Bold>b</Bold> c </Span>
+      <Hyperlink> h <Run Text="x" /> </Hyperlink>
+      <Underline> u <Run Text="y" /> v </Underline>
+    </TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.TextOnly">
+    <TextBlock HorizontalAlignment="Left">Hello
+          World   again</TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.Styled">
+    <TextBlock
+      HorizontalAlignment="Left"
+      Style="{StaticResource Ws.TextStyle}"
+      >Default</TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.Preserved">
+    <TextBlock HorizontalAlignment="Left" xml:space="preserve"> t <Run Text="a" />  <Run Text="b" /> </TextBlock>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Ws.ContentText">
+    <ContentControl>
+      <ContentControl.Tag>  Tag
+        text  </ContentControl.Tag>
+      Click
+        me
+    </ContentControl>
+  </DataTemplate>
+</ResourceDictionary>

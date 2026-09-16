@@ -1,0 +1,121 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="RedirectedContext" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" ntk:DataType="t:TsInner" DataContext="{Binding Payload}" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger Binding="{Binding Label}" Value="inner">
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="InheritedContext" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" ntk:DataType="t:SpikeItem" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger Binding="{Binding Label}" Value="outer">
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="RedirectedSelfContext" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" ntk:DataType="t:TsInner" DataContext="{Binding Payload}" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger
+        Binding="{Binding DataContext.Label, RelativeSource={RelativeSource Self}}"
+        Value="outer"
+      >
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="InheritedSelfContext" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" ntk:DataType="t:SpikeItem" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger
+        Binding="{Binding DataContext.Label, RelativeSource={RelativeSource Self}}"
+        Value="outer"
+      >
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="TemplatedParentCondition" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger
+        Binding="{Binding Label, RelativeSource={RelativeSource TemplatedParent}}"
+        Value="host-default"
+      >
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="AncestorStart" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger
+        Binding="{Binding Label, RelativeSource={RelativeSource AncestorType={x:Type t:SpikeControl}}}"
+        Value="host-default"
+      >
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+      <DataTrigger
+        Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType={x:Type StackPanel}}}"
+        Value="Horizontal"
+      >
+        <Setter TargetName="Bg" Property="Tag" Value="found" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="NestedName" TargetType="{x:Type t:SpikeControl}">
+    <StackPanel>
+      <ItemsControl>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <TextBlock x:Name="Bg" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Border x:Name="Bg" Background="Red" Height="10" />
+    </StackPanel>
+    <ControlTemplate.Triggers>
+      <Trigger Property="Align" Value="Top">
+        <Setter TargetName="Bg" Property="Background" Value="Green" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="ProbedTarget" TargetType="{x:Type t:TsHost}">
+    <StackPanel>
+      <t:TsPart x:Name="Part" Height="5" />
+    </StackPanel>
+    <ControlTemplate.Triggers>
+      <Trigger Property="Mode" Value="2">
+        <Setter
+          TargetName="Part"
+          Property="Ratio"
+          Value="{Binding Ratio, RelativeSource={RelativeSource TemplatedParent}}"
+        />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <DataTemplate x:Key="ProbedNoesisTarget" ntk:DataType="t:SpikeItem">
+    <Border x:Name="Bd" Height="5" />
+    <DataTemplate.Triggers>
+      <DataTrigger Binding="{Binding Flag}" Value="True">
+        <Setter TargetName="Bd" Property="Tag" Value="{Binding Label}" />
+      </DataTrigger>
+    </DataTemplate.Triggers>
+  </DataTemplate>
+</ResourceDictionary>

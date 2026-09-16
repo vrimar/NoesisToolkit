@@ -1,0 +1,166 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <DataTemplate x:Key="Conditions" ntk:DataType="t:LtItem">
+    <StackPanel>
+      <Border x:Name="Big" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Big}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Small" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Small}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Tiny" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Tiny}" Value="-5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Mid" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Mid}" Value="-5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="UMid" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding UMid}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="UBig" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding UBig}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Huge" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Huge}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="MaybeBig" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding MaybeBig}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Boxed" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Boxed}" Value="5">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+      <Border x:Name="Nothing" Height="5">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Nothing}" Value="{x:Null}">
+                <Setter Property="Opacity" Value="0.5" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <DataTemplate x:Key="Setters" ntk:DataType="t:LtItem">
+    <StackPanel>
+      <t:LtControl x:Name="Styled" Height="5">
+        <t:LtControl.Style>
+          <Style TargetType="t:LtControl">
+            <Setter Property="Big" Value="9" />
+            <Setter Property="Small" Value="9" />
+          </Style>
+        </t:LtControl.Style>
+      </t:LtControl>
+      <t:LtControl x:Name="Triggered" Height="5">
+        <t:LtControl.Style>
+          <Style TargetType="t:LtControl">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding Flag}" Value="True">
+                <Setter Property="Big" Value="7" />
+                <Setter Property="Small" Value="7" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </t:LtControl.Style>
+      </t:LtControl>
+    </StackPanel>
+  </DataTemplate>
+
+  <ControlTemplate x:Key="CompiledPropertyTrigger" TargetType="{x:Type t:LtControl}">
+    <Border x:Name="Bg" Height="5" />
+    <ControlTemplate.Triggers>
+      <Trigger Property="Big" Value="5">
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="NativePropertyTrigger" TargetType="{x:Type t:LtControl}">
+    <Border x:Name="Bg" Height="5" />
+    <ControlTemplate.Triggers>
+      <Trigger Property="Big" Value="5">
+        <Setter Property="Tag" Value="on" />
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+</ResourceDictionary>

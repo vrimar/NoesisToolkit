@@ -1,0 +1,17 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="Marked" TargetType="{x:Type t:MarkedHost}">
+    <StackPanel>
+      <Border x:Name="FromTemplate" t:Marker.Value="{TemplateBinding IsOpen}" />
+      <Border
+        x:Name="FromParentPath"
+        t:Marker.Value="{Binding IsOpen, RelativeSource={RelativeSource TemplatedParent}}"
+      />
+    </StackPanel>
+  </ControlTemplate>
+</ResourceDictionary>

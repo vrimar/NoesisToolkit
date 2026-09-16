@@ -1,0 +1,52 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <t:RtStageIsDoNothing x:Key="StageIsDoNothing" />
+  <t:RtStageIsUnset x:Key="StageIsUnset" />
+  <t:RtBrackets x:Key="Brackets" />
+
+  <DataTemplate x:Key="Row" ntk:DataType="t:RtWriteBackModel">
+    <StackPanel>
+      <CheckBox x:Name="Refused" IsChecked="{Binding Refused}" />
+      <CheckBox x:Name="SilentlyRefused" IsChecked="{Binding SilentlyRefused}" />
+      <Slider x:Name="Snapped" Maximum="100" Value="{Binding Count}" />
+      <TextBox
+        x:Name="Typed"
+        Width="200"
+        Text="{Binding Upper, UpdateSourceTrigger=PropertyChanged}"
+      />
+      <TextBox
+        x:Name="Bracketed"
+        Width="200"
+        Text="{Binding Plain, Converter={StaticResource Brackets}, UpdateSourceTrigger=PropertyChanged}"
+      />
+      <TextBox x:Name="Blurred" Width="200" Text="{Binding Trimmed}" />
+      <TextBox
+        x:Name="Guarded"
+        Width="200"
+        Text="{Binding Guarded, UpdateSourceTrigger=PropertyChanged}"
+      />
+      <TextBox x:Name="Elsewhere" Width="200" />
+      <CheckBox
+        x:Name="FirstDoNothing"
+        IsChecked="{Binding Stage, Converter={StaticResource StageIsDoNothing}, ConverterParameter=First}"
+      />
+      <CheckBox
+        x:Name="ThirdDoNothing"
+        IsChecked="{Binding Stage, Converter={StaticResource StageIsDoNothing}, ConverterParameter=Third}"
+      />
+      <CheckBox
+        x:Name="FirstUnset"
+        IsChecked="{Binding Stage, Converter={StaticResource StageIsUnset}, ConverterParameter=First}"
+      />
+      <CheckBox
+        x:Name="ThirdUnset"
+        IsChecked="{Binding Stage, Converter={StaticResource StageIsUnset}, ConverterParameter=Third}"
+      />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

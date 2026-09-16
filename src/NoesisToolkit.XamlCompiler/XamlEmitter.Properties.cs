@@ -20,11 +20,22 @@ sealed partial class XamlEmitter
         if (attribute.IsNamespaceDeclaration)
             return;
 
+        if (IsTemplateBinding(attribute))
+        {
+            if (_grafted.Contains(element))
+                Tally.NativeByDesign++;
+            else
+                DeadMarkup.Add(
+                    $"<{element.Name.LocalName} {attribute.Name.LocalName}=...> — a {{TemplateBinding}} the parser cannot build here is left unset"
+                );
+            return;
+        }
+
         var ns = attribute.Name.NamespaceName;
         var local = attribute.Name.LocalName;
 
         // Build-time only. Left alone, ntk:DataType would be applied as the real DataType.
-        if (ns == XamlTypeResolver.ToolkitNs)
+        if (ns == XamlTypeResolver.ToolkitNs || ns == XNamespace.Xml.NamespaceName)
             return;
 
         if (ns == XamlTypeResolver.DirectiveNs)
@@ -251,7 +262,7 @@ sealed partial class XamlEmitter
             if (!TryMarkup(rawValue, out var call))
                 return;
 
-            if (call.Name is "Binding" or "TemplateBinding")
+            if (call.Name is "Binding")
             {
                 if (
                     AttachedSlot(owner, propertyName) is { } slot
@@ -264,6 +275,12 @@ sealed partial class XamlEmitter
                     _lines.Add(
                         $"{target}.SetBinding({ownerFqn}.{propertyName}Property, {binding});"
                     );
+                return;
+            }
+
+            if (call.Name is "StaticResource" or "DynamicResource")
+            {
+                ApplyAttachedResource(element, target, type, owner, propertyName, valueType, call);
                 return;
             }
 
@@ -286,6 +303,45 @@ sealed partial class XamlEmitter
 
         if (value is not null)
             _lines.Add($"{ownerFqn}.Set{propertyName}({target}, {value});");
+    }
+
+    void ApplyAttachedResource(
+        XElement element,
+        string target,
+        INamedTypeSymbol type,
+        INamedTypeSymbol owner,
+        string propertyName,
+        ITypeSymbol? valueType,
+        MarkupCall call
+    )
+    {
+        var key = ResourceKeyExpression(element, call);
+        if (key is null)
+            return;
+
+        if (
+            call.Name == "DynamicResource"
+            && XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement")
+        )
+        {
+            if (resolver.FindDependencyPropertyOwner(owner, propertyName) is not { } declaring)
+            {
+                Errors.Add(
+                    $"'{propertyName}' on {XamlTypeResolver.Fqn(owner)} is not a dependency property, "
+                        + "so it cannot take a DynamicResource"
+                );
+                return;
+            }
+
+            _lines.Add(
+                $"{target}.SetResourceReference({SlotReference(declaring, propertyName)}, {key});"
+            );
+            return;
+        }
+
+        var ownerFqn = XamlTypeResolver.Fqn(owner);
+        var cast = CastPrefix(valueType);
+        AddGraphStatement(found => $"{ownerFqn}.Set{propertyName}({target}, {cast}{found});", key);
     }
 
     void ApplyProperty(
@@ -355,12 +411,10 @@ sealed partial class XamlEmitter
         switch (call.Name)
         {
             case "Binding"
-            or "TemplateBinding"
                 when PlainSlot(property) is { } slot
                     && TryEmitCompiledBinding(element, target, type, slot, call):
                 return;
             case "Binding":
-            case "TemplateBinding":
             {
                 var binding = EmitBindingLike(element, call);
                 if (binding is null)
@@ -405,7 +459,11 @@ sealed partial class XamlEmitter
                 }
 
                 var cast = $"({XamlTypeResolver.Fqn(property.Type)})";
-                AddGraphStatement(found => $"{target}.{property.Name} = {cast}{found};", key);
+                AddGraphStatement(
+                    found => $"{target}.{property.Name} = {cast}{found};",
+                    key,
+                    skipMissing: true
+                );
                 return;
             }
             default:

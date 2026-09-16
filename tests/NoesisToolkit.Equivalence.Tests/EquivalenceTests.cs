@@ -25,7 +25,7 @@ public sealed class EquivalenceTests
 
             // An opted-in document diverges in shape by construction; it is judged on value.
             if (
-                File.ReadAllText(Path.Combine(XamlGraphDump.FixtureRoot(), file))
+                File.ReadAllText(Path.Combine(XamlGraphDump.ProviderRoot(), path))
                     .Contains("ntk:CompileBindings", StringComparison.Ordinal)
             )
                 continue;

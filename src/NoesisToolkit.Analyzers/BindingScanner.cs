@@ -8,7 +8,8 @@ namespace NoesisToolkit.CodeGen;
 /// <summary>
 /// Extracts every <c>{Binding}</c> a XAML file states enough about to check, as the type its
 /// DataContext resolves to plus the member path. Anything whose context is unknowable — a keyed
-/// template, a bare <c>Style</c>, an untyped template with no host — is left out rather than guessed.
+/// template with no <c>ntk:DataType</c>, a bare <c>Style</c>, an untyped template with no host — is
+/// left out rather than guessed.
 /// </summary>
 internal static class BindingScanner
 {
@@ -39,9 +40,6 @@ internal static class BindingScanner
         /// <summary>Whether the first name derives from the second, which only a compilation knows.</summary>
         public Func<string, string, bool>? Derives;
 
-        /// <summary>Resource key to every site's scope; null once any one site cannot be resolved.</summary>
-        public Dictionary<string, List<DataScope>?>? Keys;
-
         /// <summary>Sources written as property elements, by the ordinal of the element that owns
         /// them. A template can precede the source it reads, so the collect pass records these and
         /// every later pass reads them whatever the document order was.</summary>
@@ -62,35 +60,19 @@ internal static class BindingScanner
             return ScanResult.Empty;
 
         var nameToScope = new Dictionary<string, DataScope?>(StringComparer.Ordinal);
-        var keyToScope = new Dictionary<string, List<DataScope>?>(StringComparer.Ordinal);
         var elementSources = new Dictionary<int, Dictionary<string, string>>();
-        var discard = new Walked
-        {
-            Derives = derives,
-            Keys = keyToScope,
-            ElementSources = elementSources,
-        };
+        var discard = new Walked { Derives = derives, ElementSources = elementSources };
         if (!Walk(content!, prefixes, namedElements, discard, nameToScope, true))
             return ScanResult.Empty;
 
-        // A keyed template's scope is known only once the first pass has finished, so a name
-        // declared inside one recorded a scope that pass could not see. Rebuild them now.
+        // A template can precede the property element that sources it, so a name declared inside
+        // one recorded a scope the first pass could not see. Rebuild them now.
         nameToScope.Clear();
-        var named = new Walked
-        {
-            Derives = derives,
-            Keys = keyToScope,
-            ElementSources = elementSources,
-        };
+        var named = new Walked { Derives = derives, ElementSources = elementSources };
         if (!Walk(content!, prefixes, namedElements, named, nameToScope, true))
             return ScanResult.Empty;
 
-        var walked = new Walked
-        {
-            Derives = derives,
-            Keys = keyToScope,
-            ElementSources = elementSources,
-        };
+        var walked = new Walked { Derives = derives, ElementSources = elementSources };
         return Walk(content!, prefixes, namedElements, walked, nameToScope, false)
             ? new ScanResult(walked.Checks, walked.Unresolved, walked.CompileBindings)
             : ScanResult.Empty;
@@ -285,7 +267,7 @@ internal static class BindingScanner
 
                 if (reader.GetAttribute("CompileBindings", ToolkitNamespace) is { } opt)
                 {
-                    frame.Compile = opt.Trim() != "False";
+                    frame.Compile = XamlScopeRules.CompileBindings(opt) ?? false;
                     walked.CompileBindings |= frame.Compile;
                 }
 
@@ -339,7 +321,6 @@ internal static class BindingScanner
             Ordinal = ordinal,
             Data = parent.Data,
             ParentData = parent.Data,
-            Alternates = parent.Alternates,
             Compile = parent.Compile,
             TargetType = parent.TargetType,
             SelfType = triggerLike
@@ -375,28 +356,21 @@ internal static class BindingScanner
         switch (name)
         {
             case "DataTemplate":
-                frame.Data = ResolveDataTemplateScope(
-                    reader,
-                    parent,
-                    prefixes,
-                    walked,
-                    out frame.Alternates
-                );
+                frame.Data = ResolveDataTemplateScope(reader, parent, prefixes);
                 break;
             case "Style":
             case "ControlTemplate":
-                frame.Data = TemplatedScope(reader, parent, walked, out frame.Alternates);
+                frame.Data = TemplatedScope(reader, parent);
                 frame.TargetType =
                     ResolveTypeAttribute(reader, "TargetType", prefixes) ?? parent.TargetType;
                 break;
             case "ItemsPanelTemplate":
-                frame.Data = TemplatedScope(reader, parent, walked, out frame.Alternates);
+                frame.Data = TemplatedScope(reader, parent);
                 break;
         }
 
         if (reader.GetAttribute("DataType", ToolkitNamespace) is { } annotated)
         {
-            frame.Alternates = null;
             frame.Data = ResolveTypeReference(annotated, prefixes) is { } resolved
                 ? new DataScope(resolved)
                 : null;
@@ -404,7 +378,6 @@ internal static class BindingScanner
 
         if (reader.GetAttribute("DataContext") is { } explicitContext)
         {
-            frame.Alternates = null;
             var binding = XamlBindingMarkup.TryGetExtension(
                 explicitContext,
                 "Binding",
@@ -427,41 +400,23 @@ internal static class BindingScanner
     static DataScope? ResolveDataTemplateScope(
         XmlReader reader,
         Frame parent,
-        Dictionary<string, string> prefixes,
-        Walked walked,
-        out List<DataScope>? alternates
+        Dictionary<string, string> prefixes
     )
     {
-        alternates = null;
         if (ResolveTypeAttribute(reader, "DataType", prefixes) is { } declared)
             return new DataScope(declared);
 
-        if (reader.GetAttribute("x:Key") is not { } key)
-            return parent.PendingHost;
-
-        alternates = KeyedScope(key, walked);
-        return alternates is { Count: > 0 } ? alternates[0] : null;
+        return reader.GetAttribute("x:Key") is null ? parent.PendingHost : null;
     }
 
-    static DataScope? TemplatedScope(
-        XmlReader reader,
-        Frame parent,
-        Walked walked,
-        out List<DataScope>? alternates
-    )
+    // Any document or code can apply a key, so the sites one document shows prove nothing.
+    static DataScope? TemplatedScope(XmlReader reader, Frame parent)
     {
-        alternates = null;
-        if (reader.GetAttribute("x:Key") is not { } key)
-            return parent.Transparent ? parent.Data : parent.PendingHost;
+        if (reader.GetAttribute("x:Key") is not null)
+            return null;
 
-        alternates = KeyedScope(key, walked);
-        return alternates is { Count: > 0 } ? alternates[0] : null;
+        return parent.Transparent ? parent.Data : parent.PendingHost;
     }
-
-    static List<DataScope>? KeyedScope(string key, Walked walked) =>
-        walked.Keys is not null && walked.Keys.TryGetValue(key.Trim(), out var scopes)
-            ? scopes
-            : null;
 
     // A cell template sits under the column rather than the list, so the source is the nearest one
     // named above -- but never past a breaker, which renders something else entirely.
@@ -505,7 +460,6 @@ internal static class BindingScanner
 
         var triggerLike = TriggerLike.Contains(reader.LocalName);
         Dictionary<string, string>? sources = null;
-        List<KeyUse>? keys = null;
 
         while (reader.MoveToNextAttribute())
         {
@@ -533,15 +487,6 @@ internal static class BindingScanner
                     sources ??= new Dictionary<string, string>(StringComparer.Ordinal);
                     sources[reader.LocalName] = hostBinding.Path ?? "";
                 }
-            }
-
-            if (
-                XamlScopeRules.TemplateHosts.ContainsKey(reader.LocalName)
-                && XamlBindingMarkup.TryGetExtension(value, "StaticResource", out var keyed)
-            )
-            {
-                keys ??= new List<KeyUse>();
-                keys.Add(new KeyUse(reader.LocalName, keyed.Trim()));
             }
 
             if (collect)
@@ -600,37 +545,6 @@ internal static class BindingScanner
             foreach (var pair in sources)
                 frame.Sources[pair.Key] = pair.Value;
         }
-
-        if (!collect || keys is null || walked.Keys is null)
-            return;
-
-        stack.Add(frame);
-        foreach (var use in keys)
-        {
-            var known = walked.Keys.TryGetValue(use.Key, out var seen);
-            if (known && seen is null)
-                continue;
-
-            var scope = HostedScope(stack, XamlScopeRules.TemplateHosts[use.Property]);
-            if (scope is null)
-            {
-                walked.Keys[use.Key] = null;
-                continue;
-            }
-
-            if (!known)
-                walked.Keys[use.Key] = seen = new List<DataScope>();
-
-            if (!seen!.Exists(s => s.Matches(scope)))
-                seen.Add(scope);
-        }
-        stack.RemoveAt(stack.Count - 1);
-    }
-
-    readonly struct KeyUse(string property, string key)
-    {
-        public string Property { get; } = property;
-        public string Key { get; } = key;
     }
 
     static void EmitCheck(
@@ -712,13 +626,6 @@ internal static class BindingScanner
         var scope = isDataContext ? frame.ParentData : frame.Data;
         if (scope is not null)
         {
-            if (!isDataContext && frame.Alternates is { Count: > 1 } every)
-            {
-                foreach (var alternate in every)
-                    walked.Checks.Add(new BindingCheck(line, column, alternate, path));
-                return;
-            }
-
             walked.Checks.Add(new BindingCheck(line, column, scope, path));
             return;
         }
@@ -903,9 +810,6 @@ internal static class BindingScanner
         public bool Transparent;
         public bool Breaks;
         public bool Compile;
-
-        /// <summary>Every scope a keyed template is used from; the path has to resolve against all.</summary>
-        public List<DataScope>? Alternates;
     }
 }
 
@@ -925,23 +829,6 @@ internal sealed class DataScope
     public string RootType { get; }
 
     public Hop[] Hops { get; }
-
-    public bool Matches(DataScope? other)
-    {
-        if (other is null || other.RootType != RootType || other.Hops.Length != Hops.Length)
-            return false;
-
-        for (var i = 0; i < Hops.Length; i++)
-        {
-            if (
-                Hops[i].Path != other.Hops[i].Path
-                || Hops[i].IsCollection != other.Hops[i].IsCollection
-            )
-                return false;
-        }
-
-        return true;
-    }
 
     public DataScope Extend(string path, bool isCollection)
     {

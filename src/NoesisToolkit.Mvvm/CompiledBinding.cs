@@ -69,6 +69,7 @@ public sealed class CompiledBinding
     object? _brokeFor = NotBroke;
     ElementLifecycle _life = null!;
     bool _pushing;
+    object? _written;
 
     CompiledBinding(
         FrameworkElement target,
@@ -163,47 +164,98 @@ public sealed class CompiledBinding
         return new CompiledBinding(anchor, property, spec, receiver);
     }
 
-    /// <summary>The behavior at <paramref name="index"/> on <paramref name="element"/>, or null
+    /// <summary>The mark <see cref="MarkReceiver"/> leaves on an attached object. A local value, so
+    /// a template's clone of the object carries its prototype's.</summary>
+    public static readonly DependencyProperty ReceiverProperty =
+        DependencyProperty.RegisterAttached(
+            "Receiver",
+            typeof(string),
+            typeof(CompiledBinding),
+            new PropertyMetadata(null)
+        );
+
+    /// <summary>Marks the attached object a compiled binding writes, so it is found among whatever
+    /// else its element holds, including objects the element's own code added.</summary>
+    /// <param name="receiver">The behavior, input binding or trigger action.</param>
+    /// <param name="key">Identifies the object among those on the same element.</param>
+    public static void MarkReceiver(DependencyObject receiver, string key)
+    {
+        Guard.NotNull(receiver, nameof(receiver));
+        Guard.NotNull(key, nameof(key));
+        receiver.SetValue(ReceiverProperty, key);
+    }
+
+    /// <summary>The behavior on <paramref name="element"/> marked <paramref name="key"/>, or null
     /// where none is attached yet.</summary>
     /// <param name="element">The element the behavior collection hangs off.</param>
-    /// <param name="index">The behavior's document position.</param>
+    /// <param name="key">The mark the behavior carries.</param>
     /// <returns>The behavior, or null.</returns>
-    public static DependencyObject? BehaviorAt(FrameworkElement element, int index)
+    public static DependencyObject? MarkedBehavior(FrameworkElement element, string key)
     {
         Guard.NotNull(element, nameof(element));
+        Guard.NotNull(key, nameof(key));
+
         var behaviors = Noesis.Interactivity.Interaction.GetBehaviors(element);
-        return behaviors is not null && index < behaviors.Count ? behaviors[index] : null;
+        for (var i = 0; behaviors is not null && i < behaviors.Count; i++)
+        {
+            if (Marked(behaviors[i], key))
+                return behaviors[i];
+        }
+
+        return null;
     }
 
-    /// <summary>The input binding at <paramref name="index"/> on <paramref name="element"/>, or
-    /// null where the collection does not reach that far.</summary>
+    /// <summary>The input binding on <paramref name="element"/> marked <paramref name="key"/>, or
+    /// null where none is there yet.</summary>
     /// <param name="element">The element the input bindings hang off.</param>
-    /// <param name="index">The input binding's document position.</param>
+    /// <param name="key">The mark the input binding carries.</param>
     /// <returns>The input binding, or null.</returns>
-    public static DependencyObject? InputBindingAt(FrameworkElement element, int index)
+    public static DependencyObject? MarkedInputBinding(FrameworkElement element, string key)
     {
         Guard.NotNull(element, nameof(element));
+        Guard.NotNull(key, nameof(key));
+
         var bindings = element.InputBindings;
-        return bindings is not null && index < bindings.Count ? bindings[index] : null;
+        for (var i = 0; bindings is not null && i < bindings.Count; i++)
+        {
+            if (Marked(bindings[i], key))
+                return bindings[i];
+        }
+
+        return null;
     }
 
-    /// <summary>The trigger action at <paramref name="action"/> inside the trigger at
-    /// <paramref name="trigger"/> on <paramref name="element"/>, or null where the collections do
-    /// not reach that far.</summary>
+    /// <summary>The trigger action marked <paramref name="key"/> in any trigger on
+    /// <paramref name="element"/>, or null where none is there yet.</summary>
     /// <param name="element">The element the trigger collection hangs off.</param>
-    /// <param name="trigger">The trigger's document position.</param>
-    /// <param name="action">The action's document position inside the trigger.</param>
+    /// <param name="key">The mark the action carries.</param>
     /// <returns>The action, or null.</returns>
-    public static DependencyObject? ActionAt(FrameworkElement element, int trigger, int action)
+    public static DependencyObject? MarkedAction(FrameworkElement element, string key)
     {
         Guard.NotNull(element, nameof(element));
-        var triggers = Noesis.Interactivity.Interaction.GetTriggers(element);
-        if (triggers is null || trigger >= triggers.Count)
-            return null;
+        Guard.NotNull(key, nameof(key));
 
-        var actions = triggers[trigger].Actions;
-        return actions is not null && action < actions.Count ? actions[action] : null;
+        var triggers = Noesis.Interactivity.Interaction.GetTriggers(element);
+        for (var t = 0; triggers is not null && t < triggers.Count; t++)
+        {
+            var actions = triggers[t].Actions;
+            for (var a = 0; actions is not null && a < actions.Count; a++)
+            {
+                if (Marked(actions[a], key))
+                    return actions[a];
+            }
+        }
+
+        return null;
     }
+
+    static bool Marked(DependencyObject? candidate, string key) =>
+        candidate is not null
+        && string.Equals(
+            candidate.GetValue(ReceiverProperty) as string,
+            key,
+            StringComparison.Ordinal
+        );
 
     /// <summary>The nearest visual ancestor of <paramref name="element"/> the given type accepts,
     /// which is where a FindAncestor binding roots. The logical parent chain stops at a template's
@@ -227,6 +279,20 @@ public sealed class CompiledBinding
         }
 
         return null;
+    }
+
+    /// <summary>The nearest of <paramref name="element"/> and its visual ancestors the given type
+    /// accepts, which is where a FindAncestor binding on an object attached to the element roots:
+    /// that walk counts the element the object hangs off.</summary>
+    /// <param name="element">Where the walk starts; it is itself the first candidate.</param>
+    /// <param name="type">The ancestor type to match, subclasses included.</param>
+    /// <returns>The element or ancestor, or null when neither matches.</returns>
+    public static FrameworkElement? FindAncestorOrSelf(FrameworkElement element, Type type)
+    {
+        Guard.NotNull(element, nameof(element));
+        Guard.NotNull(type, nameof(type));
+
+        return type.IsInstanceOfType(element) ? element : FindAncestor(element, type);
     }
 
     /// <summary>The element registered under <paramref name="name"/> in the nearest name scope out
@@ -333,6 +399,7 @@ public sealed class CompiledBinding
             try
             {
                 _receiver?.ClearValue(_property);
+                Settle();
             }
             finally
             {
@@ -359,23 +426,62 @@ public sealed class CompiledBinding
             // put in the slot meanwhile has to survive our own reload rebuilds.
             if (!broke)
             {
-                Assign(_spec.Convert(Forward(current)));
+                WriteTarget(Forward(current));
                 _brokeFor = NotBroke;
             }
             else if (!ReferenceEquals(root, _brokeFor))
             {
-                if (_clearWhenUnset)
-                    _receiver.ClearValue(_property);
-                else
-                    Assign(_unset);
-
+                WriteDefault();
                 _brokeFor = root;
             }
+
+            Settle();
         }
         finally
         {
             _pushing = false;
         }
+    }
+
+    void WriteTarget(object? produced)
+    {
+        var value =
+            ReferenceEquals(produced, DependencyProperty.UnsetValue)
+            || ReferenceEquals(produced, Binding.DoNothing)
+                ? produced
+                : _spec.Convert(produced);
+
+        if (ReferenceEquals(value, Binding.DoNothing))
+            return;
+
+        if (ReferenceEquals(value, DependencyProperty.UnsetValue))
+        {
+            WriteDefault();
+            return;
+        }
+
+        if (!ReferenceEquals(value, SlotConversion.Unconverted))
+        {
+            Assign(value);
+            return;
+        }
+
+        // Off a view the engine converts on attach, outside _pushing; the load rebuilds instead.
+        if (
+            _target.IsLoaded
+            && _receiver is not null
+            && produced is not null
+            && !SlotConversion.Convert(_receiver, _property, produced)
+        )
+            WriteDefault();
+    }
+
+    void WriteDefault()
+    {
+        if (_clearWhenUnset)
+            _receiver?.ClearValue(_property);
+        else
+            Assign(_unset);
     }
 
     void Assign(object? value)
@@ -403,9 +509,16 @@ public sealed class CompiledBinding
                 CultureInfo.CurrentCulture
             );
 
+    // What the binding itself left in the target is not an edit, however late the change reports.
+    void Settle()
+    {
+        if (_twoWay)
+            _written = _target.GetValue(_property);
+    }
+
     void OnTargetChanged()
     {
-        if (!_onLostFocus)
+        if (!_onLostFocus && !Equals(_target.GetValue(_property), _written))
             Push();
     }
 
@@ -425,6 +538,12 @@ public sealed class CompiledBinding
                 CultureInfo.CurrentCulture
             );
 
+        if (
+            ReferenceEquals(value, Binding.DoNothing)
+            || ReferenceEquals(value, DependencyProperty.UnsetValue)
+        )
+            return;
+
         // The source raising a change would otherwise walk straight back into the target.
         _pushing = true;
         try
@@ -434,6 +553,9 @@ public sealed class CompiledBinding
         finally
         {
             _pushing = false;
+
+            // Natively the source is read back after every write, even one that refused or threw.
+            Rebuild();
         }
     }
 }

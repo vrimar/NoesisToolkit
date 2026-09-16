@@ -132,7 +132,7 @@ sealed partial class XamlEmitter
             case "global::Noesis.Cursor":
                 return $"global::Noesis.Cursors.{text}";
             case "global::Noesis.PropertyPath":
-                return $"new global::Noesis.PropertyPath({Quote(text)})";
+                return $"new global::Noesis.PropertyPath({Quote(NativePath(scope, text))})";
             case "global::Noesis.FontFamily":
                 return filePath.Length == 0
                     ? $"new global::Noesis.FontFamily({Quote(text)})"
@@ -146,7 +146,9 @@ sealed partial class XamlEmitter
         }
 
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.ImageSource"))
-            return $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(text)}, global::System.UriKind.RelativeOrAbsolute))";
+            return ImageUri(text) is { } uri
+                ? $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))"
+                : Fail($"image source '{text}' is not a uri the parser is known to resolve");
 
         if (typeFqn == "global::Noesis.RoutedEvent")
             return RoutedEventReference(scope, text);
@@ -164,6 +166,55 @@ sealed partial class XamlEmitter
             return $"({typeFqn})global::Noesis.Brush.Parse({Quote(text)})";
 
         return Fail($"no value conversion for '{raw}' into {typeFqn}");
+    }
+
+    static readonly System.Text.RegularExpressions.Regex UriScheme = new(
+        @"^[A-Za-z][A-Za-z0-9+.\-]+:",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant
+    );
+
+    static readonly System.Text.RegularExpressions.Regex DriveRoot = new(
+        @"^[A-Za-z]:[/\\]",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant
+    );
+
+    string? ImageUri(string text)
+    {
+        var colon = text.IndexOf(':');
+        var backslash = text.IndexOf('\\') >= 0;
+
+        if (
+            text.StartsWith("/", StringComparison.Ordinal)
+            || text.StartsWith("\\", StringComparison.Ordinal)
+        )
+            return colon >= 0 && backslash ? null : text;
+
+        if (colon >= 0)
+        {
+            if (DriveRoot.IsMatch(text))
+                return text;
+
+            if (UriScheme.IsMatch(text))
+                return
+                    backslash
+                    || (
+                        text.StartsWith("pack:", StringComparison.OrdinalIgnoreCase)
+                        && !text.Substring(4)
+                            .StartsWith("://application:,,,", StringComparison.Ordinal)
+                    )
+                    ? null
+                    : text;
+
+            if (backslash || text.IndexOfAny(new[] { '/', '?', '#' }, 0, colon) < 0)
+                return null;
+        }
+
+        if (filePath.Length == 0)
+            return text;
+
+        // Joined as text: the engine normalises dot segments and separators when UriSource is assigned.
+        var document = "/" + XamlPaths.LogicalName(filePath, packPrefix, projectDir);
+        return document.Substring(0, document.LastIndexOf('/') + 1) + text;
     }
 
     string? RoutedEventReference(XElement scope, string text)
@@ -300,13 +351,14 @@ sealed partial class XamlEmitter
             _ => double.TryParse(text, Number, Invariant, out _) ? text + suffix : null,
         };
 
+    // An object slot boxes the literal's own type, and no other integer width accepts an Int32.
     static string? IntegerLiteral(SpecialType type, string text)
     {
         if (!long.TryParse(text, NumberStyles.Integer, Invariant, out var value))
             return
                 type == SpecialType.System_UInt64
-                && ulong.TryParse(text, NumberStyles.Integer, Invariant, out _)
-                ? text + "UL"
+                && ulong.TryParse(text, NumberStyles.Integer, Invariant, out var huge)
+                ? huge.ToString(Invariant) + "UL"
                 : null;
 
         var fits = type switch
@@ -321,7 +373,21 @@ sealed partial class XamlEmitter
             _ => true,
         };
 
-        return fits ? text : null;
+        if (!fits)
+            return null;
+
+        var literal = value.ToString(Invariant);
+        return type switch
+        {
+            SpecialType.System_Int64 => literal + "L",
+            SpecialType.System_UInt32 => literal + "U",
+            SpecialType.System_UInt64 => literal + "UL",
+            SpecialType.System_SByte => $"((sbyte){literal})",
+            SpecialType.System_Byte => $"((byte){literal})",
+            SpecialType.System_Int16 => $"((short){literal})",
+            SpecialType.System_UInt16 => $"((ushort){literal})",
+            _ => literal,
+        };
     }
 
     static string Text(object value) => value as string ?? "";

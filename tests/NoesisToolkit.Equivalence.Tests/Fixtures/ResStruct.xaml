@@ -1,0 +1,9 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+>
+  <sys:Single x:Key="Res.PadLeft">7</sys:Single>
+  <Thickness x:Key="Res.Pad" Left="{StaticResource Res.PadLeft}" Top="2" />
+  <Thickness x:Key="Res.PadOutside" Left="{StaticResource Res.OutsideLeft}" Top="3" />
+</ResourceDictionary>

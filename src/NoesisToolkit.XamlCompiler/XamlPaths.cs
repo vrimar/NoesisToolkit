@@ -57,12 +57,15 @@ static class XamlPaths
                 + uri.Substring(component + ";component/".Length);
         }
 
+        var rooted = uri.StartsWith("/", StringComparison.Ordinal);
         uri = uri.TrimStart('/');
         if (uri.Contains(";"))
             return uri;
 
-        var directory =
-            System.IO.Path.GetDirectoryName(filePath.Replace('\\', '/'))?.Replace('\\', '/') ?? "";
+        var directory = rooted
+            ? ""
+            : System.IO.Path.GetDirectoryName(filePath.Replace('\\', '/'))?.Replace('\\', '/')
+                ?? "";
 
         var segments = new List<string>();
         var escaped = false;

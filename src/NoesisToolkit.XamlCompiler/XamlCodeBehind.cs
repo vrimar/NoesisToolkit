@@ -18,7 +18,9 @@ static class XamlCodeBehind
     internal readonly record struct EventHook(
         string EventName,
         string HandlerName,
-        string OwnerFqn
+        string OwnerFqn,
+        string? RoutedEvent = null,
+        string? HandlerType = null
     );
 
     internal sealed class Scan
@@ -46,18 +48,18 @@ static class XamlCodeBehind
             if (type is null)
             {
                 // The loader binds what the compiler cannot, so a suspected handler is enough.
-                if (element.Attributes().Any(IsHandlerShaped))
+                if (
+                    element
+                        .Attributes()
+                        .Any(a =>
+                            IsHandlerShaped(a) || AttachedEvent(element, a, resolver) is not null
+                        )
+                )
                     scan.UnresolvedHandlers = true;
                 continue;
             }
 
             var inTemplate = InTemplate(element, resolver);
-            var parsed = element
-                .AncestorsAndSelf()
-                .Any(e =>
-                    resolver.SymbolOf(e) is { } owner
-                    && XamlEmitter.Unassignable(e, owner, resolver)
-                );
 
             foreach (var attribute in element.Attributes())
             {
@@ -65,17 +67,23 @@ static class XamlCodeBehind
 
                 if (attribute.Name.NamespaceName == XamlTypeResolver.DirectiveNs)
                 {
-                    // A template registers into its own scope, and a subtree left to the parser
-                    // registers into none the generated code can reach: neither field is assignable.
-                    if (local == "Name" && !inTemplate && !parsed)
+                    // A template registers into its own scope, which a field could never read.
+                    if (local == "Name" && !inTemplate)
                         scan.Names.Add(
                             new NamedElement(attribute.Value, XamlTypeResolver.Fqn(type))
                         );
                     continue;
                 }
 
-                if (attribute.IsNamespaceDeclaration || local.Contains("."))
+                if (attribute.IsNamespaceDeclaration)
                     continue;
+
+                if (local.Contains("."))
+                {
+                    if (AttachedEvent(element, attribute, resolver) is { } attached)
+                        ReadAttachedEvent(scan, type, attribute.Value.Trim(), attached, resolver);
+                    continue;
+                }
 
                 if (
                     resolver.FindProperty(type, local) is null
@@ -105,6 +113,96 @@ static class XamlCodeBehind
         return false;
     }
 
+    static (INamedTypeSymbol Owner, IEventSymbol Event)? AttachedEvent(
+        XElement element,
+        XAttribute attribute,
+        XamlTypeResolver resolver
+    )
+    {
+        var local = attribute.Name.LocalName;
+        var dot = local.IndexOf('.');
+        var ns = attribute.Name.NamespaceName;
+        if (attribute.IsNamespaceDeclaration || dot <= 0 || ns == XamlTypeResolver.DirectiveNs)
+            return null;
+
+        if (ns.Length == 0)
+            ns = element.GetDefaultNamespace().NamespaceName is { Length: > 0 } declared
+                ? declared
+                : XamlTypeResolver.PresentationNs;
+
+        var owner = resolver.Resolve(ns, local.Substring(0, dot));
+        var name = local.Substring(dot + 1);
+        if (owner is null || resolver.FindAttachedValueType(owner, name) is not null)
+            return null;
+
+        return resolver.FindEvent(owner, name) is { } found ? (owner, found) : null;
+    }
+
+    // The owner's routed event, not the element's own of that name: MenuItem.Click is not ButtonBase.Click.
+    static void ReadAttachedEvent(
+        Scan scan,
+        INamedTypeSymbol type,
+        string handler,
+        (INamedTypeSymbol Owner, IEventSymbol Event) attached,
+        XamlTypeResolver resolver
+    )
+    {
+        var name = attached.Event.Name;
+        var element = XamlTypeResolver.Fqn(type);
+
+        if (
+            RoutedEventOf(attached.Owner, name) is { } routed
+            && XamlTypeResolver.DerivesFrom(type, "global::Noesis.UIElement")
+        )
+            scan.Events.Add(
+                new EventHook(
+                    name,
+                    handler,
+                    element,
+                    routed,
+                    XamlTypeResolver.Fqn(attached.Event.Type)
+                )
+            );
+        else if (
+            SymbolEqualityComparer.Default.Equals(resolver.FindEvent(type, name), attached.Event)
+        )
+            scan.Events.Add(new EventHook(name, handler, element));
+        else
+            scan.UnresolvedHandlers = true;
+    }
+
+    static string? RoutedEventOf(ITypeSymbol owner, string name)
+    {
+        for (var type = owner; type is not null; type = type.BaseType)
+        {
+            foreach (var member in type.GetMembers(name + "Event"))
+            {
+                var memberType = member switch
+                {
+                    IPropertySymbol
+                    {
+                        IsStatic: true,
+                        DeclaredAccessibility: Accessibility.Public
+                    } p => p.Type,
+                    IFieldSymbol
+                    {
+                        IsStatic: true,
+                        DeclaredAccessibility: Accessibility.Public
+                    } f => f.Type,
+                    _ => null,
+                };
+
+                if (
+                    memberType is not null
+                    && XamlTypeResolver.Fqn(memberType) == "global::Noesis.RoutedEvent"
+                )
+                    return $"{XamlTypeResolver.Fqn(type)}.{name}Event";
+            }
+        }
+
+        return null;
+    }
+
     static bool IsHandlerShaped(XAttribute attribute) =>
         !attribute.IsNamespaceDeclaration
         && attribute.Name.NamespaceName != XamlTypeResolver.DirectiveNs
@@ -124,9 +222,17 @@ static class XamlCodeBehind
         using (w.Block("public void InitializeComponent()"))
         {
             if (compiled)
+            {
                 w.Line("BuildXamlTree();");
+            }
             else
+            {
+                // A reload rebuilds the tree, so a cached element would be the detached one.
+                foreach (var name in Distinct(scan.Names))
+                    w.Line($"_{name.Name} = null;");
+
                 w.Line($"global::Noesis.GUI.LoadComponent(this, \"{logicalName}\");");
+            }
         }
 
         foreach (var name in Distinct(scan.Names))
@@ -171,7 +277,11 @@ static class XamlCodeBehind
                     )
                 )
                 {
-                    w.Line($"{source}.{hook.EventName} += {hook.HandlerName};");
+                    w.Line(
+                        hook.RoutedEvent is { } routed
+                            ? $"{source}.AddHandler({routed}, new {hook.HandlerType}({hook.HandlerName}));"
+                            : $"{source}.{hook.EventName} += {hook.HandlerName};"
+                    );
                     w.Line("return true;");
                 }
             }

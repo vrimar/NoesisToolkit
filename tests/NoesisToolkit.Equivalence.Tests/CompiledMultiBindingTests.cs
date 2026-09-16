@@ -210,6 +210,50 @@ public sealed class CompiledMultiBindingTests
     }
 
     [Test]
+    public async Task A_null_root_reaches_the_converter_as_the_native_engine_hands_it_over()
+    {
+        NoesisRuntime.Start();
+
+        var nativeText = new TextBlock();
+        var multi = new MultiBinding { Converter = new Join() };
+        multi.Bindings.Add(new Binding());
+        multi.Bindings.Add(
+            new Binding(nameof(FrameworkElement.Tag))
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.Self),
+            }
+        );
+        multi.Bindings.Add(new Binding(nameof(SpikeItem.Label)));
+        BindingOperations.SetBinding(nativeText, TextBlock.TextProperty, multi);
+
+        var compiledText = new TextBlock();
+        CompiledMultiBinding.Bind(
+            compiledText,
+            TextBlock.TextProperty,
+            new CompiledMultiBindingSpec
+            {
+                Parts =
+                [
+                    new CompiledBindingPart(),
+                    new CompiledBindingPart
+                    {
+                        Source = e => e,
+                        SourceProperty = FrameworkElement.TagProperty,
+                    },
+                    new CompiledBindingPart { Hops = [Hop.Label] },
+                ],
+                Converter = new Join(),
+                TargetType = typeof(string),
+                Convert = v => v as string,
+            }
+        );
+
+        NoesisRuntime.Show(nativeText, compiledText);
+        await Assert.That(nativeText.Text).IsEqualTo(",,?");
+        await Assert.That(compiledText.Text).IsEqualTo(nativeText.Text);
+    }
+
+    [Test]
     public async Task A_string_format_multi_binding_lands_where_the_native_one_lands()
     {
         NoesisRuntime.Start();

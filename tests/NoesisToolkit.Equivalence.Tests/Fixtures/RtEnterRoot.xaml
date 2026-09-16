@@ -1,0 +1,21 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.RtEnterRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="t:RtEnterModel"
+>
+  <StackPanel>
+    <TextBox
+      x:Name="Typed"
+      Width="200"
+      Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+    />
+    <TextBox x:Name="Blurred" Width="200" Text="{Binding Text}" />
+    <TextBox x:Name="Elsewhere" Width="200" />
+    <CheckBox x:Name="Check" IsChecked="{Binding Flag}" />
+    <Slider x:Name="Slide" Maximum="100" Value="{Binding Amount}" />
+  </StackPanel>
+</UserControl>

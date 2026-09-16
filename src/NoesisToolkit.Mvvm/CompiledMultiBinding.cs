@@ -129,9 +129,16 @@ public sealed class CompiledMultiBinding
         _pushing = true;
         try
         {
+            if (ReferenceEquals(combined, Binding.DoNothing))
+                return;
+
+            var value = ReferenceEquals(combined, DependencyProperty.UnsetValue)
+                ? combined
+                : _spec.Convert(combined);
+
             // A failed binding still occupies the slot, so the metadata default is what shows.
-            if (!ReferenceEquals(combined, DependencyProperty.UnsetValue))
-                Assign(_spec.Convert(combined));
+            if (!ReferenceEquals(value, DependencyProperty.UnsetValue))
+                Assign(value);
             else if (_clearWhenUnset)
                 _target.ClearValue(_property);
             else

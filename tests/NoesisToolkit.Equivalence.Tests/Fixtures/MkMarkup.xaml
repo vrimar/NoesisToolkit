@@ -1,0 +1,85 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.MkMarkupRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=mscorlib"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests"
+>
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="MkBrush" Color="#FF123456" />
+    <t:MkItem x:Key="MkSource" Name="from-resource" />
+    <t:MkParameterConverter x:Key="MkSingle" />
+    <t:MkMultiParameterConverter x:Key="MkMulti" />
+    <sys:String x:Key="MkFormat">[{0}]</sys:String>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <Border x:Name="StaticPayload" t:MkMarker.Payload="{StaticResource MkBrush}" />
+    <Border x:Name="DynamicPayload" t:MkMarker.Payload="{DynamicResource MkBrush}" />
+    <Border x:Name="TypedFill" t:MkMarker.Fill="{StaticResource MkBrush}" />
+
+    <TextBlock x:Name="SourceKnob" Text="{Binding Name, Source={StaticResource MkSource}}" />
+    <TextBlock
+      x:Name="ParameterKnob"
+      Text="{Binding Name, Converter={StaticResource MkSingle}, ConverterParameter={StaticResource MkBrush}}"
+    />
+    <Border x:Name="FallbackKnob" Tag="{Binding Missing, FallbackValue={StaticResource MkBrush}}" />
+    <Border x:Name="NullKnob" Tag="{Binding Nothing, TargetNullValue={StaticResource MkBrush}}" />
+
+    <TextBlock x:Name="MultiNullParameter">
+      <TextBlock.Text>
+        <MultiBinding Converter="{StaticResource MkMulti}" ConverterParameter="{x:Null}">
+          <Binding Path="Name" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+    <TextBlock x:Name="MultiResourceParameter">
+      <TextBlock.Text>
+        <MultiBinding
+          Converter="{StaticResource MkMulti}"
+          ConverterParameter="{StaticResource MkBrush}"
+        >
+          <Binding Path="Name" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+    <TextBlock x:Name="MultiTypeParameter">
+      <TextBlock.Text>
+        <MultiBinding Converter="{StaticResource MkMulti}" ConverterParameter="{x:Type Border}">
+          <Binding Path="Name" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+    <Border x:Name="MultiFallback">
+      <Border.Tag>
+        <MultiBinding
+          Converter="{StaticResource MkMulti}"
+          ConverterParameter="unset"
+          FallbackValue="{StaticResource MkBrush}"
+        >
+          <Binding Path="Name" />
+        </MultiBinding>
+      </Border.Tag>
+    </Border>
+    <Border x:Name="MultiNull">
+      <Border.Tag>
+        <MultiBinding
+          Converter="{StaticResource MkMulti}"
+          ConverterParameter="null"
+          TargetNullValue="{StaticResource MkBrush}"
+        >
+          <Binding Path="Name" />
+        </MultiBinding>
+      </Border.Tag>
+    </Border>
+    <TextBlock x:Name="MultiFormat">
+      <TextBlock.Text>
+        <MultiBinding StringFormat="{StaticResource MkFormat}">
+          <Binding Path="Name" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+
+    <Image x:Name="RootImage" Source="img/probe.png" />
+  </StackPanel>
+</UserControl>

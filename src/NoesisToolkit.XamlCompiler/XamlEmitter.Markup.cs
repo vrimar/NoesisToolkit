@@ -170,26 +170,35 @@ sealed partial class XamlEmitter
     {
         if (call.Name == "TemplateBinding")
         {
-            var source = call.Positional.FirstOrDefault();
-            if (source is null)
-            {
-                return Fail("{TemplateBinding} has no source property");
-            }
-
-            if (call.Named.Count > 0)
-            {
-                return Fail($"TemplateBinding.{call.Named[0].Key} is not supported");
-            }
-
-            var name = NextName("templatebinding");
-            ClassifyFallback();
-            _lines.Add($"var {name} = new global::Noesis.Binding({Quote(source)});");
-            _lines.Add($"{name}.RelativeSource = global::Noesis.RelativeSource.TemplatedParent;");
-            return name;
+            DeadMarkup.Add("a {TemplateBinding} that is not an element's attribute is left unset");
+            return null;
         }
 
         return EmitBinding(element, call);
     }
+
+    static readonly System.Text.RegularExpressions.Regex PrefixedPathOwner = new(
+        @"\((\w+):(\w+)\.",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant
+    );
+
+    // Outside the parser no xmlns is in scope, so the engine can only find an owner by its type name.
+    string NativePath(XElement scope, string path) =>
+        PrefixedPathOwner.Replace(
+            path,
+            match =>
+                ResolveTypeSymbol(scope, match.Groups[1].Value + ":" + match.Groups[2].Value)
+                    is { IsGenericType: false } owner
+                    ? "(" + EngineTypeName(owner) + "."
+                    : match.Value
+        );
+
+    static string EngineTypeName(INamedTypeSymbol type) =>
+        type.ContainingAssembly?.Name == "Noesis.GUI" ? type.Name
+        : type.ContainingType is { } outer ? EngineTypeName(outer) + "+" + type.Name
+        : type.ContainingNamespace is { IsGlobalNamespace: false } ns
+            ? ns.ToDisplayString() + "." + type.Name
+        : type.Name;
 
     string? EmitBinding(XElement element, MarkupCall call)
     {
@@ -200,7 +209,7 @@ sealed partial class XamlEmitter
         _lines.Add(
             path is null
                 ? $"var {name} = new global::Noesis.Binding();"
-                : $"var {name} = new global::Noesis.Binding({Quote(path)});"
+                : $"var {name} = new global::Noesis.Binding({Quote(NativePath(element, path))});"
         );
 
         foreach (var pair in call.Named)
@@ -244,15 +253,11 @@ sealed partial class XamlEmitter
                 case "FallbackValue":
                 case "TargetNullValue":
                 case "ConverterParameter":
+                case "Source":
                 {
-                    var value = pair.Value is MarkupCall nestedValue
-                        ? MarkupValue(element, nestedValue, null)
-                        : Quote(Text(pair.Value));
-
-                    if (value is null)
+                    if (!EmitKnob(element, name, "Binding", pair.Key, pair.Value))
                         return null;
 
-                    _lines.Add($"{name}.{pair.Key} = {value};");
                     continue;
                 }
                 case "RelativeSource":
@@ -276,24 +281,47 @@ sealed partial class XamlEmitter
 
                     continue;
                 }
-                case "Source":
-                {
-                    var source = pair.Value is MarkupCall nestedSource
-                        ? MarkupValue(element, nestedSource, null)
-                        : Quote(Text(pair.Value));
-
-                    if (source is null)
-                        return null;
-
-                    _lines.Add($"{name}.Source = {source};");
-                    continue;
-                }
                 default:
                     return Fail($"Binding.{pair.Key} is not supported");
             }
         }
 
         return name;
+    }
+
+    bool EmitKnob(XElement element, string binding, string owner, string knob, object value)
+    {
+        var text = knob == "StringFormat";
+
+        switch (value)
+        {
+            // The parser refuses to store a resource reference on a binding, so the knob stays unset.
+            case MarkupCall { Name: "DynamicResource" }:
+                DeadMarkup.Add($"{owner}.{knob} cannot take a {{DynamicResource}}");
+                return true;
+            case MarkupCall { Name: "StaticResource" } resource:
+            {
+                var key = ResourceKeyExpression(element, resource);
+                if (key is null)
+                    return false;
+
+                var found = ResourceValueExpression(key);
+                _lines.Add($"{binding}.{knob} = {(text ? $"{found} as string" : found)};");
+                return true;
+            }
+            case MarkupCall nested:
+            {
+                var expression = MarkupValue(element, nested, null);
+                if (expression is null)
+                    return false;
+
+                _lines.Add($"{binding}.{knob} = {expression};");
+                return true;
+            }
+            default:
+                _lines.Add($"{binding}.{knob} = {Quote(Text(value))};");
+                return true;
+        }
     }
 
     /// <summary>A Binding seals on first use, well before the graph settles, so a converter cannot
@@ -430,9 +458,18 @@ sealed partial class XamlEmitter
                     or "TargetNullValue"
             )
             {
-                _lines.Add(
-                    $"{name}.{attribute.Name.LocalName} = {Quote(XamlMarkupParser.Unescape(attribute.Value))};"
-                );
+                object value = XamlMarkupParser.Unescape(attribute.Value);
+                if (XamlMarkupParser.IsMarkup(attribute.Value))
+                {
+                    if (XamlMarkupParser.Parse(attribute.Value) is not { } call)
+                        return Fail($"could not parse '{attribute.Value}'");
+
+                    value = call;
+                }
+
+                if (!EmitKnob(element, name, "MultiBinding", attribute.Name.LocalName, value))
+                    return null;
+
                 continue;
             }
 

@@ -24,6 +24,8 @@ static class Refusals
         // A compiled write is a local value; these write below one, so winning is the defect.
         ["trigger-target-unnamed"] = RefusalKind.Boundary,
         ["trigger-setter-outranked"] = RefusalKind.Boundary,
+        ["binding-outranked-by-template-trigger"] = RefusalKind.Boundary,
+        ["multi-binding-outranked-by-template-trigger"] = RefusalKind.Boundary,
 
         // Only a dependency property raises anything to watch.
         ["element-member-is-not-a-dependency-property"] = RefusalKind.Boundary,
@@ -47,8 +49,24 @@ static class Refusals
         // SetValue dispatches on the declared type, so a near-enough value is a crash.
         ["value-does-not-fit-the-slot"] = RefusalKind.Boundary,
 
+        // What the engine shows depends on the value's run-time type, or it shows nothing at all.
+        ["text-conversion-unlike-native"] = RefusalKind.Boundary,
+
+        // The engine formats these with rules of its own the compiler does not mirror.
+        ["string-format-unlike-native"] = RefusalKind.Gap,
+
+        // The managed side cannot read or write a slot whose type it never registered.
+        ["native-enum-unregistered"] = RefusalKind.Boundary,
+
         // The write would feed the next read its own result.
         ["target-is-the-data-context"] = RefusalKind.Boundary,
+        ["target-adopts-its-content-as-data-context"] = RefusalKind.Boundary,
+        ["presenter-content-in-a-template"] = RefusalKind.Boundary,
+        ["multi-binding-presenter-content-in-a-template"] = RefusalKind.Boundary,
+        ["multi-binding-target-is-the-data-context"] = RefusalKind.Boundary,
+        ["multi-binding-target-adopts-its-content-as-data-context"] = RefusalKind.Boundary,
+        ["compile-bindings-is-not-a-boolean"] = RefusalKind.Author,
+        ["multi-binding-compile-bindings-is-not-a-boolean"] = RefusalKind.Author,
 
         // A resource or binding value is a live lookup, which a constant cannot express.
         ["trigger-value-is-a-lookup"] = RefusalKind.Boundary,

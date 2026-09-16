@@ -1,0 +1,9 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.ResBareRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="Res.Bare" Color="#FF102030" />
+  </UserControl.Resources>
+</UserControl>

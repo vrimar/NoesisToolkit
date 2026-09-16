@@ -1,0 +1,38 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.CbParsedNamesRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <StackPanel>
+    <ListView Height="60">
+      <ListView.View>
+        <GridView>
+          <GridViewColumn Width="50" DisplayMemberBinding="{Binding Length}">
+            <GridViewColumn.Header>
+              <TextBlock x:Name="HeaderText" Text="header" />
+            </GridViewColumn.Header>
+          </GridViewColumn>
+        </GridView>
+      </ListView.View>
+    </ListView>
+    <TextBlock x:Name="HeaderEcho" Text="{Binding Text, ElementName=HeaderText}" />
+
+    <VirtualizingWrapPanel x:Name="Wrap" Width="200" Height="40">
+      <Button x:Name="Go" Width="30" />
+    </VirtualizingWrapPanel>
+    <TextBlock x:Name="GoEcho" Text="{Binding Width, ElementName=Go}" />
+
+    <ContentControl x:Name="Templated" Content="item">
+      <ContentControl.ContentTemplate>
+        <DataTemplate>
+          <StackPanel>
+            <VirtualizingWrapPanel Width="200" Height="40">
+              <TextBlock x:Name="Inner" Text="inner" />
+            </VirtualizingWrapPanel>
+            <TextBlock x:Name="InnerEcho" Text="{Binding Text, ElementName=Inner}" />
+          </StackPanel>
+        </DataTemplate>
+      </ContentControl.ContentTemplate>
+    </ContentControl>
+  </StackPanel>
+</UserControl>

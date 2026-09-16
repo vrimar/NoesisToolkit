@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
 
@@ -48,14 +49,12 @@ sealed partial class XamlEmitter
     {
         var content = new List<XElement>();
 
-        // First and in scope for the subtree: StaticResource resolves lexically outward.
+        // In scope only after its own position: StaticResource resolves where the parser meets it.
         var resources = element
             .Elements()
             .FirstOrDefault(e => e.Name.LocalName.EndsWith(".Resources", StringComparison.Ordinal));
 
         var depth = _dictionaries.Count;
-        if (resources is not null)
-            ApplyPropertyElement(element, target, type, resources, resources.Name.LocalName);
 
         try
         {
@@ -68,15 +67,15 @@ sealed partial class XamlEmitter
                     continue;
                 }
 
-                if (ReferenceEquals(child, resources))
-                    continue;
-
-                // Only the resources element, handled above, may leave its dictionary in scope.
                 var before = _dictionaries.Count;
                 ApplyPropertyElement(element, target, type, child, local);
-                if (_dictionaries.Count > before)
+                if (!ReferenceEquals(child, resources) && _dictionaries.Count > before)
                     _dictionaries.RemoveRange(before, _dictionaries.Count - before);
             }
+
+            // Once any content precedes it, the parser applies resources after all content is built.
+            if (_dictionaries.Count > depth && content.Count > 0 && content[0].IsBefore(resources!))
+                _dictionaries.RemoveAt(_dictionaries.Count - 1);
 
             if (content.Count == 0)
             {
@@ -98,7 +97,8 @@ sealed partial class XamlEmitter
                 contentProperty!,
                 property.Type,
                 content,
-                property.SetMethod is not null
+                property.SetMethod is not null,
+                type
             );
         }
         finally
@@ -117,9 +117,6 @@ sealed partial class XamlEmitter
 
     void ApplyTextContent(XElement element, string target, INamedTypeSymbol type)
     {
-        if (TextOf(element) is not { } value)
-            return;
-
         if (TextConstructorOf(element, type) != TextConstructor.None)
             return;
 
@@ -127,9 +124,15 @@ sealed partial class XamlEmitter
 
         if (property is not null && IsInlineCollection(property.Type))
         {
-            _lines.Add($"{target}.{contentProperty}.Add(new global::Noesis.Run({Quote(value)}));");
+            if (ContentNodes(element, type).OfType<string>().LastOrDefault() is { } run)
+                _lines.Add(
+                    $"{target}.{contentProperty}.Add(new global::Noesis.Run({Quote(run)}));"
+                );
             return;
         }
+
+        if (TextOf(element) is not { } value)
+            return;
 
         var converted = property?.SetMethod is null
             ? null
@@ -154,7 +157,8 @@ sealed partial class XamlEmitter
         string propertyName,
         ITypeSymbol propertyType,
         List<XElement> content,
-        bool settable
+        bool settable,
+        INamedTypeSymbol owner
     )
     {
         if (XamlTypeResolver.IsCollection(propertyType))
@@ -164,12 +168,15 @@ sealed partial class XamlEmitter
                 itemType is not null
                 && XamlTypeResolver.DerivesFrom(itemType, "global::Noesis.Inline");
 
-            foreach (var node in Ordered(content, inlines))
+            IEnumerable<object> nodes =
+                inlines && content[0].Parent is { } parent ? ContentNodes(parent, owner) : content;
+
+            foreach (var node in nodes)
             {
-                if (node is XText text)
+                if (node is string run)
                 {
                     _lines.Add(
-                        $"{target}.{propertyName}.Add(new global::Noesis.Run({Quote(Collapse(text.Value))}));"
+                        $"{target}.{propertyName}.Add(new global::Noesis.Run({Quote(run)}));"
                     );
                     continue;
                 }
@@ -199,30 +206,116 @@ sealed partial class XamlEmitter
             _lines.Add($"{target}.{propertyName} = {only};");
     }
 
-    /// <summary>Content in document order, keeping interleaved text only where it is meaningful.</summary>
-    static IEnumerable<XNode> Ordered(List<XElement> content, bool includeText)
+    // A null owner shapes text as a plain value, not inlines.
+    IEnumerable<object> ContentNodes(XElement parent, INamedTypeSymbol? inlineOwner)
     {
-        if (!includeText || content.Count == 0)
-            return content;
+        var preserve = PreservesSpace(parent);
+        var significant =
+            inlineOwner is not null && SpaceSignificant.Contains(XamlTypeResolver.Fqn(inlineOwner));
 
-        var parent = content[0].Parent;
-        if (parent is null)
-            return content;
+        XElement? previous = null;
+        var text = new System.Text.StringBuilder();
+        var pending = false;
 
-        return parent
-            .Nodes()
-            .Where(n =>
-                n is XElement element && !element.Name.LocalName.Contains(".")
-                || n is XText text && text.Value.Trim().Length > 0
-            );
+        foreach (var node in parent.Nodes())
+        {
+            if (node is XText run)
+            {
+                text.Append(run.Value);
+                pending = true;
+                continue;
+            }
+
+            if (node is not XElement element)
+                continue;
+
+            if (pending && ShapeRun(text.ToString(), previous, element) is { } shaped)
+                yield return shaped;
+
+            text.Clear();
+            pending = false;
+
+            if (element.Name.LocalName.Contains("."))
+                continue;
+
+            previous = element;
+            yield return element;
+        }
+
+        if (pending && ShapeRun(text.ToString(), previous, null) is { } last)
+            yield return last;
+
+        string? ShapeRun(string raw, XElement? before, XElement? after)
+        {
+            if (preserve)
+                return raw.Length > 0 ? raw : null;
+
+            var collapsed = CollapseSpace(raw);
+
+            if (!significant)
+                collapsed = collapsed.Trim(' ');
+            else if (before is null || IsLineBreak(before))
+                collapsed =
+                    before is null && after is null
+                        ? collapsed.Trim(' ')
+                        : collapsed.TrimStart(' ');
+            else if (after is null || IsLineBreak(after))
+                collapsed = collapsed.TrimEnd(' ');
+
+            return collapsed.Length > 0 ? collapsed : null;
+        }
     }
 
-    // The parser collapses each interleaved text run and trims its edges; match that exactly.
-    static string Collapse(string text) =>
-        string.Join(
-            " ",
-            text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-        );
+    // Only these exact native types keep a run's edge space; subclasses and Hyperlink trim both.
+    static readonly HashSet<string> SpaceSignificant = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "global::Noesis.TextBlock",
+        "global::Noesis.Span",
+        "global::Noesis.Bold",
+        "global::Noesis.Italic",
+    };
+
+    bool IsLineBreak(XElement element) =>
+        resolver.SymbolOf(element) is { } symbol
+        && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.LineBreak");
+
+    static bool PreservesSpace(XElement element)
+    {
+        for (var e = element; e is not null; e = e.Parent)
+        {
+            if (e.Attribute(XNamespace.Xml + "space") is { } space)
+                return space.Value == "preserve";
+        }
+
+        return false;
+    }
+
+    // XML whitespace only: a non-breaking or ideographic space is text.
+    static string CollapseSpace(string text)
+    {
+        var builder = new System.Text.StringBuilder(text.Length);
+        var space = false;
+
+        foreach (var c in text)
+        {
+            if (c is ' ' or '\t' or '\r' or '\n')
+            {
+                space = true;
+                continue;
+            }
+
+            if (space)
+                builder.Append(' ');
+
+            space = false;
+            builder.Append(c);
+        }
+
+        if (space)
+            builder.Append(' ');
+
+        return builder.ToString();
+    }
 
     // Add(T) is declared on the generic base, so the item type is only visible up the chain.
     static ITypeSymbol? CollectionItemType(ITypeSymbol collection)
@@ -313,6 +406,10 @@ sealed partial class XamlEmitter
                     ? elements[0]
                     : null;
 
+            // The parser rejects a keyed wrapper and leaves the element's dictionary as it was.
+            if (wrapper?.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is not null)
+                return;
+
             var dictionary = NextName("resources");
 
             if (wrapper?.Attribute("Source") is not null)
@@ -324,11 +421,23 @@ sealed partial class XamlEmitter
                 _lines.Add($"var {dictionary} = (global::Noesis.ResourceDictionary){built};");
                 _dictionaries.Add(dictionary);
             }
-            else
+            else if (wrapper is not null)
             {
                 _lines.Add($"var {dictionary} = new global::Noesis.ResourceDictionary();");
                 _dictionaries.Add(dictionary);
-                EmitDictionaryBody(wrapper ?? child, dictionary);
+                EmitDictionaryBody(wrapper, dictionary);
+            }
+            else
+            {
+                // Bare entries join the dictionary the element already holds rather than replace it.
+                _lines.Add(
+                    property.SetMethod is null
+                        ? $"var {dictionary} = {target}.{propertyName};"
+                        : $"var {dictionary} = {target}.{propertyName} ?? ({target}.{propertyName} = new global::Noesis.ResourceDictionary());"
+                );
+                _dictionaries.Add(dictionary);
+                EmitDictionaryBody(child, dictionary);
+                return;
             }
 
             _lines.Add($"{target}.{propertyName} = {dictionary};");
@@ -360,12 +469,29 @@ sealed partial class XamlEmitter
 
         if (elements.Length == 0)
         {
-            if (child.Nodes().OfType<XText>().FirstOrDefault() is { } text)
+            if (IsInlineCollection(property.Type))
             {
-                var converted = ConvertValue(child, text.Value.Trim(), property.Type);
-                if (converted is not null)
-                    _lines.Add($"{target}.{propertyName} = {converted};");
+                if (ContentNodes(child, type).OfType<string>().LastOrDefault() is { } run)
+                    _lines.Add(
+                        $"{target}.{propertyName}.Add(new global::Noesis.Run({Quote(run)}));"
+                    );
+
+                return;
             }
+
+            if (TextOf(child) is not { } text)
+                return;
+
+            // Converted against the type Property names, as the attribute form is.
+            if (IsSetterLike(type) && propertyName == "Value" && !XamlMarkupParser.IsMarkup(text))
+            {
+                ApplySetterValue(child, target, text);
+                return;
+            }
+
+            var converted = ConvertValue(child, text, property.Type);
+            if (converted is not null)
+                _lines.Add($"{target}.{propertyName} = {converted};");
 
             return;
         }
@@ -375,7 +501,8 @@ sealed partial class XamlEmitter
             propertyName,
             property.Type,
             elements.ToList(),
-            property.SetMethod is not null
+            property.SetMethod is not null,
+            type
         );
     }
 

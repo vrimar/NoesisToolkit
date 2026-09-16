@@ -1,0 +1,78 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.StRedirectFixture"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="t:StModel"
+  Width="400"
+  Height="900"
+>
+  <UserControl.Resources>
+    <t:StChildOfConverter x:Key="ChildOf" />
+    <t:JoinConverter x:Key="Join" />
+    <t:StSub x:Key="Sub" />
+    <DataTemplate x:Key="Row">
+      <TextBlock x:Name="RowName" Text="{Binding Name}" />
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <TextBlock x:Name="Plain" Text="{Binding Name}" />
+
+    <StackPanel DataContext="{Binding Me, Converter={StaticResource ChildOf}}">
+      <TextBlock x:Name="Converted" Text="{Binding Name}" />
+    </StackPanel>
+    <StackPanel DataContext="{Binding Child, FallbackValue={x:Null}}">
+      <TextBlock x:Name="Knob" Text="{Binding Name}" />
+    </StackPanel>
+    <StackPanel DataContext="{StaticResource Sub}">
+      <TextBlock x:Name="Resource" Text="{Binding Name}" />
+    </StackPanel>
+    <Border x:Name="Holder" DataContext="{Binding Child}" />
+    <StackPanel DataContext="{Binding DataContext, ElementName=Holder}">
+      <TextBlock x:Name="FromElement" Text="{Binding Name}" />
+    </StackPanel>
+    <StackPanel>
+      <StackPanel.DataContext>
+        <Binding Path="Me" Converter="{StaticResource ChildOf}" />
+      </StackPanel.DataContext>
+      <TextBlock x:Name="PropertyElement" Text="{Binding Name}" />
+    </StackPanel>
+    <StackPanel DataContext="{Binding Child}">
+      <TextBlock x:Name="Redirected" Text="{Binding Name}" />
+    </StackPanel>
+
+    <ContentControl Content="{Binding Me, Converter={StaticResource ChildOf}}">
+      <ContentControl.ContentTemplate>
+        <DataTemplate>
+          <TextBlock x:Name="Hosted" Text="{Binding Name}" />
+        </DataTemplate>
+      </ContentControl.ContentTemplate>
+    </ContentControl>
+
+    <ItemsControl ItemsSource="{Binding Models}" ItemTemplate="{StaticResource Row}" />
+
+    <ContentPresenter x:Name="PresenterMulti" Content="{Binding Child}">
+      <ContentPresenter.Tag>
+        <MultiBinding Converter="{StaticResource Join}">
+          <Binding Path="Name" />
+        </MultiBinding>
+      </ContentPresenter.Tag>
+    </ContentPresenter>
+
+    <StackPanel ntk:CompileBindings="false">
+      <TextBlock x:Name="LowerOff" Text="{Binding Name}" />
+      <StackPanel ntk:CompileBindings="true">
+        <TextBlock x:Name="LowerOn" Text="{Binding Name}" />
+      </StackPanel>
+    </StackPanel>
+    <StackPanel ntk:CompileBindings=" FALSE ">
+      <TextBlock x:Name="UpperOff" Text="{Binding Name}" />
+    </StackPanel>
+    <StackPanel ntk:CompileBindings="0">
+      <TextBlock x:Name="Unparsed" Text="{Binding Name}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>
