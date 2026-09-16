@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.1.2] - 2026-09-16
+
+### Fixed
+
+- A Native AOT application can publish against **NoesisToolkit.Mvvm**. 0.1.0 and 0.1.1 failed
+  `IL2075` in the dependency watcher, which reflects over a Noesis property's owner type to tell an
+  attached property from a plain one. That reflection only ever reaches types in the Noesis
+  assembly, which an AOT Noesis application has to root whole anyway.
+
 ## [0.1.1] - 2026-09-16
 
 ### Added
