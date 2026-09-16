@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
@@ -84,6 +85,13 @@ public static class DependencyWatcher
     static string PathTo(DependencyProperty property) =>
         IsAttached(property) ? $"({property.OwnerType.Name}.{property.Name})" : property.Name;
 
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075:DynamicallyAccessedMembers",
+        Justification = "NeedsProbe admits only a property owned by the Noesis assembly, and a "
+            + "Noesis application has to root that assembly whole because the engine resolves XAML "
+            + "types reflectively at load."
+    )]
     static bool IsAttached(DependencyProperty property) =>
         property.OwnerType.GetProperty(
             property.Name,
