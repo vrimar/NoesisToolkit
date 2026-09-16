@@ -25,6 +25,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     public const string UnresolvedNamespaceId = "NTK2002";
     public const string UnresolvedStaticId = "NTK2003";
     public const string UndeclaredContextId = "NTK2004";
+    public const string UnresolvedEnumValueId = "NTK2005";
 
     private const string EnabledProperty = "build_property.NoesisAnalyzeXamlBindings";
 
@@ -73,11 +74,23 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             + "to be checked, which is only possible where the DataContext type is stated."
     );
 
+    private static readonly DiagnosticDescriptor UnresolvedEnumValueRule = new(
+        UnresolvedEnumValueId,
+        title: "Enum value does not resolve",
+        messageFormat: "'{0}' is not a member of '{1}'; this throws when the element first lays out",
+        category: "Reliability",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Noesis parses an enum-valued attribute from its string at load time, so a "
+            + "member left behind by a rename reaches the lookup as a name nothing maps."
+    );
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
             UnresolvedBindingRule,
             UnresolvedNamespaceRule,
             UnresolvedStaticRule,
+            UnresolvedEnumValueRule,
             UndeclaredContextRule
         );
 
@@ -118,6 +131,9 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
 
                 foreach (var reference in BindingScanner.ScanStaticReferences(content))
                     VerifyStatic(ctx, reference, namespaces, text);
+
+                foreach (var reference in TokenScanner.Scan(content))
+                    VerifyEnumValue(ctx, reference, namespaces, text);
 
                 var scan = BindingScanner.ScanAll(
                     content,
@@ -200,6 +216,72 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
                 $"{@namespace}.{reference.TypeName}.{reference.MemberName}"
             )
         );
+    }
+
+    private static void VerifyEnumValue(
+        AdditionalFileAnalysisContext context,
+        TokenReference reference,
+        Dictionary<string, string> namespaces,
+        SourceText text
+    )
+    {
+        if (!namespaces.TryGetValue(reference.Prefix, out var @namespace))
+            return;
+
+        var type = TypeLookup.ByName(context.Compilation, $"{@namespace}.{reference.TypeName}");
+        if (type is null)
+            return;
+
+        var enumType = reference.IsExtension
+            ? FirstEnumProperty(type)
+            : (FindMember(type, reference.Member) as IPropertySymbol)?.Type as INamedTypeSymbol;
+
+        if (enumType is not { TypeKind: TypeKind.Enum } || IsNoesisOwn(enumType))
+            return;
+
+        foreach (var member in enumType.GetMembers())
+        {
+            if (member is IFieldSymbol { HasConstantValue: true } && member.Name == reference.Value)
+                return;
+        }
+
+        context.ReportDiagnostic(
+            Diagnostic.Create(
+                UnresolvedEnumValueRule,
+                LocationOf(context.AdditionalFile.Path, reference.Line, reference.Column, text),
+                reference.Value,
+                enumType.Name
+            )
+        );
+    }
+
+    private static bool IsNoesisOwn(INamedTypeSymbol type)
+    {
+        for (var ns = type.ContainingNamespace; ns is { IsGlobalNamespace: false }; )
+        {
+            if (ns.ContainingNamespace is not { IsGlobalNamespace: false })
+                return ns.Name == BindingScanner.PresentationNamespace;
+            ns = ns.ContainingNamespace;
+        }
+
+        return false;
+    }
+
+    private static INamedTypeSymbol? FirstEnumProperty(ITypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (
+                    property.SetMethod is not null
+                    && property.Type is INamedTypeSymbol { TypeKind: TypeKind.Enum } @enum
+                )
+                    return @enum;
+            }
+        }
+
+        return null;
     }
 
     private static ISymbol? FindStatic(ITypeSymbol type, string name) =>

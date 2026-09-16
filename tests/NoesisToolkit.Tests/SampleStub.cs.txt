@@ -30,6 +30,23 @@ namespace Sample.Ui
         string Label { get; }
     }
 
+    public enum BadgeTone
+    {
+        Muted,
+        Danger,
+    }
+
+    public class Badge
+    {
+        public BadgeTone Tone { get; set; }
+        public string Label { get; set; } = "";
+    }
+
+    public class BrushExtension
+    {
+        public BadgeTone Token { get; set; }
+    }
+
     public class ListHost { }
 
     public class TypedListHost : ListHost { }
