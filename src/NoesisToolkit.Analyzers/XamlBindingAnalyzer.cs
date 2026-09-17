@@ -14,8 +14,11 @@ namespace NoesisToolkit.Analyzers;
 /// binding paths reflectively at load, so a stale path renders nothing instead of failing, and a
 /// rename that misses the XAML leaves no trace until someone notices a blank field in game.
 /// <para>
-/// Reported only where the declared type settles the question. An abstract type, an interface or
-/// <see langword="object"/> says nothing about the instance behind it, so those paths go unchecked.
+/// Reported only where the types this compilation can see settle the question: the declared type and
+/// every source type deriving from or implementing it, since any of them may sit behind the
+/// DataContext. An abstract type or interface nothing here implements, a polymorphic type declared in
+/// another assembly, and <see langword="object"/> say nothing about the instance, so those paths go
+/// unchecked.
 /// </para>
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -105,7 +108,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             if (!IsTrue(options, EnabledProperty))
                 return;
 
-            var subclassed = Subclassed(start.Compilation);
+            var subtypes = Subtypes(start.Compilation);
             var extensions = XamlFiles.Extensions(options);
 
             start.RegisterAdditionalFileAction(ctx =>
@@ -140,7 +143,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
                     (candidate, wanted) => DerivesFrom(ctx.Compilation, candidate, wanted)
                 );
                 foreach (var check in scan.Checks)
-                    Verify(ctx, check, text, subclassed);
+                    Verify(ctx, check, text, subtypes);
 
                 if (!scan.CompileBindings)
                     return;
@@ -308,16 +311,17 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         AdditionalFileAnalysisContext context,
         BindingCheck check,
         SourceText text,
-        ImmutableHashSet<INamedTypeSymbol> subclassed
+        Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> subtypes
     )
     {
-        ITypeSymbol? current = TypeLookup.ByName(context.Compilation, check.ContextType);
+        var compilation = context.Compilation;
+        ITypeSymbol? current = TypeLookup.ByName(compilation, check.ContextType);
         if (current is null)
             return;
 
         foreach (var hop in check.Hops)
         {
-            current = Walk(current, hop.Path, subclassed, out _, out _);
+            current = Walk(compilation, current, hop.Path, subtypes, out _, out _);
             if (current is null)
                 return;
 
@@ -329,7 +333,10 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             }
         }
 
-        if (Walk(current, check.Path, subclassed, out var missing, out var owner) is not null)
+        if (
+            Walk(compilation, current, check.Path, subtypes, out var missing, out var owner)
+            is not null
+        )
             return;
         if (missing is null || owner is null)
             return;
@@ -344,11 +351,11 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         );
     }
 
-    // Only where the containing type is concrete enough for absence to be conclusive.
     private static ITypeSymbol? Walk(
+        Compilation compilation,
         ITypeSymbol start,
         string path,
-        ImmutableHashSet<INamedTypeSymbol> subclassed,
+        Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> subtypes,
         out string? missing,
         out ITypeSymbol? owner
     )
@@ -359,9 +366,11 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         var current = start;
         foreach (var segment in path.Split('.'))
         {
+            var derived = DerivedHere(current, subtypes);
+
             if (FindMember(current, segment) is not { } member)
             {
-                if (IsConclusive(current, subclassed))
+                if (IsConclusiveMiss(compilation, current, segment, derived))
                 {
                     missing = segment;
                     owner = current;
@@ -369,13 +378,11 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
                 return null;
             }
 
-            var next = member switch
-            {
-                IPropertySymbol property => property.Type,
-                IFieldSymbol field => field.Type,
-                _ => null,
-            };
-            if (next is null || !IsConclusive(next, subclassed))
+            if (
+                TypeOf(member) is not { } next
+                || !SubtypesAgree(derived, segment, next)
+                || !CanEnter(compilation, next, subtypes)
+            )
                 return null;
 
             current = next;
@@ -387,27 +394,123 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     private static ISymbol? FindMember(ITypeSymbol type, string name) =>
         TypeWalk.FindMember(type, name, interfaces: true);
 
-    private static bool IsConclusive(
-        ITypeSymbol type,
-        ImmutableHashSet<INamedTypeSymbol> subclassed
-    ) =>
-        type.SpecialType != SpecialType.System_Object
-        && type.TypeKind != TypeKind.Interface
-        && !type.IsAbstract
-        && !(type is INamedTypeSymbol named && subclassed.Contains(named));
+    private static ITypeSymbol? TypeOf(ISymbol member) =>
+        member switch
+        {
+            IPropertySymbol property => property.Type,
+            IFieldSymbol field => field.Type,
+            _ => null,
+        };
 
-    // A subclassed type may hold an instance whose members its declaration does not list.
-    private static ImmutableHashSet<INamedTypeSymbol> Subclassed(Compilation compilation)
+    private static List<INamedTypeSymbol>? DerivedHere(
+        ITypeSymbol type,
+        Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> subtypes
+    ) =>
+        type is INamedTypeSymbol named
+        && subtypes.TryGetValue(named.OriginalDefinition, out var derived)
+            ? derived
+            : null;
+
+    private static bool IsLocal(Compilation compilation, ITypeSymbol type) =>
+        SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, compilation.Assembly);
+
+    private static bool IsPolymorphic(ITypeSymbol type) =>
+        type.IsAbstract || type.TypeKind == TypeKind.Interface;
+
+    private static bool IsConclusiveMiss(
+        Compilation compilation,
+        ITypeSymbol type,
+        string member,
+        List<INamedTypeSymbol>? derived
+    )
     {
-        var builder = ImmutableHashSet.CreateBuilder<INamedTypeSymbol>(
+        if (type.SpecialType == SpecialType.System_Object)
+            return false;
+
+        // Another assembly's type can have subtypes this compilation never sees.
+        if (!IsLocal(compilation, type))
+            return !IsPolymorphic(type) && derived is null;
+
+        if (derived is null)
+            return !IsPolymorphic(type);
+
+        foreach (var subtype in derived)
+        {
+            if (FindMember(subtype, member) is not null)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool SubtypesAgree(
+        List<INamedTypeSymbol>? derived,
+        string member,
+        ITypeSymbol declared
+    )
+    {
+        if (derived is null)
+            return true;
+
+        foreach (var subtype in derived)
+        {
+            if (
+                FindMember(subtype, member) is { } redeclared
+                && TypeOf(redeclared) is { } type
+                && !SymbolEqualityComparer.Default.Equals(type, declared)
+            )
+                return false;
+        }
+
+        return true;
+    }
+
+    // An unseen subtype can hide a member with one of another type.
+    private static bool CanEnter(
+        Compilation compilation,
+        ITypeSymbol type,
+        Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> subtypes
+    )
+    {
+        if (type.SpecialType == SpecialType.System_Object)
+            return false;
+
+        var derived = DerivedHere(type, subtypes);
+        if (!IsPolymorphic(type) && derived is null)
+            return true;
+
+        return IsLocal(compilation, type) && derived is not null;
+    }
+
+    private static Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>> Subtypes(
+        Compilation compilation
+    )
+    {
+        var byAncestor = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(
             SymbolEqualityComparer.Default
         );
+
         foreach (var type in SourceTypes(compilation.Assembly.GlobalNamespace))
         {
-            for (var b = type.BaseType; b is not null; b = b.BaseType)
-                builder.Add(b.OriginalDefinition);
+            for (
+                var b = type.BaseType;
+                b is { SpecialType: not SpecialType.System_Object };
+                b = b.BaseType
+            )
+                Add(b.OriginalDefinition, type);
+
+            foreach (var implemented in type.AllInterfaces)
+                Add(implemented.OriginalDefinition, type);
         }
-        return builder.ToImmutable();
+
+        return byAncestor;
+
+        void Add(INamedTypeSymbol ancestor, INamedTypeSymbol type)
+        {
+            if (!byAncestor.TryGetValue(ancestor, out var list))
+                byAncestor[ancestor] = list = [];
+            list.Add(type);
+        }
     }
 
     private static IEnumerable<INamedTypeSymbol> SourceTypes(INamespaceOrTypeSymbol scope)

@@ -23,11 +23,58 @@ namespace Sample.Ui
         public int DefIdInt { get; set; }
         public ItemDef Def { get; set; } = new ItemDef();
         public IThing? Thing { get; set; }
+        public ILabelled? Labelled { get; set; }
+        public ShelfViewModel? Shelf { get; set; }
+        public System.Collections.IEnumerable? Rows { get; set; }
+        public PanelViewModel? Panel { get; set; }
+        public System.Exception? Error { get; set; }
+    }
+
+    public class PanelViewModel
+    {
+        public ItemDef Detail { get; set; } = new ItemDef();
+    }
+
+    public class BadgePanelViewModel : PanelViewModel
+    {
+        public new Badge Detail { get; set; } = new Badge();
+    }
+
+    public class GameError : System.Exception
+    {
+        public string Code { get; set; } = "";
     }
 
     public interface IThing
     {
         string Label { get; }
+    }
+
+    public interface ILabelled
+    {
+        string Label { get; }
+    }
+
+    public class Caption : ILabelled
+    {
+        public string Label { get; set; } = "";
+        public string Tone { get; set; } = "";
+    }
+
+    public abstract class ShelfViewModel
+    {
+        public string Title { get; set; } = "";
+    }
+
+    public class PointsShelfViewModel : ShelfViewModel
+    {
+        public int Balance { get; set; }
+    }
+
+    public class RowSet : System.Collections.IEnumerable
+    {
+        public System.Collections.IEnumerator GetEnumerator() =>
+            System.Linq.Enumerable.Empty<object>().GetEnumerator();
     }
 
     public enum BadgeTone

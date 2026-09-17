@@ -283,7 +283,7 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
-    public async Task An_interface_hop_stops_the_walk()
+    public async Task An_interface_nothing_implements_is_not_checked()
     {
         await Assert
             .That(
@@ -298,7 +298,7 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
-    public async Task An_abstract_context_is_not_checked()
+    public async Task An_abstract_context_nothing_derives_from_is_not_checked()
     {
         await Assert
             .That((await Bindings("AbstractViewModel", """<TextBlock Text="{Binding Nope}" />""")))
@@ -306,11 +306,122 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
-    public async Task A_subclassed_context_is_not_checked()
+    public async Task A_member_a_subclass_declares_is_not_reported()
     {
         // A DerivedViewModel instance may sit behind a BaseViewModel DataContext.
         await Assert
             .That((await Bindings("BaseViewModel", """<TextBlock Text="{Binding OnDerived}" />""")))
+            .IsEmpty();
+    }
+
+    [Test]
+    public async Task A_member_no_subclass_declares_is_reported()
+    {
+        var diagnostics = await Bindings(
+            "BaseViewModel",
+            """<TextBlock Text="{Binding Nope}" />"""
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("BaseViewModel");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Nope");
+    }
+
+    [Test]
+    [Arguments("Title")]
+    [Arguments("Balance")]
+    public async Task An_abstract_context_resolves_what_it_or_a_subclass_declares(string path)
+    {
+        await Assert
+            .That(
+                (await Bindings("ShelfViewModel", $$"""<TextBlock Text="{Binding {{path}}}" />"""))
+            )
+            .IsEmpty();
+    }
+
+    [Test]
+    public async Task An_abstract_context_reports_what_no_subclass_declares()
+    {
+        var diagnostics = await Bindings(
+            "ShelfViewModel",
+            """<TextBlock Text="{Binding Nope}" />"""
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ShelfViewModel");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Nope");
+    }
+
+    [Test]
+    public async Task The_walk_continues_through_an_abstract_hop()
+    {
+        await Assert
+            .That(
+                (
+                    await Bindings(
+                        "ItemViewModel",
+                        """<TextBlock Text="{Binding Shelf.Balance}" />"""
+                    )
+                )
+            )
+            .IsEmpty();
+
+        var bad = await Bindings("ItemViewModel", """<TextBlock Text="{Binding Shelf.Nope}" />""");
+        await Assert.That(bad.Length).IsEqualTo(1);
+        await Assert.That(bad[0].GetMessage()).Contains("Nope");
+    }
+
+    [Test]
+    [Arguments("Panel.Detail.Tone")]
+    [Arguments("Panel.Detail.Family")]
+    public async Task A_member_a_subclass_redeclares_with_another_type_stops_the_walk(string path)
+    {
+        await Assert
+            .That(
+                (await Bindings("ItemViewModel", $$"""<TextBlock Text="{Binding {{path}}}" />"""))
+            )
+            .IsEmpty();
+    }
+
+    [Test]
+    public async Task A_hop_into_another_assemblys_type_subclassed_here_stops_the_walk()
+    {
+        await Assert
+            .That(
+                (await Bindings("ItemViewModel", """<TextBlock Text="{Binding Error.Code}" />"""))
+            )
+            .IsEmpty();
+    }
+
+    [Test]
+    public async Task An_interface_is_checked_against_its_implementations()
+    {
+        await Assert
+            .That(
+                (
+                    await Bindings(
+                        "ItemViewModel",
+                        """<TextBlock Text="{Binding Labelled.Tone}" />"""
+                    )
+                )
+            )
+            .IsEmpty();
+
+        var bad = await Bindings(
+            "ItemViewModel",
+            """<TextBlock Text="{Binding Labelled.Nope}" />"""
+        );
+        await Assert.That(bad.Length).IsEqualTo(1);
+        await Assert.That(bad[0].GetMessage()).Contains("ILabelled");
+    }
+
+    [Test]
+    public async Task An_interface_from_another_assembly_is_not_checked_whatever_implements_it_here()
+    {
+        await Assert
+            .That(
+                (await Bindings("ItemViewModel", """<TextBlock Text="{Binding Rows.Count}" />"""))
+            )
             .IsEmpty();
     }
 
