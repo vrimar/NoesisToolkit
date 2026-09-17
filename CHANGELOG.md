@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.2] - 2026-09-17
+
+### Changed
+
+- **`NTK2001` checks a polymorphic DataContext against every type that can stand behind it.** A path
+  on an abstract type, an interface or a subclassed type used to go unchecked. When the type is
+  declared in the compilation that owns the document, a member neither it nor any subtype there
+  declares is now reported, and a member only a subtype declares still passes. A polymorphic type
+  from another assembly stays unchecked, and a hop stops where a subtype redeclares the member with
+  another type. Builds that treat warnings as errors fail on bindings this used to miss.
+
 ## [0.2.1] - 2026-09-16
 
 ### Fixed
@@ -129,6 +140,7 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.2.2]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.2
 [0.2.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.0
 [0.1.2]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.1.2
