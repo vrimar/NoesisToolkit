@@ -31,6 +31,12 @@
     </StackPanel>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="Content" TargetType="{x:Type t:SpikeControl}">
+    <StackPanel>
+      <t:CpHost x:Name="Hosted" Content="{TemplateBinding Label}" />
+    </StackPanel>
+  </ControlTemplate>
+
   <Style x:Key="Styled" TargetType="{x:Type t:SpikeControl}">
     <Setter Property="Template">
       <Setter.Value>

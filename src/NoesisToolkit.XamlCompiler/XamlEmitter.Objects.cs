@@ -117,6 +117,7 @@ sealed partial class XamlEmitter
             _templates.Count > 0
             && symbol.ContainingAssembly?.Name != "Noesis.GUI"
             && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ContentControl")
+            && element.Attribute("Content") is null
         )
             _lines.Add($"{name}.ClearValue(global::Noesis.ContentControl.ContentProperty);");
 

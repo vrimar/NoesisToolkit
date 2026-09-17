@@ -167,6 +167,42 @@ public sealed class CompiledTemplateBindingParityTests
     }
 
     [Test]
+    public async Task A_template_binding_into_a_managed_content_control_keeps_its_content()
+    {
+        var (native, compiled) = Sides();
+        var hosts = new List<SpikeControl>();
+
+        foreach (var side in new[] { native, compiled })
+        {
+            var host = new SpikeControl
+            {
+                Template = (ControlTemplate)side.Resources["Content"],
+                Label = "first",
+            };
+            hosts.Add(host);
+            side.Show(host);
+        }
+
+        string Shape(Side side)
+        {
+            var hosted = side.Named<CpHost>("Hosted");
+            return $"content={hosted.Content ?? "null"} local={Local(hosted, ContentControl.ContentProperty)}";
+        }
+
+        await Assert.That(Shape(native)).IsEqualTo("content=first local=NamedObject/False");
+        await Assert.That(Shape(compiled)).IsEqualTo(Shape(native));
+
+        foreach (var (side, host) in new[] { (native, hosts[0]), (compiled, hosts[1]) })
+        {
+            host.Label = "second";
+            side.Pump();
+        }
+
+        await Assert.That(Shape(compiled)).IsEqualTo(Shape(native));
+        await Assert.That(compiled.Warnings).IsEquivalentTo(native.Warnings);
+    }
+
+    [Test]
     public async Task A_control_template_in_a_style_setter_binds_against_the_style_type()
     {
         var (native, compiled) = Sides();
