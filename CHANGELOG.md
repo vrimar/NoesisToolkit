@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.1] - 2026-09-16
+
+### Fixed
+
+- A `Content="{TemplateBinding}"` on a managed `ContentControl` inside a template keeps its content;
+  it used to be cleared as the element was built, leaving the control empty.
+
 ## [0.2.0] - 2026-09-16
 
 Compiled XAML now behaves as the native parser does wherever the two were found to disagree. Each
@@ -122,6 +129,7 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.2.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.0
 [0.1.2]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.1.2
 [0.1.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.1.1
