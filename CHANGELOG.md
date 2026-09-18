@@ -3,6 +3,36 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.4] - 2026-09-18
+
+### Added
+
+- **`NoesisToolkit.Testing`, a harness that proves controls are collectable.**
+  `ControlCollectability.Probe` adds every constructible control in the assemblies you name to a live
+  renderless view, removes it, collects, and reports the ones the heap still holds — the leaks
+  `NTK2101` and `NTK2102` cannot see because markup wired them or a native property picked them up at
+  runtime. `Unavailable()` says whether the environment can host the probe, so a headless machine
+  skips rather than reporting a false pass. Run it with the theme installed: an untemplated control
+  has no template children to subscribe to and no bindings to carry.
+- **`NTK2102` refuses a command that captures the control exposing it.** Setting a native `Command`
+  makes Noesis hold the managed command, which holds everything its delegates captured, so a control
+  that binds such a command into its own template closes a cycle through native code and never dies.
+  It covers a command the control stores itself and a `[DelegateCommand]` on one of its instance
+  methods, reported at the attribute because the property it generates is excluded as generated code.
+
+### Fixed
+
+- **The equivalence suite no longer fails once every several runs.** Noesis records the thread that
+  owns each object and refuses access from any other; `[NotInParallel]` serialises tests but still
+  hands each one whichever pool thread is free, so a fixture built under one test and read under the
+  next logged "a different thread owns it" into the warnings a parity assertion compares. Every test
+  and hook now runs on one pump thread for the process, and a test fails if it ever does not.
+- **`NTK2101` no longer reads remove-before-add as a teardown.** A `-=` the same flow re-attaches
+  below guards against a second `OnApplyTemplate` stacking the handler; it never runs when the
+  element goes away, so the subscription still pins the element for the process lifetime. Only a
+  `-=` that some other path can reach now balances one, and the message names which of the two it
+  found. Branches of one `if` stay exempt: those are alternatives, so neither re-attaches the other.
+
 ## [0.2.3] - 2026-09-17
 
 ### Fixed
@@ -174,6 +204,8 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.2.4]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.4
+[0.2.3]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.3
 [0.2.2]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.2
 [0.2.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.1
 [0.2.0]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.2.0

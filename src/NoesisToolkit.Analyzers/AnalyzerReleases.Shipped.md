@@ -1,6 +1,14 @@
 ; Shipped analyzer releases
 ; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
 
+## Release 0.2.4
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK2102 | Reliability | Warning | Command captures the control that exposes it
+
 ## Release 0.1.1
 
 ### New Rules
