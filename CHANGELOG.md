@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`ControlCollectability.Probe` settles its controls as one batch.** Every control is added and
+  removed first, then each collect-and-pump round serves all of them still pending; a sweep paid a
+  blocking collection pair per control per round, and now pays one per round.
+
 ## [0.2.4] - 2026-09-18
 
 ### Added

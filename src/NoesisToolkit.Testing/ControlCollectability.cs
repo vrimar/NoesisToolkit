@@ -55,42 +55,44 @@ public static class ControlCollectability
             );
 
         var excluded = new HashSet<Type>(exclude ?? []);
-        var leaked = new List<string>();
         var skipped = new List<string>();
-        var verified = 0;
+        var pending = new List<(Type Type, WeakReference Weak, View View)>();
 
         foreach (var type in Controls(assemblies, excluded))
         {
             var (weak, view, error) = Exercise(type);
             if (error is not null)
-            {
                 skipped.Add($"{type.Name} ({error})");
-                continue;
-            }
-
-            if (IsRetained(weak!, view!, betweenRounds, settleRounds))
-                leaked.Add(type.FullName!);
             else
-                verified++;
+                pending.Add((type, weak!, view!));
         }
+
+        var verified = Settle(pending, betweenRounds, settleRounds);
+        var leaked = pending.Select(entry => entry.Type.FullName!).ToList();
 
         return new CollectabilityReport(leaked, skipped, verified);
     }
 
-    static bool IsRetained(WeakReference weak, View view, Action? betweenRounds, int rounds)
+    static int Settle(
+        List<(Type Type, WeakReference Weak, View View)> pending,
+        Action? betweenRounds,
+        int rounds
+    )
     {
+        var verified = 0;
         var time = 10.0;
-        for (var i = 0; i < rounds; i++)
+        for (var i = 0; i < rounds && pending.Count > 0; i++)
         {
             betweenRounds?.Invoke();
             Collect();
-            if (!weak.IsAlive)
-                return false;
-            view.Update(time += 0.016);
+            verified += pending.RemoveAll(entry => !entry.Weak.IsAlive);
+
+            time += 0.016;
+            foreach (var entry in pending)
+                entry.View.Update(time);
         }
 
-        GC.KeepAlive(view);
-        return weak.IsAlive;
+        return verified;
     }
 
     // Kept in its own frame so a caller's stack slot cannot hold the element across the collection.
