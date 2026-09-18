@@ -418,7 +418,7 @@ sealed partial class XamlEmitter
         if (trigger.Length > 0)
             fields.Add($"Trigger = global::Noesis.UpdateSourceTrigger.{trigger}");
 
-        var spec = $"new {SpecFqn} {{ {string.Join(", ", fields.ToArray())} }}";
+        var spec = Shared("spec", $"new {SpecFqn} {{ {string.Join(", ", fields.ToArray())} }}");
         Tally.Compiled++;
 
         if (receiver is not null && _markedReceivers.Add(element))
@@ -510,6 +510,17 @@ sealed partial class XamlEmitter
             && XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement")
             ? name
             : null;
+    }
+
+    // Inside a template the wire runs once per clone, so what it only reads is built once, outside.
+    string Shared(string hint, string expression)
+    {
+        if (_templates.Count == 0)
+            return expression;
+
+        var name = NextName(hint);
+        _lines.Add($"var {name} = {expression};");
+        return name;
     }
 
     void EmitCompiledBind(string target, Func<string, string> bind)
@@ -1032,11 +1043,32 @@ sealed partial class XamlEmitter
     string HopExpression(Hop hop, bool guarded)
     {
         var owner = XamlTypeResolver.Fqn(hop.Owner);
+        var name = Quote(hop.Name);
+
+        if (hop.Type.SpecialType == SpecialType.System_Boolean)
+            return guarded
+                ? $"{BindingHopFqn}.GuardedBool<{owner}>({name}, __c => __c.{hop.Name})"
+                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{hop.Name})";
+
+        if (BoxesOnRead(hop.Type))
+        {
+            var value = XamlTypeResolver.Fqn(hop.Type);
+            return guarded
+                ? $"{BindingHopFqn}.GuardedValue<{owner}, {value}>({name}, __c => __c.{hop.Name})"
+                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{hop.Name})";
+        }
 
         return guarded
-            ? $"{BindingHopFqn}.Guarded<{owner}>({Quote(hop.Name)}, __c => __c.{hop.Name})"
-            : $"new {BindingHopFqn}({Quote(hop.Name)}, __o => (({owner})__o).{hop.Name})";
+            ? $"{BindingHopFqn}.Guarded<{owner}>({name}, __c => __c.{hop.Name})"
+            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{hop.Name})";
     }
+
+    // A nullable already boxes to its value or null, and a ref struct cannot be a type argument.
+    static bool BoxesOnRead(ITypeSymbol type) =>
+        type.IsValueType
+        && !type.IsRefLikeType
+        && type.TypeKind != TypeKind.TypeParameter
+        && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
 
     // A presenter the template gives no Content of its own takes the templated parent's content and template.
     bool PresenterContentInTemplate(INamedTypeSymbol type, string slot) =>
@@ -1695,6 +1727,9 @@ sealed partial class XamlEmitter
         if (type.SpecialType == SpecialType.System_Boolean)
             return $"((bool){value} ? \"True\" : \"False\")";
 
+        if (type.SpecialType == SpecialType.System_Int32)
+            return $"{SlotConversionFqn}.Text((int){value})";
+
         if (IsInteger(type))
             return $"(({fqn}){value}).ToString({InvariantFqn})";
 
@@ -2113,7 +2148,10 @@ sealed partial class XamlEmitter
         if (slot.Assign is not null)
             specFields.Add($"Assign = {slot.Assign}");
 
-        var spec = $"new {MultiSpecFqn} {{ {string.Join(", ", specFields.ToArray())} }}";
+        var spec = Shared(
+            "multispec",
+            $"new {MultiSpecFqn} {{ {string.Join(", ", specFields.ToArray())} }}"
+        );
         Tally.Compiled++;
         EmitCompiledBind(
             target,

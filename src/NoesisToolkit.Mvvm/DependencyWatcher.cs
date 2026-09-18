@@ -70,30 +70,62 @@ public static class DependencyWatcher
     /// element only starts reporting once the tree it is in is shown.</remarks>
     public static void Watch(FrameworkElement target, DependencyProperty property, Action handler)
     {
+        Guard.NotNull(handler, nameof(handler));
+        Watch(target, property, new ActionListener(handler));
+    }
+
+    internal static void Watch(
+        FrameworkElement target,
+        DependencyProperty property,
+        IChangeListener listener
+    )
+    {
         Guard.NotNull(target, nameof(target));
         Guard.NotNull(property, nameof(property));
-        Guard.NotNull(handler, nameof(handler));
 
         var subscriptions = Table.GetOrCreateValue(target);
 
         if (!AlreadyNotifies(property))
             subscriptions.Probe(target, property, ProbeFor(property));
 
-        subscriptions.Add(property, handler);
+        subscriptions.Add(property, listener);
     }
 
-    /// <summary>Stops a <see cref="Watch"/> subscription.</summary>
+    /// <summary>Stops a <see cref="Watch(FrameworkElement, DependencyProperty, Action)"/>
+    /// subscription.</summary>
     /// <param name="target">The element being watched.</param>
     /// <param name="property">The property being watched on it.</param>
     /// <param name="handler">The handler that was registered.</param>
     public static void Unwatch(FrameworkElement target, DependencyProperty property, Action handler)
     {
+        Guard.NotNull(handler, nameof(handler));
+        Unwatch(target, property, new ActionListener(handler));
+    }
+
+    internal static void Unwatch(
+        FrameworkElement target,
+        DependencyProperty property,
+        IChangeListener listener
+    )
+    {
         Guard.NotNull(target, nameof(target));
         Guard.NotNull(property, nameof(property));
-        Guard.NotNull(handler, nameof(handler));
 
         if (Table.TryGetValue(target, out var subscriptions))
-            subscriptions.Remove(target, property, handler);
+            subscriptions.Remove(property, listener);
+    }
+
+    // Equal by the action it wraps, so the unwatch finds the watch's entry.
+    sealed class ActionListener(Action handler) : IChangeListener
+    {
+        public void Changed() => handler();
+
+        public override bool Equals(object? obj) =>
+            obj is ActionListener other && other.Handler.Equals(handler);
+
+        public override int GetHashCode() => handler.GetHashCode();
+
+        Action Handler => handler;
     }
 
     static bool AlreadyNotifies(DependencyProperty property)
@@ -102,12 +134,13 @@ public static class DependencyWatcher
             return Notifies.Contains(property);
     }
 
-    static DependencyProperty ProbeFor(DependencyProperty property)
-    {
-        if (Probes.TryGetValue(property, out var probe))
-            return probe;
+    static DependencyProperty ProbeFor(DependencyProperty property) =>
+        Probes.TryGetValue(property, out var probe) ? probe : RegisterProbe(property);
 
-        probe = DependencyProperty.RegisterAttached(
+    // Apart, so the closure over the property is built only on the miss.
+    static DependencyProperty RegisterProbe(DependencyProperty property)
+    {
+        var probe = DependencyProperty.RegisterAttached(
             "NtkWatch" + _probes++.ToString(System.Globalization.CultureInfo.InvariantCulture),
             typeof(object),
             typeof(DependencyWatcher),
@@ -134,7 +167,8 @@ public static class DependencyWatcher
 
     sealed class Subscriptions
     {
-        readonly List<Entry> _entries = new List<Entry>();
+        readonly Dictionary<DependencyProperty, HandlerList<IChangeListener>> _handlers =
+            new Dictionary<DependencyProperty, HandlerList<IChangeListener>>();
         readonly List<DependencyProperty> _probed = new List<DependencyProperty>();
 
         internal void Probe(
@@ -147,71 +181,44 @@ public static class DependencyWatcher
                 return;
 
             _probed.Add(property);
-            target.SetBinding(probe, new Binding(property, target) { Mode = BindingMode.OneWay });
+            target.SetBinding(
+                probe,
+                new Binding(property)
+                {
+                    RelativeSource = RelativeSource.Self,
+                    Mode = BindingMode.OneWay,
+                }
+            );
         }
 
-        internal void Add(DependencyProperty property, Action handler)
+        internal void Add(DependencyProperty property, IChangeListener listener)
         {
-            foreach (var entry in _entries)
+            if (!_handlers.TryGetValue(property, out var listeners))
             {
-                if (entry.Property == property && entry.Handler == handler)
-                    return;
+                listeners = new HandlerList<IChangeListener>();
+                _handlers[property] = listeners;
             }
 
-            _entries.Add(new Entry(property, handler));
+            if (!listeners.Contains(listener))
+                listeners.Add(listener);
         }
 
-        internal void Remove(FrameworkElement target, DependencyProperty property, Action handler)
+        // The probe stays bound once no handler is left: a recycled container watches the same
+        // property again on its next load, and binding it anew costs a native expression each time.
+        internal void Remove(DependencyProperty property, IChangeListener listener)
         {
-            var left = 0;
-            for (var i = _entries.Count - 1; i >= 0; i--)
-            {
-                if (_entries[i].Property != property)
-                    continue;
-
-                if (_entries[i].Handler == handler)
-                    _entries.RemoveAt(i);
-                else
-                    left++;
-            }
-
-            if (left > 0 || !_probed.Remove(property))
-                return;
-
-            if (Probes.TryGetValue(property, out var probe))
-            {
-                BindingOperations.ClearBinding(target, probe);
-                target.ClearValue(probe);
-            }
+            if (_handlers.TryGetValue(property, out var listeners))
+                listeners.Remove(listener);
         }
 
-        // A handler is free to watch or unwatch while it runs, so it never iterates the live list.
         internal void Fire(DependencyProperty property)
         {
-            List<Action>? handlers = null;
-            for (var i = 0; i < _entries.Count; i++)
-            {
-                if (_entries[i].Property == property)
-                    (handlers ??= new List<Action>()).Add(_entries[i].Handler);
-            }
-
-            if (handlers is null)
+            if (!_handlers.TryGetValue(property, out var listeners))
                 return;
 
-            foreach (var handler in handlers)
-                handler();
-        }
-
-        readonly struct Entry
-        {
-            internal Entry(DependencyProperty property, Action handler)
-            {
-                Property = property;
-                Handler = handler;
-            }
-
-            internal DependencyProperty Property { get; }
-            internal Action Handler { get; }
+            using var run = listeners.Start();
+            while (run.Next(out var listener))
+                listener.Changed();
         }
     }
 }

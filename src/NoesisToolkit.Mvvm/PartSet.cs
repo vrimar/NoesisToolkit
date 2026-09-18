@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using Noesis;
 
@@ -8,24 +6,17 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// <summary>The observation half of a compiled binding with more than one source chain: it holds
 /// the chains, keeps them subscribed for as long as the element lives, and reports once whenever
 /// any of them moves.</summary>
-sealed class PartSet
+sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
 {
     readonly SourceChain[] _chains;
     readonly NotifierSet _watched;
-    readonly Action _changed;
+    readonly IPartSetOwner _owner;
     readonly ElementLifecycle _life;
-    readonly Func<bool>? _alsoMissing;
 
-    internal PartSet(
-        FrameworkElement target,
-        CompiledBindingPart[] parts,
-        Action changed,
-        Func<bool>? alsoMissing = null
-    )
+    internal PartSet(FrameworkElement target, CompiledBindingPart[] parts, IPartSetOwner owner)
     {
-        _alsoMissing = alsoMissing;
-        _watched = new NotifierSet(OnSourceChanged);
-        _changed = changed;
+        _owner = owner;
+        _watched = new NotifierSet(this);
         _chains = new SourceChain[parts.Length];
 
         for (var i = 0; i < parts.Length; i++)
@@ -35,10 +26,10 @@ sealed class PartSet
                 parts[i].SourceProperty,
                 parts[i].Hops,
                 _watched,
-                changed
+                this
             );
 
-        _life = new ElementLifecycle(target, Start, Release, OnLayoutUpdated);
+        _life = new ElementLifecycle(target, this);
     }
 
     internal int Count => _chains.Length;
@@ -55,17 +46,8 @@ sealed class PartSet
             missing |= chain.Missing;
         }
 
-        _life.Retry(missing || (_alsoMissing is not null && _alsoMissing()));
+        _life.Retry(missing || _owner.StillMissing);
         return moved;
-    }
-
-    // A source that outlives the element would pin it.
-    void Release()
-    {
-        Unwatch();
-
-        foreach (var chain in _chains)
-            chain.Detach();
     }
 
     /// <summary>Resolves every source and reports the result once, which every consumer needs after
@@ -73,31 +55,7 @@ sealed class PartSet
     internal void Start()
     {
         Resolve();
-        _changed();
-    }
-
-    void OnLayoutUpdated()
-    {
-        if (Resolve())
-            _changed();
-    }
-
-    void OnSourceChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        // An empty name is the INotifyPropertyChanged signal for "everything changed".
-        if (string.IsNullOrEmpty(e.PropertyName) || Watches(e.PropertyName))
-            _changed();
-    }
-
-    bool Watches(string name)
-    {
-        foreach (var chain in _chains)
-        {
-            if (chain.Watches(name))
-                return true;
-        }
-
-        return false;
+        _owner.PartsChanged();
     }
 
     /// <summary>The value one chain currently reads. A path that ran out is
@@ -110,4 +68,41 @@ sealed class PartSet
     }
 
     internal void Unwatch() => _watched.Clear();
+
+    void IChainOwner.ChainChanged() => _owner.PartsChanged();
+
+    void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // An empty name is the INotifyPropertyChanged signal for "everything changed".
+        if (string.IsNullOrEmpty(e.PropertyName) || Watches(e.PropertyName))
+            _owner.PartsChanged();
+    }
+
+    void IElementLifecycleOwner.Settle() => Start();
+
+    // A source that outlives the element would pin it.
+    void IElementLifecycleOwner.Release()
+    {
+        Unwatch();
+
+        foreach (var chain in _chains)
+            chain.Detach();
+    }
+
+    void IElementLifecycleOwner.Retry()
+    {
+        if (Resolve())
+            _owner.PartsChanged();
+    }
+
+    bool Watches(string name)
+    {
+        foreach (var chain in _chains)
+        {
+            if (chain.Watches(name))
+                return true;
+        }
+
+        return false;
+    }
 }

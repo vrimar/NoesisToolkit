@@ -38,10 +38,8 @@ sealed partial class XamlEmitter
         if (specs is null)
             return;
 
-        EmitCompiledBind(
-            target,
-            receiver => $"{TriggerSetFqn}.Bind({receiver}, new {TriggerSpecFqn}[] {{ {specs} }})"
-        );
+        var shared = Shared("triggers", $"new {TriggerSpecFqn}[] {{ {specs} }}");
+        EmitCompiledBind(target, receiver => $"{TriggerSetFqn}.Bind({receiver}, {shared})");
     }
 
     // Wires before content: the trigger set has to join the content root's one wiring slot, and

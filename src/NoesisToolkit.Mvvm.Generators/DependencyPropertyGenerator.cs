@@ -129,7 +129,9 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             prop.IsStatic,
             OwnerNaming.IsPartial(prop),
             InheritsMemberNamed(owner, prop.Name),
-            InheritsMemberNamed(owner, prop.Name + "Property")
+            InheritsMemberNamed(owner, prop.Name + "Property"),
+            prop.Type.SpecialType is SpecialType.System_Boolean or SpecialType.System_Int32
+                || prop.Type.TypeKind == TypeKind.Enum
         );
     }
 
@@ -184,11 +186,20 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         w.Line();
         using (w.Block($"public {propertyNew}partial {m.TypeFqnNullable} {m.PropertyName}"))
         {
-            w.Line($"get => ({m.TypeFqnNullable})GetValue({m.PropertyName}Property);");
+            w.Line($"get => ({m.TypeFqnNullable}){Read(m, "this")};");
             w.Line($"set => SetValue({m.PropertyName}Property, value);");
         }
         w.Line();
     }
+
+    // A bool, int or enum reads through the toolkit, which hands back a shared box; Noesis'
+    // GetValue boxes every value type anew.
+    private static string Read(Model m, string target) =>
+        m.ReadsShared
+            ? $"{ReadFqn}.Value({target}, {m.PropertyName}Property)!"
+            : $"{target}.GetValue({m.PropertyName}Property)";
+
+    private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
 
     private static void WriteRegistration(CodeWriter w, Model m, bool attached)
     {
@@ -223,7 +234,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             $"public static {m.TypeFqnNullable} Get{m.PropertyName}(DependencyObject element) =>"
         );
         using (w.Indented())
-            w.Line($"({m.TypeFqnNullable})element.GetValue({m.PropertyName}Property);");
+            w.Line($"({m.TypeFqnNullable}){Read(m, "element")};");
 
         w.Line();
         w.Line(
@@ -284,6 +295,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         bool IsAttached,
         bool IsPropertyPartial,
         bool HidesInheritedProperty,
-        bool HidesInheritedField
+        bool HidesInheritedField,
+        bool ReadsShared
     );
 }

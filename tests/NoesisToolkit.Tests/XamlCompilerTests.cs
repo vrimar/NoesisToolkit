@@ -156,8 +156,8 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "Convert = __v => __v is null ? null : (object)((int)__v)"
-                    + ".ToString(global::System.Globalization.CultureInfo.InvariantCulture)"
+                "Convert = __v => __v is null ? null : (object)"
+                    + "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Text((int)__v)"
             );
         await Assert
             .That(source)
@@ -218,7 +218,7 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "new global::NoesisToolkit.Mvvm.CodeGen.BindingHop(\"Ticked\", __o => ((global::Sample.Ui.ItemViewModel)__o).Ticked)"
+                "global::NoesisToolkit.Mvvm.CodeGen.BindingHop.Bool(\"Ticked\", __o => ((global::Sample.Ui.ItemViewModel)__o).Ticked)"
             );
         await Assert.That(source).Contains("Value = true");
         await Assert.That(source).Contains("Value = 3");
@@ -232,6 +232,28 @@ public partial class XamlCompilerTests
 
         // The template-level trigger writes a named child.
         await Assert.That(source).Contains("TargetName = \"Peer\"");
+    }
+
+    [Test]
+    public async Task A_template_clone_shares_its_bindings_specifications()
+    {
+        var run = CompiledBindings();
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+
+        // Built once beside the wiring, and the per-clone wire only names it.
+        await Assert.That(source).Contains("var __spec");
+        foreach (var wire in source.Split("Register(").Skip(1))
+        {
+            var body = wire.Substring(0, wire.IndexOf("}));", StringComparison.Ordinal));
+            await Assert
+                .That(body)
+                .DoesNotContain("new global::NoesisToolkit.Mvvm.CodeGen.CompiledBindingSpec");
+            await Assert
+                .That(body)
+                .DoesNotContain("new global::NoesisToolkit.Mvvm.CodeGen.CompiledTriggerSpec[]");
+        }
     }
 
     [Test]
@@ -257,8 +279,8 @@ public partial class XamlCompilerTests
             .Contains(
                 "Format = __vs => string.Format(global::System.Globalization.CultureInfo"
                     + ".InvariantCulture, \"{0}/{1}\", __vs[0] is null ? (object)\"\" : __vs[0],"
-                    + " __vs[1] is null ? (object)\"\" : ((int)__vs[1])"
-                    + ".ToString(global::System.Globalization.CultureInfo.InvariantCulture))"
+                    + " __vs[1] is null ? (object)\"\" : "
+                    + "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Text((int)__vs[1]))"
             );
         await Assert.That(source).Contains("Converter = (global::Noesis.IMultiValueConverter)");
         await Assert.That(source).Contains("Converter = new global::Sample.Ui.JoinConverter()");

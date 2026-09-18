@@ -15,6 +15,17 @@ public static class SlotConversion
     /// converts or rejects by rules of its own.</summary>
     public static readonly object Unconverted = new object();
 
+    // A counter shown as text moves through small values, each of which formats once.
+    static readonly string?[] SmallIntegers = new string?[1024];
+
+    /// <summary>The text the native engine shows for <paramref name="value"/>.</summary>
+    /// <param name="value">The value to show.</param>
+    /// <returns>The invariant digits, shared for a small value.</returns>
+    public static string Text(int value) =>
+        (uint)value < (uint)SmallIntegers.Length
+            ? SmallIntegers[value] ??= value.ToString(CultureInfo.InvariantCulture)
+            : value.ToString(CultureInfo.InvariantCulture);
+
     /// <summary>The text the native engine shows for <paramref name="value"/>.</summary>
     /// <param name="value">The value to show.</param>
     /// <returns>The shortest round-trip form, with infinities as the engine writes them.</returns>

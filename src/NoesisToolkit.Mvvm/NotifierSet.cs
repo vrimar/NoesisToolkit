@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 
@@ -6,13 +5,16 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 
 /// <summary>The INotifyPropertyChanged subscriptions a source chain holds, subscribed at most once
 /// per notifier and dropped together.</summary>
-sealed class NotifierSet(PropertyChangedEventHandler handler)
+sealed class NotifierSet(INotifierOwner owner)
 {
     // Identity, not equality: two equal-but-distinct sources each need their own subscription.
-    readonly List<INotifyPropertyChanged> _watched = new List<INotifyPropertyChanged>();
+    List<INotifyPropertyChanged>? _watched;
 
     bool Watching(INotifyPropertyChanged notifier)
     {
+        if (_watched is null)
+            return false;
+
         foreach (var watched in _watched)
         {
             if (ReferenceEquals(watched, notifier))
@@ -27,14 +29,17 @@ sealed class NotifierSet(PropertyChangedEventHandler handler)
         if (source is not INotifyPropertyChanged notifier || Watching(notifier))
             return;
 
-        notifier.PropertyChanged += handler;
-        _watched.Add(notifier);
+        NotifierHub.Watch(notifier, owner);
+        (_watched ??= new List<INotifyPropertyChanged>()).Add(notifier);
     }
 
     public void Clear()
     {
+        if (_watched is null)
+            return;
+
         foreach (var notifier in _watched)
-            notifier.PropertyChanged -= handler;
+            NotifierHub.Unwatch(notifier, owner);
 
         _watched.Clear();
     }

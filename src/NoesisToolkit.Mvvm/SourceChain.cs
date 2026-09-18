@@ -6,14 +6,14 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// <summary>One path from an element to a value: where it roots, what it subscribes to, and what
 /// the hops read. A single binding holds one of these and a MultiBinding or trigger set holds
 /// several, so the walk and its subscriptions are stated once.</summary>
-sealed class SourceChain
+sealed class SourceChain : IChangeListener
 {
     readonly FrameworkElement _target;
     readonly Func<FrameworkElement, FrameworkElement?>? _resolve;
     readonly DependencyProperty? _sourceProperty;
     readonly BindingHop[] _hops;
     readonly NotifierSet _watched;
-    readonly Action _changed;
+    readonly IChainOwner _owner;
 
     FrameworkElement? _source;
 
@@ -23,7 +23,7 @@ sealed class SourceChain
         DependencyProperty? sourceProperty,
         BindingHop[] hops,
         NotifierSet watched,
-        Action changed
+        IChainOwner owner
     )
     {
         _target = target;
@@ -31,7 +31,7 @@ sealed class SourceChain
         _sourceProperty = sourceProperty;
         _hops = hops;
         _watched = watched;
-        _changed = changed;
+        _owner = owner;
     }
 
     internal FrameworkElement? Source => _source;
@@ -66,7 +66,7 @@ sealed class SourceChain
         var current =
             _source is null ? null
             : _sourceProperty is null ? _source.DataContext
-            : _source.GetValue(_sourceProperty);
+            : DependencyRead.Value(_source, _sourceProperty);
 
         root = current;
 
@@ -109,9 +109,9 @@ sealed class SourceChain
         if (_source is not null)
         {
             if (_sourceProperty is null)
-                _source.DataContextChanged -= OnDataContextChanged;
+                ElementEvents.UnwatchDataContext(_source, this);
             else
-                DependencyWatcher.Unwatch(_source, _sourceProperty, OnSourceValueChanged);
+                DependencyWatcher.Unwatch(_source, _sourceProperty, this);
         }
 
         _source = source;
@@ -119,15 +119,13 @@ sealed class SourceChain
         if (_source is not null)
         {
             if (_sourceProperty is null)
-                _source.DataContextChanged += OnDataContextChanged;
+                ElementEvents.WatchDataContext(_source, this);
             else
-                DependencyWatcher.Watch(_source, _sourceProperty, OnSourceValueChanged);
+                DependencyWatcher.Watch(_source, _sourceProperty, this);
         }
 
         return true;
     }
 
-    void OnSourceValueChanged() => _changed();
-
-    void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e) => _changed();
+    void IChangeListener.Changed() => _owner.ChainChanged();
 }

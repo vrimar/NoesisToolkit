@@ -48,6 +48,19 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public BindingHop(string name, System.Func<object, object?> read) { }
 
         public static BindingHop Guarded<TOwner>(string name, System.Func<TOwner, object?> read) => default;
+
+        public static BindingHop Bool(string name, System.Func<object, bool> read) => default;
+
+        public static BindingHop GuardedBool<TOwner>(string name, System.Func<TOwner, bool> read) => default;
+
+        public static BindingHop Value<TValue>(string name, System.Func<object, TValue> read) where TValue : struct => default;
+
+        public static BindingHop GuardedValue<TOwner, TValue>(string name, System.Func<TOwner, TValue> read) where TValue : struct => default;
+    }
+
+    public static class DependencyRead
+    {
+        public static object? Value(Noesis.DependencyObject source, Noesis.DependencyProperty property) => null;
     }
 
     public static class CompiledBindingSetup
@@ -103,6 +116,8 @@ namespace NoesisToolkit.Mvvm.CodeGen
     public static class SlotConversion
     {
         public static readonly object Unconverted = new object();
+
+        public static string Text(int value) => "";
 
         public static string Text(double value) => "";
 

@@ -39,9 +39,83 @@ public readonly struct BindingHop
         return new BindingHop(name, o => o is TOwner typed ? read(typed) : Missed);
     }
 
+    /// <summary>A hop reading a bool, boxed once per value rather than on every read.</summary>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off the object the previous hop produced.</param>
+    /// <returns>The hop.</returns>
+    public static BindingHop Bool(string name, Func<object, bool> read)
+    {
+        Guard.NotNull(read, nameof(read));
+        return new BindingHop(name, o => read(o) ? True : False);
+    }
+
+    /// <summary>The guarded form of <see cref="Bool"/>.</summary>
+    /// <typeparam name="TOwner">The type the previous hop is expected to have produced.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off a source of the expected type.</param>
+    /// <returns>The hop, which fails the path off anything else.</returns>
+    public static BindingHop GuardedBool<TOwner>(string name, Func<TOwner, bool> read)
+    {
+        Guard.NotNull(read, nameof(read));
+        return new BindingHop(name, o => o is TOwner typed ? (read(typed) ? True : False) : Missed);
+    }
+
+    /// <summary>A hop reading a value type, boxed again only when the value it reads has
+    /// changed.</summary>
+    /// <typeparam name="TValue">The property's type.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off the object the previous hop produced.</param>
+    /// <returns>The hop.</returns>
+    public static BindingHop Value<TValue>(string name, Func<object, TValue> read)
+        where TValue : struct
+    {
+        Guard.NotNull(read, nameof(read));
+        var box = new ValueBox<TValue>();
+        return new BindingHop(name, o => box.Of(read(o)));
+    }
+
+    /// <summary>The guarded form of <see cref="Value{TValue}"/>.</summary>
+    /// <typeparam name="TOwner">The type the previous hop is expected to have produced.</typeparam>
+    /// <typeparam name="TValue">The property's type.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off a source of the expected type.</param>
+    /// <returns>The hop, which fails the path off anything else.</returns>
+    public static BindingHop GuardedValue<TOwner, TValue>(string name, Func<TOwner, TValue> read)
+        where TValue : struct
+    {
+        Guard.NotNull(read, nameof(read));
+        var box = new ValueBox<TValue>();
+        return new BindingHop(name, o => o is TOwner typed ? box.Of(read(typed)) : Missed);
+    }
+
+    static readonly object True = true;
+    static readonly object False = false;
+
     // A member that is null is a value the binding writes; a member that is not there at all fails
     // the binding and writes nothing, which is how the native engine tells the two apart.
     internal static readonly object Missed = new object();
+
+    // One hop serves every clone of a template, so the boxes are kept per value, not per read;
+    // past the cap a value boxes fresh rather than growing the map without bound.
+    sealed class ValueBox<TValue>
+        where TValue : struct
+    {
+        const int Cap = 256;
+
+        readonly Dictionary<TValue, object> _boxes = new Dictionary<TValue, object>();
+
+        internal object Of(TValue value)
+        {
+            if (_boxes.TryGetValue(value, out var boxed))
+                return boxed;
+
+            boxed = value;
+            if (_boxes.Count < Cap)
+                _boxes[value] = boxed;
+
+            return boxed;
+        }
+    }
 }
 
 /// <summary>A binding the compiler resolved into a chain of typed reads, watched through
@@ -49,6 +123,10 @@ public readonly struct BindingHop
 /// <see cref="DependencyProperty"/>.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CompiledBinding
+    : IChainOwner,
+        INotifierOwner,
+        IElementLifecycleOwner,
+        IChangeListener
 {
     readonly FrameworkElement _target;
     readonly DependencyProperty _property;
@@ -78,14 +156,14 @@ public sealed class CompiledBinding
         Func<FrameworkElement, DependencyObject?>? receiverResolver = null
     )
     {
-        _watched = new NotifierSet(OnSourceChanged);
+        _watched = new NotifierSet(this);
         _chain = new SourceChain(
             target,
             spec.Source,
             spec.SourceProperty,
             spec.Hops,
             _watched,
-            Rebuild
+            this
         );
         _target = target;
         _property = property;
@@ -108,11 +186,11 @@ public sealed class CompiledBinding
                 : spec.Trigger;
         _onLostFocus = trigger == UpdateSourceTrigger.LostFocus;
 
-        _life = new ElementLifecycle(target, OnSettle, Release, OnLayoutUpdated);
+        _life = new ElementLifecycle(target, this);
 
         if (_twoWay)
         {
-            DependencyWatcher.Watch(_target, _property, OnTargetChanged);
+            DependencyWatcher.Watch(_target, _property, this);
             if (_onLostFocus)
                 _target.LostFocus += OnTargetLostFocus;
         }
@@ -333,18 +411,22 @@ public sealed class CompiledBinding
     }
 
     // A source that outlives the container would pin it. This does not end the binding.
-    void Release()
+    void IElementLifecycleOwner.Release()
     {
         _watched.Clear();
         _chain.Detach();
     }
 
-    void OnSettle()
+    // A recycled container can end up under a different source, so this settles again each load.
+    void IElementLifecycleOwner.Settle()
     {
-        // A recycled container can end up under a different source, so this settles again each load.
         Resolve();
         Rebuild();
     }
+
+    void IChainOwner.ChainChanged() => Rebuild();
+
+    void IChangeListener.Changed() => OnTargetChanged();
 
     void Resolve()
     {
@@ -369,7 +451,7 @@ public sealed class CompiledBinding
     // raising Loaded.
     bool Unresolved() => _chain.Missing || (_receiverResolver is not null && _receiver is null);
 
-    void OnLayoutUpdated()
+    void IElementLifecycleOwner.Retry()
     {
         var source = _chain.Source;
         var receiver = _receiver;
@@ -492,7 +574,7 @@ public sealed class CompiledBinding
             _receiver?.SetValue(_property, value);
     }
 
-    void OnSourceChanged(object? sender, PropertyChangedEventArgs e)
+    void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)
     {
         // An empty name is the INotifyPropertyChanged signal for "everything changed".
         if (string.IsNullOrEmpty(e.PropertyName) || _chain.Watches(e.PropertyName))

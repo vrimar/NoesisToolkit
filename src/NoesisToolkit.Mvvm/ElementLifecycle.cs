@@ -1,4 +1,3 @@
-using System;
 using Noesis;
 
 namespace NoesisToolkit.Mvvm.CodeGen;
@@ -7,25 +6,18 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// A virtualizing panel unloads a container and loads it again later, so unload has to drop every
 /// subscription without ending the binding; and an element can gain an ancestor without ever
 /// raising Loaded, so an unresolved source retries off the layout pass that must follow.</summary>
-sealed class ElementLifecycle
+sealed class ElementLifecycle : IChangeListener
 {
     readonly FrameworkElement _target;
-    readonly Action _settle;
-    readonly Action _release;
-    readonly Action _retry;
+    readonly IElementLifecycleOwner _owner;
 
     bool _armed;
 
-    internal ElementLifecycle(FrameworkElement target, Action settle, Action release, Action retry)
+    internal ElementLifecycle(FrameworkElement target, IElementLifecycleOwner owner)
     {
         _target = target;
-        _settle = settle;
-        _release = release;
-        _retry = retry;
-
-        _target.Unloaded += OnUnloaded;
-        _target.Loaded += OnSettle;
-        _target.Reloaded += OnSettle;
+        _owner = owner;
+        ElementEvents.WatchLifecycle(target, this);
     }
 
     /// <summary>Keeps the layout retry running while <paramref name="missing"/>, which the caller
@@ -37,18 +29,18 @@ sealed class ElementLifecycle
 
         _armed = missing;
         if (missing)
-            _target.LayoutUpdated += OnLayoutUpdated;
+            ElementEvents.WatchLayout(_target, this);
         else
-            _target.LayoutUpdated -= OnLayoutUpdated;
+            ElementEvents.UnwatchLayout(_target, this);
     }
 
-    void OnUnloaded(object sender, RoutedEventArgs e)
+    internal void OnLoaded() => _owner.Settle();
+
+    internal void OnUnloaded()
     {
-        _release();
+        _owner.Release();
         Retry(false);
     }
 
-    void OnSettle(object sender, RoutedEventArgs e) => _settle();
-
-    void OnLayoutUpdated(object sender, Noesis.EventArgs e) => _retry();
+    void IChangeListener.Changed() => _owner.Retry();
 }

@@ -136,6 +136,11 @@ public class MvvmGeneratorTests
         await Assert.That(source).Contains("DependencyProperty.RegisterAttached(");
         await Assert.That(source).Contains("GetSlot(");
         await Assert.That(source).Contains("SetSlot(");
+        await Assert
+            .That(source)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Value(element, SlotProperty)"
+            );
     }
 
     [Test]

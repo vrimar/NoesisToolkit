@@ -56,12 +56,13 @@ public sealed class CompiledMultiBindingSpec
 /// <summary>A MultiBinding the compiler resolved into typed chains, watched the same way a
 /// <see cref="CompiledBinding"/> watches its one chain.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class CompiledMultiBinding
+public sealed class CompiledMultiBinding : IPartSetOwner
 {
     readonly FrameworkElement _target;
     readonly DependencyProperty _property;
     readonly CompiledMultiBindingSpec _spec;
     readonly PartSet _parts;
+    readonly object?[] _values;
 
     readonly object? _unset;
     readonly bool _clearWhenUnset;
@@ -76,7 +77,8 @@ public sealed class CompiledMultiBinding
         _target = target;
         _property = property;
         _spec = spec;
-        _parts = new PartSet(target, spec.Parts, Rebuild);
+        _parts = new PartSet(target, spec.Parts, this);
+        _values = new object?[spec.Parts.Length];
 
         (_unset, _clearWhenUnset) = SlotDefault.For(target, property);
 
@@ -102,6 +104,10 @@ public sealed class CompiledMultiBinding
         return new CompiledMultiBinding(target, property, spec);
     }
 
+    void IPartSetOwner.PartsChanged() => Rebuild();
+
+    bool IPartSetOwner.StillMissing => false;
+
     void Rebuild()
     {
         if (_pushing)
@@ -109,7 +115,7 @@ public sealed class CompiledMultiBinding
 
         _parts.Unwatch();
 
-        var values = new object?[_parts.Count];
+        var values = _values;
         for (var i = 0; i < values.Length; i++)
             values[i] = _parts.Evaluate(i);
 

@@ -63,7 +63,7 @@ public sealed class CompiledTriggerSpec
 /// trigger's setter beats an earlier one's on the same property, and a property no active trigger
 /// sets falls back to whatever the style's ordinary setters give it.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class CompiledTriggerSet
+public sealed class CompiledTriggerSet : IPartSetOwner
 {
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
         FrameworkElement,
@@ -91,8 +91,10 @@ public sealed class CompiledTriggerSet
     readonly FrameworkElement _target;
     readonly CompiledTriggerSpec[] _triggers;
     readonly PartSet _parts;
-    Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter> _applied =
-        new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
+
+    // Both maps exist only once a trigger has held: most sets never do.
+    Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>? _applied;
+    Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>? _spare;
 
     bool _pushing;
     bool _moved;
@@ -105,14 +107,19 @@ public sealed class CompiledTriggerSet
         _target = target;
         _triggers = triggers;
 
-        var parts = new List<CompiledBindingPart>();
+        var count = 0;
+        foreach (var trigger in triggers)
+            count += trigger.Conditions.Length;
+
+        var parts = new CompiledBindingPart[count];
+        var next = 0;
         foreach (var trigger in triggers)
         {
             foreach (var condition in trigger.Conditions)
-                parts.Add(condition.Part);
+                parts[next++] = condition.Part;
         }
 
-        _parts = new PartSet(target, parts.ToArray(), Rebuild, () => _targetMissing);
+        _parts = new PartSet(target, parts, this);
 
         var bound = _byElement.GetOrCreateValue(target);
         bound.RemoveAll(set => ReferenceEquals(set._triggers, triggers));
@@ -134,6 +141,10 @@ public sealed class CompiledTriggerSet
         return new CompiledTriggerSet(target, triggers);
     }
 
+    void IPartSetOwner.PartsChanged() => Rebuild();
+
+    bool IPartSetOwner.StillMissing => _targetMissing;
+
     void Rebuild()
     {
         // A setter can write a property one of these conditions watches, which re-enters here.
@@ -152,42 +163,59 @@ public sealed class CompiledTriggerSet
         }
     }
 
+    // The two maps are shared with a nested pass, so evaluation stays under the guard too.
     void Apply()
     {
-        _parts.Unwatch();
-
-        var active = new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
-        var missing = false;
-        var index = 0;
-        foreach (var trigger in _triggers)
-        {
-            var holds = true;
-            foreach (var condition in trigger.Conditions)
-            {
-                if (!Equals(_parts.Evaluate(index++), condition.Value))
-                    holds = false;
-            }
-
-            if (!holds)
-                continue;
-
-            foreach (var setter in trigger.Setters)
-            {
-                if (SetterTarget(setter) is { } element)
-                    active[(element, setter.Property)] = setter;
-                else
-                    missing = true;
-            }
-        }
-
-        _targetMissing = missing;
-
-        var applied = _applied;
-        _applied = active;
-
         _pushing = true;
         try
         {
+            _parts.Unwatch();
+
+            var active = _spare;
+            active?.Clear();
+            var missing = false;
+            var index = 0;
+            foreach (var trigger in _triggers)
+            {
+                var holds = true;
+                foreach (var condition in trigger.Conditions)
+                {
+                    if (!Equals(_parts.Evaluate(index++), condition.Value))
+                        holds = false;
+                }
+
+                if (!holds)
+                    continue;
+
+                foreach (var setter in trigger.Setters)
+                {
+                    if (SetterTarget(setter) is { } element)
+                    {
+                        active ??=
+                            new Dictionary<
+                                (FrameworkElement, DependencyProperty),
+                                CompiledSetter
+                            >();
+                        active[(element, setter.Property)] = setter;
+                    }
+                    else
+                    {
+                        missing = true;
+                    }
+                }
+            }
+
+            _targetMissing = missing;
+
+            var applied = _applied;
+            if (applied is null && active is null)
+                return;
+
+            applied ??= new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
+            active ??= new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
+            _applied = active;
+            _spare = applied;
+
             foreach (var pair in applied)
             {
                 if (!active.ContainsKey(pair.Key))

@@ -3,6 +3,40 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.3] - 2026-09-17
+
+### Fixed
+
+- **A container a virtualizing panel recycles no longer leaks a handler per unload.** Noesis keeps
+  a `DataContextChanged` or `LayoutUpdated` handler whose removal leaves another handler on the
+  event, so a subscription taken and dropped per binding grew each element's invocation list by
+  one copy per unload and rebuilt it on every subsequent add or remove. Each element now carries
+  one subscription per event, fanned out to its bindings on the managed side and dropped only once
+  nothing listens; a copy Noesis left behind is recognised and never joined by another.
+- **A binding that re-evaluates allocates nothing of its own.** A notifier bound anywhere already
+  carries Noesis' subscriber, so re-subscribing per chain rebuilt the event's invocation list on
+  every re-evaluation; each notifier now carries one subscription for every chain that reads it.
+  A trigger set keeps its two setter maps across evaluations, and a watched dependency property
+  fires its handlers without copying them.
+- **A compiled hop that reads a value type no longer boxes it on every evaluation.** A bool reads
+  as one of two shared boxes, and any other value type keeps one box per value it has read, so a
+  trigger re-evaluated on a recycled container allocates nothing for the conditions it reads.
+- **A template clone no longer rebuilds its bindings' specifications.** The generated wiring built
+  every `CompiledBindingSpec`, trigger spec, setter and resource lookup again for each clone; they
+  are now built once beside the wiring and shared by every clone.
+- **A bool or enum dependency property a chain reads no longer boxes on every read.** The read goes
+  through Noesis' own typed getter and comes back as a shared box, so a property trigger or a
+  binding rooted at such a property allocates nothing to re-evaluate; `DependencyRead` offers the
+  same read to generated code.
+- **A `[DependencyProperty]` of bool, int or enum type reads through the same shared boxes**, so
+  code reading its own properties in a change callback allocates nothing; and an int shown as text
+  formats each small value once.
+- **Binding an element allocates far less.** A binding listens through interfaces rather than a
+  delegate per event, one lifecycle subscription per element serves every binding on it, a
+  notifier list and a trigger set's maps exist only once they hold something, and a dependency
+  property once probed stays probed across unloads instead of binding a native expression again on
+  each load.
+
 ## [0.2.2] - 2026-09-17
 
 ### Changed
