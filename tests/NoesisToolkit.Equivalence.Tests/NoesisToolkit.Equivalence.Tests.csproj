@@ -30,6 +30,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
     <CompilerVisibleProperty Include="NoesisXamlPackPrefix" />
     <AdditionalFiles Include="Fixtures/**/*.xaml" />
     <None Include="Fixtures/**/*.xaml" CopyToOutputDirectory="PreserveNewest" />

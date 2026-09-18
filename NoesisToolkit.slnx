@@ -4,9 +4,11 @@
     <Project Path="src/NoesisToolkit.Analyzers/NoesisToolkit.Analyzers.csproj" />
     <Project Path="src/NoesisToolkit.Mvvm/NoesisToolkit.Mvvm.csproj" />
     <Project Path="src/NoesisToolkit.Mvvm.Generators/NoesisToolkit.Mvvm.Generators.csproj" />
+    <Project Path="src/NoesisToolkit.Testing/NoesisToolkit.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NoesisToolkit.Tests/NoesisToolkit.Tests.csproj" />
     <Project Path="tests/NoesisToolkit.Equivalence.Tests/NoesisToolkit.Equivalence.Tests.csproj" />
+    <Project Path="tests/NoesisToolkit.Testing.Tests/NoesisToolkit.Testing.Tests.csproj" />
   </Folder>
 </Solution>

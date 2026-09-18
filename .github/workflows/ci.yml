@@ -50,6 +50,9 @@ jobs:
       - name: Equivalence tests
         run: dotnet run --project tests/NoesisToolkit.Equivalence.Tests -c Release --no-build
 
+      - name: Collectability tests
+        run: dotnet run --project tests/NoesisToolkit.Testing.Tests -c Release --no-build
+
       - name: Pack
         run: dotnet pack NoesisToolkit.slnx -c Release --no-build -o artifacts
 

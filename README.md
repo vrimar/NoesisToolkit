@@ -9,10 +9,11 @@ Not affiliated with or endorsed by Noesis Technologies.
 | Package | What it does |
 |---|---|
 | `NoesisToolkit.XamlCompiler` | compiles XAML to C# — no runtime parse, plus `InitializeComponent` and typed `x:Name` accessors |
-| `NoesisToolkit.Analyzers` | validates binding paths, `clr-namespace` declarations, `x:Static` references, and Noesis event lifetimes |
+| `NoesisToolkit.Analyzers` | validates binding paths, `clr-namespace` declarations, `x:Static` references, and the event and command lifetimes that pin an element |
 | `NoesisToolkit.Mvvm` | `[DependencyProperty]`, `[DelegateCommand]`, and the commands behind them |
+| `NoesisToolkit.Testing` | proves your controls are collectable, against a live renderless view |
 
-Each is independent. Take one, take all three.
+Each is independent. Take one, take all four.
 
 ## NoesisToolkit.XamlCompiler
 
@@ -94,9 +95,19 @@ per document rather than globally: turning it on across a codebase that has neve
 every document at once.
 
 `NoesisXamlExtensions` and `EnableDefaultNoesisXamlItems` apply here too.
-`NoesisAnalyzeXamlBindings` (default `true`) gates `NTK2001`–`NTK2004` only; `NTK2101` analyses C#
-rather than XAML and is not gated by a property — adjust it through `.editorconfig` severity like
-any other analyzer rule.
+`NoesisAnalyzeXamlBindings` (default `true`) gates `NTK2001`–`NTK2004` only; `NTK2101` and `NTK2102`
+analyse C# rather than XAML and are not gated by a property — adjust them through `.editorconfig`
+severity like any other analyzer rule.
+
+`NTK2101` and `NTK2102` are the two leak rules. Noesis holds handler delegates, and the managed
+objects a native property picks up, in static tables cleaned only when the element's native object
+dies — which the pinned managed proxy prevents. So an instance handler left on an element or a
+template child, and a command whose delegates captured the control that binds it, both keep that
+control alive for the process lifetime. A `-=` that the same flow re-attaches does not settle the
+first: it stops a second `OnApplyTemplate` stacking the handler, but never runs on unload. The way
+out of both is a `static` handler that takes its owner from `sender` — or, for a template child,
+from `sender`'s `TemplatedParent`. Details in
+[docs/diagnostics.md](https://github.com/vrimar/NoesisToolkit/blob/main/docs/diagnostics.md).
 
 With the XAML compiler also referenced, a `{Binding}` in an `x:Class` document that resolves end to
 end is emitted as a chain of typed reads instead of a reflective path string, so a rename that
@@ -136,6 +147,38 @@ static void OnWidthChanged(DependencyObject d, DependencyPropertyChangedEventArg
 A `static` partial property registers as an attached property and gains generated `GetSlot` /
 `SetSlot` accessors instead.
 
+## NoesisToolkit.Testing
+
+```xml
+<PackageReference Include="NoesisToolkit.Testing" />
+```
+
+`NTK2101` and `NTK2102` read code, so they cannot see what markup wired or what a native property
+picked up at runtime. This proves it instead: every constructible control in the assemblies you name
+is added to a live renderless view, removed, collected, and reported if the heap still holds it.
+
+```csharp
+[Test]
+public async Task Controls_are_collectable()
+{
+    if (ControlCollectability.Unavailable() is { } reason)
+        throw new SkipTestException(reason);
+
+    var report = ControlCollectability.Probe([typeof(Shell).Assembly]);
+
+    await Assert.That(report.Leaked).IsEmpty();
+    await Assert.That(report.Verified).IsGreaterThan(0);   // a sweep that skips everything is green
+}
+```
+
+Run it with your theme installed. Without a template a control has no template children to subscribe
+to and no bindings to carry, so the sweep passes on controls that leak in the running app.
+
+`Probe` also takes `exclude` for a control the host retains by design, `betweenRounds` for a host
+that ticks its own frame work, and `settleRounds` (default 16) because a native destroy can lag a
+collection by several rounds. `Unavailable()` returns null when the environment can host the probe
+and otherwise says why, so a headless machine skips instead of reporting a false pass.
+
 ## Requirements
 
 - `NoesisToolkit.Mvvm` emits partial properties and the `field` keyword, so it needs a C# 14
@@ -143,6 +186,8 @@ A `static` partial property registers as an attached property and gains generate
 - It depends on `Noesis.GUI` >= 4.0.0, whose package declares `win10-*` runtime identifiers the
   modern SDK no longer probes — consumers may want `<NoWarn>$(NoWarn);NETSDK1206</NoWarn>`.
 - The two analyzer packages need Roslyn 4.8 or later (Visual Studio 2022 17.8 / .NET 8 SDK).
+- `NoesisToolkit.Testing` targets `net9.0` and drives real Noesis, so `libNoesis.so` has to load —
+  X11 and GL present on Linux. Ask `ControlCollectability.Unavailable()` and skip on a reason.
 
 ## Diagnostics
 
@@ -155,25 +200,27 @@ Every `NTK*` id the toolkit raises, and how to read the generated code, are in
 dotnet build NoesisToolkit.slnx
 dotnet run --project tests/NoesisToolkit.Tests
 dotnet run --project tests/NoesisToolkit.Equivalence.Tests
+dotnet run --project tests/NoesisToolkit.Testing.Tests
 csharpier format .
 ```
 
 `NoesisToolkit.Tests` compiles each generator's output against a stub Noesis surface, so emitted C#
 that does not bind fails the suite. `NoesisToolkit.Equivalence.Tests` is the gate that proves
 faithfulness: every fixture is realized twice — once by the real Noesis parser, once by the compiled
-path — and the two object graphs are diffed. It links `libNoesis.so`, so it needs X11 and GL
-present, and it is never skipped.
+path — and the two object graphs are diffed. `NoesisToolkit.Testing.Tests` runs the collectability
+harness over a control pinned on purpose and one that is not, so a harness that reports nothing
+fails. The last two link `libNoesis.so`, so they need X11 and GL present.
 
 ## Releasing
 
 The version lives in the tag, nowhere in the tree. Push `v<semver>` and the release workflow builds,
-runs both suites, packs and pushes to NuGet:
+runs every suite, packs and pushes to NuGet:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-All three packages share one version. A tag carrying a `-suffix` (`v0.3.0-rc.1`) publishes as a
+All four packages share one version. A tag carrying a `-suffix` (`v0.3.0-rc.1`) publishes as a
 prerelease. Below `1.0.0` a minor bump may break API; that is what `0.x` is for.
 
 Never reuse a version — NuGet keeps the first upload of one forever. If a push half-fails, re-running
