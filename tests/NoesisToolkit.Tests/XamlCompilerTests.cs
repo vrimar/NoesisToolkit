@@ -156,12 +156,16 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "Convert = __v => __v is null ? null : (object)"
-                    + "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Text((int)__v)"
+                "Convert = global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Cached<int>(static __t => (object)"
+                    + "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Text((int)__t), null)"
             );
         await Assert
             .That(source)
-            .Contains("Convert = __v => __v is double __t ? (object)(float)__t");
+            .Contains(
+                "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, double, float>("
+                    + "static __o => __o.Ratio, static __t => (float)__t, "
+                    + "static (__o, __w) => __o.Ratio = (double)__w, false)"
+            );
     }
 
     [Test]
@@ -181,8 +185,7 @@ public partial class XamlCompilerTests
             .That(source)
             .Contains(
                 "Convert = __v => __v is string __t"
-                    + " ? new global::Noesis.BitmapImage(new global::System.Uri(__t,"
-                    + " global::System.UriKind.RelativeOrAbsolute)) : null"
+                    + " ? global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From(__t) : null"
             );
     }
 
@@ -390,7 +393,8 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "Write = (__o, __v) => ((global::Sample.Ui.ItemViewModel)__o).Ticked = __v is bool __w ? __w : default(bool)"
+                "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, bool, bool>("
+                    + "static __o => __o.Ticked, static __t => __t, static (__o, __w) => __o.Ticked = __w, false)"
             );
     }
 

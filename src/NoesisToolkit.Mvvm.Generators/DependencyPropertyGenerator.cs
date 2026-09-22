@@ -137,6 +137,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
     private static string? TypedRead(ITypeSymbol type)
     {
+        // Noesis reads a null string as empty, so an annotated one reads the same way.
+        if (type.SpecialType == SpecialType.System_String)
+            return "String";
+
+        // An object slot holding text unboxes a fresh string per read; the toolkit's shares it.
+        if (type.SpecialType == SpecialType.System_Object)
+            return "Value";
+
         if (type.NullableAnnotation == NullableAnnotation.Annotated)
             return null;
 
@@ -144,6 +152,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         {
             SpecialType.System_Boolean => "Bool",
             SpecialType.System_Int32 => "Int",
+            SpecialType.System_Int64 => "Long",
             SpecialType.System_Single => "Float",
             SpecialType.System_Double => "Double",
             _ => type.TypeKind == TypeKind.Enum ? $"Enum<{type.Fq()}>" : null,
@@ -157,6 +166,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             type.SpecialType
                 is SpecialType.System_Boolean
                     or SpecialType.System_Int32
+                    or SpecialType.System_Int64
                     or SpecialType.System_Single
                     or SpecialType.System_Double
             || type.TypeKind == TypeKind.Enum
@@ -225,11 +235,11 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         w.Line();
     }
 
-    // A bool, int, float, double or enum reads typed through the toolkit; Noesis' GetValue boxes
+    // A bool, int, long, float, double or enum reads typed through the toolkit; Noesis' GetValue boxes
     // every value type anew.
     private static string Read(Model m, string target) =>
         m.TypedRead is { } typed
-            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property)"
+            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"
             : $"({m.TypeFqnNullable}){target}.GetValue({m.PropertyName}Property)";
 
     private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";

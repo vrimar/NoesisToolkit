@@ -146,9 +146,11 @@ sealed partial class XamlEmitter
         }
 
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.ImageSource"))
-            return ImageUri(text) is { } uri
-                ? $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))"
-                : Fail($"image source '{text}' is not a uri the parser is known to resolve");
+            return ImageUri(text) is not { } uri
+                    ? Fail($"image source '{text}' is not a uri the parser is known to resolve")
+                : typeFqn == "global::Noesis.ImageSource"
+                    ? $"global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From({Quote(uri)})"
+                : $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))";
 
         if (typeFqn == "global::Noesis.RoutedEvent")
             return RoutedEventReference(scope, text);

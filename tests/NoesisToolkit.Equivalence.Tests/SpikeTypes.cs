@@ -89,8 +89,16 @@ public sealed class SpikeItem : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    void Raise([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    // Shared per name, so an allocation test measures the binding rather than the model.
+    static readonly Dictionary<string, PropertyChangedEventArgs> Args = new();
+
+    void Raise([CallerMemberName] string name = "")
+    {
+        if (!Args.TryGetValue(name, out var args))
+            Args[name] = args = new PropertyChangedEventArgs(name);
+
+        PropertyChanged?.Invoke(this, args);
+    }
 }
 
 /// <summary>The SpikeItem hops the compiler would emit, written once instead of at every spec.</summary>

@@ -24,7 +24,11 @@ public sealed class CompiledConversionTests
         CompiledBinding.Bind(
             compiledText,
             TextBlock.TextProperty,
-            new CompiledBindingSpec { Hops = [Hop.Index], Convert = v => v?.ToString() }
+            new CompiledBindingSpec
+            {
+                Hops = [Hop.Index],
+                Convert = SlotConversion.Cached<int>(static t => SlotConversion.Text(t), null),
+            }
         );
 
         NoesisRuntime.Show(nativeText, compiledText);
@@ -80,7 +84,10 @@ public sealed class CompiledConversionTests
             new CompiledBindingSpec
             {
                 Hops = [Hop.Ratio],
-                Convert = v => v is double t ? (object)(float)t : (object)default(float),
+                Convert = SlotConversion.Cached<double>(
+                    static t => (float)t,
+                    DependencyProperty.UnsetValue
+                ),
             }
         );
 
@@ -89,6 +96,22 @@ public sealed class CompiledConversionTests
 
         source.Ratio = 40;
         await Assert.That(target.Width).IsEqualTo(40f);
+    }
+
+    [Test]
+    public async Task A_cached_conversion_converts_each_value_once()
+    {
+        var convert = SlotConversion.Cached<double>(
+            static t => (float)t,
+            DependencyProperty.UnsetValue
+        );
+
+        var first = convert(12.5);
+        await Assert.That(first).IsEqualTo(12.5f);
+        await Assert.That(ReferenceEquals(convert(12.5), first)).IsTrue();
+        await Assert.That(ReferenceEquals(convert(40.0), first)).IsFalse();
+        await Assert.That(convert(null)).IsSameReferenceAs(DependencyProperty.UnsetValue);
+        await Assert.That(convert("12.5")).IsSameReferenceAs(DependencyProperty.UnsetValue);
     }
 
     [Test]
@@ -182,10 +205,7 @@ public sealed class CompiledConversionTests
             new CompiledBindingSpec
             {
                 Hops = [Hop.Label],
-                Convert = v =>
-                    v is string t
-                        ? new BitmapImage(new System.Uri(t, System.UriKind.RelativeOrAbsolute))
-                        : null,
+                Convert = v => v is string t ? ImageSources.From(t) : null,
             }
         );
 
@@ -196,6 +216,20 @@ public sealed class CompiledConversionTests
         native.Label = "";
         compiled.Label = "";
         await Assert.That(SourcePath(compiledImage)).IsEqualTo(SourcePath(nativeImage));
+    }
+
+    [Test]
+    public async Task Rows_converting_the_same_path_share_one_image()
+    {
+        NoesisRuntime.Start();
+
+        var first = ImageSources.From("Fixtures/icon.png");
+        var second = ImageSources.From("Fixtures/icon.png");
+
+        await Assert.That(second).IsSameReferenceAs(first);
+        await Assert
+            .That(((BitmapImage)first).UriSource.OriginalString)
+            .IsEqualTo("Fixtures/icon.png");
     }
 
     static string? SourcePath(Image image) =>

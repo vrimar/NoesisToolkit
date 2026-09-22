@@ -397,20 +397,32 @@ sealed partial class XamlEmitter
             return No("update-trigger-unsupported");
 
         var fields = SourceFields(source, resolved);
-        fields.Add($"Convert = {convert}");
+        var lane =
+            converter is null && !formatted
+                ? Lane(resolved, slot, coercion is not null, write is not null, source.Resolver)
+                : null;
 
-        if (slot.Assign is not null)
-            fields.Add($"Assign = {slot.Assign}");
-
-        if (converter is not null)
+        if (lane is not null)
         {
-            fields.Add($"Converter = {converter}");
-            fields.Add($"ConverterParameter = {ConverterParameter(call)}");
-            fields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
+            fields.Add($"Lane = {lane}");
         }
+        else
+        {
+            fields.Add($"Convert = {convert}");
 
-        if (write is not null)
-            fields.Add($"Write = {write}");
+            if (slot.Assign is not null)
+                fields.Add($"Assign = {slot.Assign}");
+
+            if (converter is not null)
+            {
+                fields.Add($"Converter = {converter}");
+                fields.Add($"ConverterParameter = {ConverterParameter(call)}");
+                fields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
+            }
+
+            if (write is not null)
+                fields.Add($"Write = {write}");
+        }
 
         if (mode.Length > 0)
             fields.Add($"Mode = global::Noesis.BindingMode.{mode}");
@@ -433,6 +445,51 @@ sealed partial class XamlEmitter
         );
         return true;
     }
+
+    // An enum slot keeps the boxed route: it is written through its own accessor.
+    static string? Lane(
+        ResolvedPath resolved,
+        BindingSlot slot,
+        bool converted,
+        bool writes,
+        string? resolver
+    )
+    {
+        if (resolved.Hops.Count == 0 || slot.Assign is not null || slot.Registered is not null)
+            return null;
+
+        if (
+            slot.Type.SpecialType
+            is not (
+                SpecialType.System_Boolean
+                or SpecialType.System_Int32
+                or SpecialType.System_Int64
+                or SpecialType.System_Single
+                or SpecialType.System_Double
+            )
+        )
+            return null;
+
+        var last = resolved.Hops[resolved.Hops.Count - 1];
+        var from = last.Type;
+        var exact = SymbolEqualityComparer.Default.Equals(from, slot.Type);
+        if (!exact && !(converted && IsNumericOrEnum(from)))
+            return null;
+
+        var owner = XamlTypeResolver.Fqn(last.Owner);
+        var fromFqn = XamlTypeResolver.Fqn(from);
+        var slotFqn = XamlTypeResolver.Fqn(slot.Type);
+        var convert = exact ? "__t" : $"({slotFqn})__t";
+        var writeBack = writes
+            ? $"static (__o, __w) => __o.{last.Name} = {(exact ? "__w" : $"({fromFqn})__w")}"
+            : "null";
+        var guarded = resolver is not null && resolved.Hops.Count == 1 ? "true" : "false";
+
+        return $"{BindingLaneFqn}.Of<{owner}, {fromFqn}, {slotFqn}>("
+            + $"static __o => __o.{last.Name}, static __t => {convert}, {writeBack}, {guarded})";
+    }
+
+    const string BindingLaneFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingLane";
 
     // Found by a mark rather than a position: the host's own code can add objects ahead of these.
     (string Anchor, INamedTypeSymbol AnchorType, string Receiver)? DetachedReceiver(
@@ -1580,16 +1637,20 @@ sealed partial class XamlEmitter
         if (FormatHoles(XamlMarkupParser.Unescape(format), 1) is not { } parsed)
             return null;
 
+        var from = Wrapped(source) ?? source;
+        var value = IsNumeric(from) ? "__t" : "__v";
         var args = new List<string>();
         foreach (var (_, spec) in parsed.Holes)
         {
-            if (FormatArgument(source, spec, "__v") is not { } arg)
+            if (FormatArgument(source, spec, value) is not { } arg)
                 return null;
 
             args.Add(arg);
         }
 
         var formatted = FormatCall(parsed.Format, args);
+        if (IsNumeric(from))
+            return Cached(from, formatted, UnsetValueFqn);
 
         // The engine fails the whole format on a null it does not hold as a string.
         return source.SpecialType == SpecialType.System_String
@@ -1848,24 +1909,31 @@ sealed partial class XamlEmitter
     // The value arrives boxed and unboxes to nothing but its own type, so the cast runs off that.
     string? Conversion(ITypeSymbol source, ITypeSymbol slot)
     {
+        var from = Wrapped(source) ?? source;
         if (slot.SpecialType == SpecialType.System_String)
         {
+            if (IsNumeric(from))
+                return TextOf(source, "__t", UnsetValueFqn) is { } number
+                    ? Cached(from, $"(object){number}", "null")
+                    : null;
+
             return TextOf(source, "__v", UnsetValueFqn) is { } text
                 ? $"__v => __v is null ? null : (object){text}"
                 : null;
         }
 
-        var from = Wrapped(source) ?? source;
         if (Constructed(from, Wrapped(slot) ?? slot) is { } constructed)
             return constructed;
 
         if (!IsNumericOrEnum(from) || !IsNumeric(Wrapped(slot) ?? slot))
             return null;
 
-        var fromFqn = XamlTypeResolver.Fqn(from);
-        var toFqn = XamlTypeResolver.Fqn(slot);
-        return $"__v => __v is {fromFqn} __t ? (object)({toFqn})__t : {NullInto(slot)}";
+        return Cached(from, $"(object)({XamlTypeResolver.Fqn(slot)})__t", NullInto(slot));
     }
+
+    // The source value arrives boxed as its own type, and the conversion runs off __t.
+    static string Cached(ITypeSymbol from, string convert, string fallback) =>
+        $"{SlotConversionFqn}.Cached<{XamlTypeResolver.Fqn(from)}>(static __t => {convert}, {fallback})";
 
     // The slots the native binding fills through a type converter; the constructor is that
     // converter's whole job, so the compiled form calls it directly.
@@ -1875,8 +1943,7 @@ sealed partial class XamlEmitter
         if (toFqn == "global::Noesis.ImageSource")
             return from.SpecialType == SpecialType.System_String
                 ? "__v => __v is string __t"
-                    + " ? new global::Noesis.BitmapImage(new global::System.Uri(__t,"
-                    + " global::System.UriKind.RelativeOrAbsolute)) : null"
+                    + " ? global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From(__t) : null"
                 : null;
 
         if (!IsNumeric(from))

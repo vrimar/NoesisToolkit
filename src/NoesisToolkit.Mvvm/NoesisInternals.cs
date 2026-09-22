@@ -20,6 +20,12 @@ static class NoesisInternals
         bool ownMemory
     );
 
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "GetExtendInstance")]
+    internal static extern object? ExtendInstance(
+        [UnsafeAccessorType("Noesis.Extend, Noesis.GUI")] object? owner,
+        nint cPtr
+    );
+
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "get_Initialized")]
     internal static extern bool Initialized(
         [UnsafeAccessorType("Noesis.Extend, Noesis.GUI")] object? owner

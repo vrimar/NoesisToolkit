@@ -97,10 +97,10 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     readonly FrameworkElement _target;
     readonly CompiledTriggerSpec[] _triggers;
     readonly PartSet _parts;
+    readonly Layout _layout;
 
-    // Both maps exist only once a trigger has held: most sets never do.
-    Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>? _applied;
-    Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>? _spare;
+    // One bit per setter slot, so a trigger holding or letting go writes the difference and nothing else.
+    readonly ulong[] _applied;
 
     bool _pushing;
     bool _moved;
@@ -108,10 +108,60 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     // A clone's name scope can fill after the first pass, so keep retrying rather than drop it.
     bool _targetMissing;
 
+    // A template's setters in document order, shared by every element the template is cloned onto.
+    sealed class Layout
+    {
+        internal readonly CompiledSetter[] Slots;
+
+        // Slots that write the same property through the same name share a key; the later slot wins.
+        internal readonly int[] Keys;
+        internal readonly int KeyCount;
+
+        internal Layout(CompiledTriggerSpec[] triggers)
+        {
+            var slots = new List<CompiledSetter>();
+            var keys = new List<int>();
+            var ids = new Dictionary<(string?, DependencyProperty), int>();
+            foreach (var trigger in triggers)
+            {
+                foreach (var setter in trigger.Setters)
+                {
+                    var key = (setter.TargetName, setter.Property);
+                    if (!ids.TryGetValue(key, out var id))
+                        ids[key] = id = ids.Count;
+
+                    slots.Add(setter);
+                    keys.Add(id);
+                }
+            }
+
+            Slots = slots.ToArray();
+            Keys = keys.ToArray();
+            KeyCount = ids.Count;
+        }
+
+        internal static int Words(int bits) => (bits + 63) >> 6;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        CompiledTriggerSpec[],
+        Layout
+    > _layouts = new System.Runtime.CompilerServices.ConditionalWeakTable<
+        CompiledTriggerSpec[],
+        Layout
+    >();
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        CompiledTriggerSpec[],
+        Layout
+    >.CreateValueCallback CreateLayout = static triggers => new Layout(triggers);
+
     CompiledTriggerSet(FrameworkElement target, CompiledTriggerSpec[] triggers)
     {
         _target = target;
         _triggers = triggers;
+        _layout = _layouts.GetValue(triggers, CreateLayout);
+        _applied = new ulong[Layout.Words(_layout.Slots.Length)];
 
         var count = 0;
         foreach (var trigger in triggers)
@@ -169,7 +219,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         }
     }
 
-    // The two maps are shared with a nested pass, so evaluation stays under the guard too.
+    // A setter's write can reach a nested pass, so evaluation stays under the guard too.
     void Apply()
     {
         _pushing = true;
@@ -177,75 +227,103 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         {
             _parts.Unwatch();
 
-            var active = _spare;
-            active?.Clear();
+            var slots = _layout.Slots;
+            var keys = _layout.Keys;
+            var words = _applied.Length;
+
+            Span<ulong> active = stackalloc ulong[words];
             var missing = false;
             var index = 0;
+            var slot = 0;
             foreach (var trigger in _triggers)
             {
                 var holds = true;
                 foreach (var condition in trigger.Conditions)
                 {
-                    if (!Equals(_parts.Evaluate(index++), condition.Value))
+                    if (!_parts.Matches(index++, condition.Value))
                         holds = false;
                 }
 
-                if (!holds)
-                    continue;
-
                 foreach (var setter in trigger.Setters)
                 {
-                    if (SetterTarget(setter) is { } element)
+                    if (holds)
                     {
-                        active ??=
-                            new Dictionary<
-                                (FrameworkElement, DependencyProperty),
-                                CompiledSetter
-                            >();
-                        active[(element, setter.Property)] = setter;
+                        if (SetterTarget(setter) is null)
+                            missing = true;
+                        else
+                            Set(active, slot);
                     }
-                    else
-                    {
-                        missing = true;
-                    }
+
+                    slot++;
                 }
             }
 
             _targetMissing = missing;
 
-            var applied = _applied;
-            if (applied is null && active is null)
+            if (!Any(active) && !Any(_applied))
                 return;
 
-            applied ??= new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
-            active ??= new Dictionary<(FrameworkElement, DependencyProperty), CompiledSetter>();
-            _applied = active;
-            _spare = applied;
-
-            foreach (var pair in applied)
+            Span<ulong> winners = stackalloc ulong[words];
+            Span<ulong> keysWon = stackalloc ulong[Layout.Words(_layout.KeyCount)];
+            for (var i = slots.Length - 1; i >= 0; i--)
             {
-                if (!active.ContainsKey(pair.Key))
-                    pair.Key.Item1.ClearValue(pair.Key.Item2);
+                if (Has(active, i) && !Has(keysWon, keys[i]))
+                {
+                    Set(winners, i);
+                    Set(keysWon, keys[i]);
+                }
             }
 
-            foreach (var pair in active)
+            Span<ulong> previous = stackalloc ulong[words];
+            _applied.CopyTo(previous);
+            winners.CopyTo(_applied);
+
+            for (var i = 0; i < slots.Length; i++)
             {
                 if (
-                    applied.TryGetValue(pair.Key, out var previous)
-                    && ReferenceEquals(previous, pair.Value)
+                    Has(previous, i)
+                    && !Has(winners, i)
+                    && !Has(keysWon, keys[i])
+                    && SetterTarget(slots[i]) is { } cleared
+                )
+                    cleared.ClearValue(slots[i].Property);
+            }
+
+            for (var i = 0; i < slots.Length; i++)
+            {
+                if (
+                    !Has(winners, i)
+                    || Has(previous, i)
+                    || SetterTarget(slots[i]) is not { } element
                 )
                     continue;
 
-                if (pair.Value.Assign is null)
-                    pair.Key.Item1.SetValue(pair.Key.Item2, pair.Value.Value);
+                var setter = slots[i];
+                if (setter.Assign is null)
+                    element.SetValue(setter.Property, setter.Value);
                 else
-                    pair.Value.Assign(pair.Key.Item1, pair.Value.Value);
+                    setter.Assign(element, setter.Value);
             }
         }
         finally
         {
             _pushing = false;
         }
+    }
+
+    static bool Has(ReadOnlySpan<ulong> bits, int i) => (bits[i >> 6] & (1UL << (i & 63))) != 0;
+
+    static void Set(Span<ulong> bits, int i) => bits[i >> 6] |= 1UL << (i & 63);
+
+    static bool Any(ReadOnlySpan<ulong> bits)
+    {
+        foreach (var word in bits)
+        {
+            if (word != 0)
+                return true;
+        }
+
+        return false;
     }
 
     FrameworkElement? SetterTarget(CompiledSetter setter) =>

@@ -17,7 +17,7 @@ public class MvvmGeneratorTests
         var source = run.AllSources;
         await Assert.That(source).Contains("DependencyProperty.Register(");
         await Assert.That(source).Contains("nameof(Title)");
-        await Assert.That(source).Contains("GetValue(TitleProperty)");
+        await Assert.That(source).Contains("DependencyRead.String(this, TitleProperty)");
         await Assert.That(source).Contains("SetValue(TitleProperty, value)");
     }
 
@@ -144,6 +144,27 @@ public class MvvmGeneratorTests
     }
 
     [Test]
+    public async Task A_long_property_reads_and_writes_through_the_typed_natives()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, LongOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+        await Assert
+            .That(source)
+            .Contains("global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Long(this, MaxProperty)");
+        await Assert
+            .That(source)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyWrite.Value(this, MaxProperty, value)"
+            );
+    }
+
+    [Test]
     public async Task Metadata_arguments_reach_the_registration()
     {
         var run = GeneratorHarness.Run(
@@ -195,6 +216,18 @@ public class MvvmGeneratorTests
         {
             [DependencyProperty]
             public static partial int Slot { get; set; }
+        }
+        """;
+
+    const string LongOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Bounded : global::Noesis.UserControl
+        {
+            [DependencyProperty(long.MaxValue)]
+            public partial long Max { get; set; }
         }
         """;
 

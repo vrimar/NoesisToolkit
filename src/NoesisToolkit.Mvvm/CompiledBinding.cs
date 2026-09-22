@@ -102,10 +102,17 @@ public readonly struct BindingHop
     {
         const int Cap = 256;
 
+        // Without IEquatable a lookup boxes the key and reflects over its fields: dearer than the box.
+        static readonly bool Keyable =
+            typeof(TValue).IsEnum || typeof(IEquatable<TValue>).IsAssignableFrom(typeof(TValue));
+
         readonly Dictionary<TValue, object> _boxes = new Dictionary<TValue, object>();
 
         internal object Of(TValue value)
         {
+            if (!Keyable)
+                return value;
+
             if (_boxes.TryGetValue(value, out var boxed))
                 return boxed;
 
@@ -148,6 +155,7 @@ public sealed class CompiledBinding
     ElementLifecycle _life = null!;
     bool _pushing;
     object? _written;
+    ulong _writtenSlot;
 
     CompiledBinding(
         FrameworkElement target,
@@ -174,7 +182,7 @@ public sealed class CompiledBinding
 
         _twoWay =
             _receiverResolver is null
-            && spec.Write is not null
+            && (spec.Lane?.WritesBack ?? spec.Write is not null)
             && (
                 spec.Mode == BindingMode.TwoWay
                 || (spec.Mode == BindingMode.Default && metadata?.BindsTwoWayByDefault == true)
@@ -330,7 +338,7 @@ public sealed class CompiledBinding
     static bool Marked(DependencyObject? candidate, string key) =>
         candidate is not null
         && string.Equals(
-            candidate.GetValue(ReceiverProperty) as string,
+            DependencyRead.Value(candidate, ReceiverProperty) as string,
             key,
             StringComparison.Ordinal
         );
@@ -491,8 +499,26 @@ public sealed class CompiledBinding
             return;
         }
 
-        var current = _chain.Evaluate(out var root, out var owner, out var broke);
-        _writable = owner;
+        object? current = null;
+        ulong slot = 0;
+        object? root;
+        bool broke;
+        if (_spec.Lane is { } lane)
+        {
+            var owner = _chain.EvaluateOwner(out root, out broke);
+            if (!broke && !lane.TryRead(owner!, out slot))
+            {
+                owner = null;
+                broke = true;
+            }
+
+            _writable = owner;
+        }
+        else
+        {
+            current = _chain.Evaluate(out root, out var owner, out broke);
+            _writable = owner;
+        }
 
         if (_receiver is null)
             return;
@@ -508,7 +534,11 @@ public sealed class CompiledBinding
             // put in the slot meanwhile has to survive our own reload rebuilds.
             if (!broke)
             {
-                WriteTarget(Forward(current));
+                if (_spec.Lane is { } typed)
+                    typed.Write(_receiver, _property, slot);
+                else
+                    WriteTarget(Forward(current));
+
                 _brokeFor = NotBroke;
             }
             else if (!ReferenceEquals(root, _brokeFor))
@@ -594,13 +624,24 @@ public sealed class CompiledBinding
     // What the binding itself left in the target is not an edit, however late the change reports.
     void Settle()
     {
-        if (_twoWay)
-            _written = _target.GetValue(_property);
+        if (!_twoWay)
+            return;
+
+        if (_spec.Lane is { } lane)
+            _writtenSlot = lane.Read(_target, _property);
+        else
+            _written = DependencyRead.Value(_target, _property);
     }
 
     void OnTargetChanged()
     {
-        if (!_onLostFocus && !Equals(_target.GetValue(_property), _written))
+        if (_onLostFocus)
+            return;
+
+        var edited = _spec.Lane is { } lane
+            ? !lane.Same(lane.Read(_target, _property), _writtenSlot)
+            : !Equals(DependencyRead.Value(_target, _property), _written);
+        if (edited)
             Push();
     }
 
@@ -608,10 +649,21 @@ public sealed class CompiledBinding
 
     void Push()
     {
-        if (_pushing || _spec.Write is null || _writable is null)
+        if (_pushing || _writable is null)
             return;
 
-        var value = _target.GetValue(_property);
+        if (_spec.Lane is { } lane)
+        {
+            if (lane.WritesBack)
+                PushTyped(lane, _writable);
+
+            return;
+        }
+
+        if (_spec.Write is null)
+            return;
+
+        var value = DependencyRead.Value(_target, _property);
         if (_spec.Converter is not null)
             value = _spec.Converter.ConvertBack(
                 value,
@@ -637,6 +689,22 @@ public sealed class CompiledBinding
             _pushing = false;
 
             // Natively the source is read back after every write, even one that refused or threw.
+            Rebuild();
+        }
+    }
+
+    void PushTyped(BindingLane lane, object writable)
+    {
+        var slot = lane.Read(_target, _property);
+
+        _pushing = true;
+        try
+        {
+            lane.WriteBack(writable, slot);
+        }
+        finally
+        {
+            _pushing = false;
             Rebuild();
         }
     }

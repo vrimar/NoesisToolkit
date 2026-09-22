@@ -3,6 +3,50 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A compiled binding carries a flag or number typed, through a `BindingLane`.** Where the path ends
+  in a bool, number or enum and the slot is a bool, int, long, float or double, with no converter or
+  format between them, the compiler emits a lane: the last hop is read, converted and written to the
+  slot, and a two-way edit read back and written to the source, all through Noesis' typed natives.
+  The boxed route kept a box per value per hop, so a slider dragged through values it had never shown
+  allocated every frame; a lane allocates nothing. An enum slot keeps the boxed route, since it is
+  written through its own accessor.
+- **`HandlerArgs.Reuse()` hands every managed event handler one reused args object** per args type
+  and nesting depth. Noesis mints a finalizable args object for each handler it delivers to, which a
+  pointer move, a key or a click pays once per subscribed element. The args are valid for the
+  handler's duration only, as Noesis' own are.
+- **`RenderDeviceTiles.Reuse()` hands `ResolveRenderTarget` a reused tile array.** Noesis' callback
+  marshals its tiles into a fresh array on every offscreen pass, which every opacity mask, effect and
+  group opacity takes.
+- **`DependencyRead.Long` and `DependencyWrite.Value(long)`**, and the `[DependencyProperty]`
+  generator reads and writes a `long` property through them.
+- **`DependencyRead.TryCopyString` copies a string property's text into a caller's buffer** without
+  decoding a string, for a reader that only parses or measures it.
+
+### Changed
+
+- **Text is decoded once per distinct text.** `DependencyRead.String`, `DependencyRead.Value` on a
+  string property or on an object one holding a string, and a generated string accessor return the
+  string already decoded for the same UTF-8, where Noesis decodes a fresh one per read. An object
+  property holding a flag or number reads back a shared box.
+- **A trigger comparing a string property to a constant compares the native UTF-8**, so a text box's
+  placeholder trigger no longer decodes its text on every keystroke.
+- **A compiled trigger set writes only what changed.** It tracks its setters as bits over a layout
+  shared by every clone of the template, where it rebuilt two dictionaries on every pass.
+- **A compiled conversion is kept per source value.** A number reaching a slot of another numeric
+  type or a string, and a `StringFormat` over a number, convert through `SlotConversion.Cached`, which
+  boxes or formats each value once per binding site rather than on every evaluation.
+- **A path compiled into an `ImageSource` slot shares one image per path** through
+  `ImageSources.From`, where every bind minted a URI and a `BitmapImage` and Noesis resolved the
+  texture again.
+- **A value hop keeps a box per value only for an enum or an `IEquatable<T>`.** Keying any other
+  struct boxes the key and reflects over its fields, which costs more than the box it saves.
+- **A converter's number reaching a float or double slot is written directly**, rather than through a
+  one-time native binding.
+
 ## [0.2.5] - 2026-09-21
 
 ### Added

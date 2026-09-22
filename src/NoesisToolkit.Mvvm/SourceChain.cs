@@ -59,7 +59,25 @@ sealed class SourceChain : IChangeListener
     /// <paramref name="owner"/> is the object the last hop
     /// read off, which is what a write back applies to; <paramref name="broke"/> is a path that ran
     /// out, which is not the same as a value that is genuinely null.</summary>
-    internal object? Evaluate(out object? root, out object? owner, out bool broke)
+    internal object? Evaluate(out object? root, out object? owner, out bool broke) =>
+        Walk(_hops.Length, out root, out owner, out broke);
+
+    internal object? EvaluateOwner(out object? root, out bool broke)
+    {
+        var owner = Walk(_hops.Length - 1, out root, out _, out broke);
+        if (owner is null)
+            broke = true;
+
+        return owner;
+    }
+
+    // Compared natively: a text box's placeholder trigger would otherwise decode its text per keystroke.
+    internal bool? TextEquals(string text) =>
+        _hops.Length == 0 && _source is not null && _sourceProperty is not null
+            ? DependencyRead.TextEquals(_source, _sourceProperty, text)
+            : null;
+
+    object? Walk(int hops, out object? root, out object? owner, out bool broke)
     {
         owner = null;
 
@@ -73,7 +91,7 @@ sealed class SourceChain : IChangeListener
         // A null root is a value the binding writes; only a hop with nothing to read off breaks it.
         broke = _source is null;
 
-        for (var i = 0; i < _hops.Length; i++)
+        for (var i = 0; i < hops; i++)
         {
             if (current is null)
             {

@@ -64,9 +64,16 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static object? Value(Noesis.DependencyObject source, Noesis.DependencyProperty property) => null;
         public static bool Bool(Noesis.DependencyObject source, Noesis.DependencyProperty property) => false;
         public static int Int(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0;
+        public static long Long(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0L;
         public static float Float(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0f;
         public static double Double(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0d;
+        public static string String(Noesis.DependencyObject source, Noesis.DependencyProperty property) => "";
         public static TEnum Enum<TEnum>(Noesis.DependencyObject source, Noesis.DependencyProperty property) where TEnum : struct, System.Enum => default;
+    }
+
+    public static class ImageSources
+    {
+        public static Noesis.ImageSource From(string uri) => null!;
     }
 
     public static class DependencyWrite
@@ -81,6 +88,11 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static void SetIndex(Noesis.DependencyObject target, int value) { }
     }
 
+    public abstract class BindingLane
+    {
+        public static BindingLane Of<TOwner, TSource, TSlot>(System.Func<TOwner, TSource> read, System.Func<TSource, TSlot> convert, System.Action<TOwner, TSlot>? writeBack, bool guarded) where TSource : struct where TSlot : struct => null!;
+    }
+
     public sealed class CompiledBindingSpec
     {
         public System.Func<Noesis.FrameworkElement, Noesis.FrameworkElement?>? Source { get; set; }
@@ -89,6 +101,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public System.Func<object?, object?> Convert { get; set; } = static v => v;
         public System.Action<Noesis.FrameworkElement, object?>? Assign { get; set; }
         public System.Action<object, object?>? Write { get; set; }
+        public BindingLane? Lane { get; set; }
         public Noesis.IValueConverter? Converter { get; set; }
         public object? ConverterParameter { get; set; }
         public System.Type? TargetType { get; set; }
@@ -137,6 +150,8 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static string Text(double value, string format) => "";
 
         public static string Text(float value, string format) => "";
+
+        public static System.Func<object?, object?> Cached<TSource>(System.Func<TSource, object?> convert, object? fallback) where TSource : struct => static v => v;
     }
 
     public sealed class CompiledBindingPart

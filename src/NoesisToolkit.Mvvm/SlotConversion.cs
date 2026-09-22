@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
@@ -17,6 +18,41 @@ public static class SlotConversion
 
     // A counter shown as text moves through small values, each of which formats once.
     static readonly string?[] SmallIntegers = new string?[1024];
+
+    // Past the cap a value converts fresh rather than growing the map without bound.
+    const int CachedCap = 256;
+
+    /// <summary>A binding site's conversion, kept per source value: the rows of a list and the
+    /// steps of a slider reach the slot with the same few values over and over, and each of them
+    /// boxes or formats once rather than on every evaluation.</summary>
+    /// <typeparam name="TSource">The number or enum the source holds.</typeparam>
+    /// <param name="convert">What the slot holds for a source value.</param>
+    /// <param name="fallback">What anything other than a <typeparamref name="TSource"/> converts to.</param>
+    /// <returns>The conversion for one binding site.</returns>
+    public static Func<object?, object?> Cached<TSource>(
+        Func<TSource, object?> convert,
+        object? fallback
+    )
+        where TSource : struct
+    {
+        Guard.NotNull(convert, nameof(convert));
+
+        var results = new Dictionary<TSource, object?>();
+        return value =>
+        {
+            if (value is not TSource source)
+                return fallback;
+
+            if (results.TryGetValue(source, out var result))
+                return result;
+
+            result = convert(source);
+            if (results.Count < CachedCap)
+                results[source] = result;
+
+            return result;
+        };
+    }
 
     /// <summary>The text the native engine shows for <paramref name="value"/>.</summary>
     /// <param name="value">The value to show.</param>
@@ -165,6 +201,30 @@ public static class SlotConversion
         if (property.PropertyType == typeof(string) && !Boxed(value))
             return false;
 
+        // A number into a float or double slot is a plain cast to the engine, which needs no binding.
+        if (IsNumber(value))
+        {
+            if (property.PropertyType == typeof(float))
+            {
+                DependencyWrite.Value(
+                    receiver,
+                    property,
+                    System.Convert.ToSingle(value, CultureInfo.InvariantCulture)
+                );
+                return true;
+            }
+
+            if (property.PropertyType == typeof(double))
+            {
+                DependencyWrite.Value(
+                    receiver,
+                    property,
+                    System.Convert.ToDouble(value, CultureInfo.InvariantCulture)
+                );
+                return true;
+            }
+        }
+
         BindingOperations.SetBinding(
             receiver,
             property,
@@ -172,6 +232,20 @@ public static class SlotConversion
         );
         return true;
     }
+
+    static bool IsNumber(object value) =>
+        value
+            is double
+                or float
+                or int
+                or long
+                or short
+                or byte
+                or uint
+                or ulong
+                or ushort
+                or sbyte
+                or decimal;
 
     static bool Boxed(object value) =>
         value

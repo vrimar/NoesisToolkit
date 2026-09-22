@@ -19,6 +19,10 @@ public static class DependencyWrite
         Native.Int(null, Handle(target), Handle(property), value, false, false);
 
     /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on <paramref name="target"/>.</summary>
+    public static void Value(DependencyObject target, DependencyProperty property, long value) =>
+        Native.Int64(null, Handle(target), Handle(property), value, false, false);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on <paramref name="target"/>.</summary>
     public static void Value(DependencyObject target, DependencyProperty property, float value) =>
         Native.Float(null, Handle(target), Handle(property), value, false, false);
 
@@ -95,6 +99,16 @@ public static class DependencyWrite
             nint dependencyObject,
             nint dependencyProperty,
             int val,
+            bool isNullable,
+            bool isNull
+        );
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencySet_Int64")]
+        internal static extern void Int64(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            long val,
             bool isNullable,
             bool isNull
         );

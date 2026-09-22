@@ -67,6 +67,11 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
         return broke ? DependencyProperty.UnsetValue : value;
     }
 
+    internal bool Matches(int index, object? expected) =>
+        expected is string text && _chains[index].TextEquals(text) is { } equal
+            ? equal
+            : Equals(Evaluate(index), expected);
+
     internal void Unwatch() => _watched.Clear();
 
     void IChainOwner.ChainChanged() => _owner.PartsChanged();

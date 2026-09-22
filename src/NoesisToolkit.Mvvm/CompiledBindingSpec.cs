@@ -32,6 +32,10 @@ public sealed class CompiledBindingSpec
     /// makes the binding one-way whatever <see cref="Mode"/> asks for.</summary>
     public Action<object, object?>? Write { get; set; }
 
+    /// <summary>Takes the last hop, the conversion, the slot write and the write back typed. Where
+    /// set, <see cref="Convert"/>, <see cref="Assign"/> and <see cref="Write"/> go unused.</summary>
+    public BindingLane? Lane { get; set; }
+
     /// <summary>Runs on the value the path produced, and in reverse on a write back.</summary>
     public IValueConverter? Converter { get; set; }
 
