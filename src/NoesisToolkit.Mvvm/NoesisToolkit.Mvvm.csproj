@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net9.0</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>NoesisToolkit.Mvvm</RootNamespace>
     <PackageId>NoesisToolkit.Mvvm</PackageId>
     <Description>MVVM boilerplate for NoesisGUI: [DependencyProperty] generates the DP registration and accessors, [DelegateCommand] turns a method into a bindable command, and DelegateCommand/AsyncDelegateCommand back them.</Description>
@@ -11,10 +12,6 @@
 
   <ItemGroup>
     <PackageReference Include="Noesis.GUI" />
-    <PackageReference
-      Include="System.Threading.Tasks.Extensions"
-      Condition="'$(TargetFramework)' == 'netstandard2.0'"
-    />
   </ItemGroup>
 
   <ItemGroup>

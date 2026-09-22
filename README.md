@@ -147,6 +147,11 @@ static void OnWidthChanged(DependencyObject d, DependencyPropertyChangedEventArg
 A `static` partial property registers as an attached property and gains generated `GetSlot` /
 `SetSlot` accessors instead.
 
+`Events.On` and `ElementGeometry` are the same reads Noesis' managed layer offers, without the
+object it mints per call — an element's events deliver the element itself rather than a fresh args
+object, and a translated point or a desired size comes back unboxed. Both matter where something
+runs per child, such as a panel arranging its children or testing them against the viewport.
+
 ## NoesisToolkit.Testing
 
 ```xml
@@ -182,11 +187,11 @@ and otherwise says why, so a headless machine skips instead of reporting a false
 ## Requirements
 
 - `NoesisToolkit.Mvvm` emits partial properties and the `field` keyword, so it needs a C# 14
-  compiler (.NET 10 SDK or later). The runtime library targets `netstandard2.0` and `net9.0`.
+  compiler (.NET 10 SDK or later). The runtime library targets `net10.0`.
 - It depends on `Noesis.GUI` >= 4.0.0, whose package declares `win10-*` runtime identifiers the
   modern SDK no longer probes — consumers may want `<NoWarn>$(NoWarn);NETSDK1206</NoWarn>`.
 - The two analyzer packages need Roslyn 4.8 or later (Visual Studio 2022 17.8 / .NET 8 SDK).
-- `NoesisToolkit.Testing` targets `net9.0` and drives real Noesis, so `libNoesis.so` has to load —
+- `NoesisToolkit.Testing` targets `net10.0` and drives real Noesis, so `libNoesis.so` has to load —
   X11 and GL present on Linux. Ask `ControlCollectability.Unavailable()` and skip on a reason.
 
 ## Diagnostics

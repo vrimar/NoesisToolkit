@@ -25,7 +25,7 @@ public static class CompiledBindingSetup
         "Index",
         typeof(int),
         typeof(CompiledBindingSetup),
-        new PropertyMetadata(-1, OnIndexChanged)
+        DependencyWatcher.Metadata(-1, FrameworkPropertyMetadataOptions.None, OnIndexChanged)
     );
 
     /// <summary>Records one element's wiring and returns the index that replays it on a clone.</summary>
@@ -64,7 +64,11 @@ public static class CompiledBindingSetup
 
     static void OnIndexChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
     {
-        if (target is not FrameworkElement element || e.NewValue is not int index)
+        // e.NewValue boxes on every read.
+        if (
+            target is not FrameworkElement element
+            || DependencyRead.Value(target, IndexProperty) is not int index
+        )
             return;
 
         Action<FrameworkElement>? wire = null;

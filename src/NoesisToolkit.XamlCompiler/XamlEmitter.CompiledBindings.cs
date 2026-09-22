@@ -1914,8 +1914,9 @@ sealed partial class XamlEmitter
         if (!slot.IsValueType)
             return $"__v => {NarrowTo(slot, "__v", "__t")}";
 
+        // The hop interned the box; pass it through.
         return Wrapped(slot) is null
-            ? $"__v => __v is {XamlTypeResolver.Fqn(slot)} __t ? (object)__t : {UnsetValueFqn}"
+            ? $"__v => __v is {XamlTypeResolver.Fqn(slot)} ? __v : {UnsetValueFqn}"
             : $"__v => (object)({NarrowTo(slot, "__v", "__t")})";
     }
 

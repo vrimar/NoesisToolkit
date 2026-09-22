@@ -130,10 +130,43 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             OwnerNaming.IsPartial(prop),
             InheritsMemberNamed(owner, prop.Name),
             InheritsMemberNamed(owner, prop.Name + "Property"),
-            prop.Type.SpecialType is SpecialType.System_Boolean or SpecialType.System_Int32
-                || prop.Type.TypeKind == TypeKind.Enum
+            TypedRead(prop.Type),
+            WritesTyped(prop.Type)
         );
     }
+
+    private static string? TypedRead(ITypeSymbol type)
+    {
+        if (type.NullableAnnotation == NullableAnnotation.Annotated)
+            return null;
+
+        return type.SpecialType switch
+        {
+            SpecialType.System_Boolean => "Bool",
+            SpecialType.System_Int32 => "Int",
+            SpecialType.System_Single => "Float",
+            SpecialType.System_Double => "Double",
+            _ => type.TypeKind == TypeKind.Enum ? $"Enum<{type.Fq()}>" : null,
+        };
+    }
+
+    // The value types Noesis has a typed setter for; a nullable still goes through SetValue.
+    private static bool WritesTyped(ITypeSymbol type) =>
+        type.NullableAnnotation != NullableAnnotation.Annotated
+        && (
+            type.SpecialType
+                is SpecialType.System_Boolean
+                    or SpecialType.System_Int32
+                    or SpecialType.System_Single
+                    or SpecialType.System_Double
+            || type.TypeKind == TypeKind.Enum
+            || type.ToDisplayString()
+                is "Noesis.Thickness"
+                    or "Noesis.Color"
+                    or "Noesis.Point"
+                    or "Noesis.Size"
+                    or "Noesis.CornerRadius"
+        );
 
     private static bool InheritsMemberNamed(INamedTypeSymbol owner, string name)
     {
@@ -186,20 +219,27 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         w.Line();
         using (w.Block($"public {propertyNew}partial {m.TypeFqnNullable} {m.PropertyName}"))
         {
-            w.Line($"get => ({m.TypeFqnNullable}){Read(m, "this")};");
-            w.Line($"set => SetValue({m.PropertyName}Property, value);");
+            w.Line($"get => {Read(m, "this")};");
+            w.Line($"set => {Write(m, "this")};");
         }
         w.Line();
     }
 
-    // A bool, int or enum reads through the toolkit, which hands back a shared box; Noesis'
-    // GetValue boxes every value type anew.
+    // A bool, int, float, double or enum reads typed through the toolkit; Noesis' GetValue boxes
+    // every value type anew.
     private static string Read(Model m, string target) =>
-        m.ReadsShared
-            ? $"{ReadFqn}.Value({target}, {m.PropertyName}Property)!"
-            : $"{target}.GetValue({m.PropertyName}Property)";
+        m.TypedRead is { } typed
+            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property)"
+            : $"({m.TypeFqnNullable}){target}.GetValue({m.PropertyName}Property)";
 
     private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
+
+    private static string Write(Model m, string target) =>
+        m.WritesTyped
+            ? $"{WriteFqn}.Value({target}, {m.PropertyName}Property, value)"
+            : $"{target}.SetValue({m.PropertyName}Property, value)";
+
+    private const string WriteFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyWrite";
 
     private static void WriteRegistration(CodeWriter w, Model m, bool attached)
     {
@@ -234,14 +274,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             $"public static {m.TypeFqnNullable} Get{m.PropertyName}(DependencyObject element) =>"
         );
         using (w.Indented())
-            w.Line($"({m.TypeFqnNullable}){Read(m, "element")};");
+            w.Line($"{Read(m, "element")};");
 
         w.Line();
         w.Line(
             $"public static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
         );
         using (w.Indented())
-            w.Line($"element.SetValue({m.PropertyName}Property, value);");
+            w.Line($"{Write(m, "element")};");
         w.Line();
 
         if (m.IsPropertyPartial)
@@ -259,10 +299,10 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     private static string BuildMetadata(Model m)
     {
         string def = m.DefaultValue ?? $"default({m.TypeFqn})";
-        string changed = $"{WatcherFqn}.Notifying({m.PropertyChanged ?? "null"})";
+        string changed = m.PropertyChanged ?? "null";
         string opts = m.MetadataOptions ?? "FrameworkPropertyMetadataOptions.None";
 
-        return $"new FrameworkPropertyMetadata({def}, {opts}, {changed})";
+        return $"{WatcherFqn}.Metadata({def}, {opts}, {changed})";
     }
 
     private static string? CleanCallbackString(string raw)
@@ -296,6 +336,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         bool IsPropertyPartial,
         bool HidesInheritedProperty,
         bool HidesInheritedField,
-        bool ReadsShared
+        string? TypedRead,
+        bool WritesTyped
     );
 }

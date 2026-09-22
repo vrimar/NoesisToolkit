@@ -5,8 +5,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`ElementGeometry` reads a point or a size without allocating.** `Noesis.Point` and `Noesis.Size`
+  declare a marshalling attribute on each of their floats, which stops the marshaller treating them
+  as blittable, so the managed `TranslatePoint`, `DesiredSize` and `RenderSize` box one per call. A
+  panel pays that per child on every layout pass, and one testing its children against the viewport
+  pays it per child per frame; these read the same native result straight.
+- **`Events` subscribes to an element's events without allocating.** `Events.On` and `Events.Off`
+  take a routed event or one Noesis raises by name, such as `SizeChanged` or `IsVisibleChanged`, and
+  `OnKey`/`OffKey` a key event. The handler gets the element, and the key, rather than the args
+  object Noesis mints per delivery, through the same native binding the toolkit's own events use.
+
 ### Changed
 
+- **`NoesisToolkit.Mvvm` and `NoesisToolkit.Testing` target `net10.0` only.** Reaching past Noesis'
+  managed layer needs `UnsafeAccessorType`, and a runtime that cannot has no reason to take this
+  release; the analyzer packages stay on `netstandard2.0`, as Roslyn requires.
+- **An element's events are bound natively and deliver without allocating.** Loaded, Reloaded,
+  Unloaded, DataContextChanged and LayoutUpdated are bound through the same exports Noesis' own
+  handler store uses, to one unmanaged callback that finds the element's entry. Noesis' path minted
+  a `RoutedEventArgs` per delivery and gave every subscribed element a store, a dictionary, a
+  destroyed hook and a delegate per event; this one gives it nothing. A class handler was tried and
+  rejected on the way: it makes Noesis call managed code for every element's Loaded and Unloaded,
+  bound or not, which a recycling list pays on every hover.
+- **A change callback gets one reused args object.** `DependencyWatcher.Metadata` registers metadata
+  whose callback Noesis calls straight into the toolkit, which keeps one
+  `DependencyPropertyChangedEventArgs` per nesting depth and points it at the native args for the
+  call — Noesis' own trampoline minted a finalizable one per change. The `[DependencyProperty]`
+  generator, the wiring index and the watcher's probes register through it. The args are valid for
+  the callback's duration only: a handler that keeps them reads null afterwards.
+- **A generated `[DependencyProperty]` accessor reads and writes without boxing.** A bool, int,
+  float, double or enum reads through Noesis' typed natives, and those plus `Thickness`, `Color`,
+  `Point`, `Size` and `CornerRadius` write through them; `GetValue` boxed every read and `SetValue`
+  every write. A nullable property still goes through `GetValue` and `SetValue`.
+- **A compiled binding to a value-type slot passes its source's box through** instead of unboxing
+  and reboxing it on every update.
+- **The wiring index reads through `DependencyRead`** rather than `e.NewValue`, which boxed the index
+  on every container clone.
 - **`ControlCollectability.Probe` settles its controls as one batch.** Every control is added and
   removed first, then each collect-and-pump round serves all of them still pending; a sweep paid a
   blocking collection pair per control per round, and now pays one per round.

@@ -73,6 +73,12 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         List<CompiledTriggerSet>
     >();
 
+    // GetOrCreateValue would go through Activator for every element.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        FrameworkElement,
+        List<CompiledTriggerSet>
+    >.CreateValueCallback CreateSets = static _ => new List<CompiledTriggerSet>();
+
     /// <summary>The trigger sets bound to <paramref name="element"/>, for tooling that compares the
     /// compiled graph against the parsed one.</summary>
     /// <param name="element">The element the sets were bound to.</param>
@@ -121,7 +127,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
 
         _parts = new PartSet(target, parts, this);
 
-        var bound = _byElement.GetOrCreateValue(target);
+        var bound = _byElement.GetValue(target, CreateSets);
         bound.RemoveAll(set => ReferenceEquals(set._triggers, triggers));
         bound.Add(this);
 

@@ -30,6 +30,12 @@ public static class DependencyWatcher
     static readonly ConditionalWeakTable<DependencyObject, Subscriptions> Table =
         new ConditionalWeakTable<DependencyObject, Subscriptions>();
 
+    // GetOrCreateValue would go through Activator for every element.
+    static readonly ConditionalWeakTable<
+        DependencyObject,
+        Subscriptions
+    >.CreateValueCallback CreateSubscriptions = static _ => new Subscriptions();
+
     static readonly HashSet<DependencyProperty> Notifies = new HashSet<DependencyProperty>();
 
     static int _probes;
@@ -61,6 +67,19 @@ public static class DependencyWatcher
                 OnChanged(target, e);
             };
 
+    /// <summary>Metadata whose change callback runs <paramref name="inner"/> and then reports here,
+    /// with one reused args object per change.</summary>
+    /// <param name="defaultValue">The property's default.</param>
+    /// <param name="options">The framework options to register with.</param>
+    /// <param name="inner">The property's own change callback, or null.</param>
+    /// <returns>The metadata to register the property with.</returns>
+    /// <remarks>The args are valid for the callback's duration only; kept, they read null.</remarks>
+    public static FrameworkPropertyMetadata Metadata(
+        object? defaultValue,
+        FrameworkPropertyMetadataOptions options,
+        PropertyChangedCallback? inner
+    ) => new NotifyingMetadata(defaultValue, options, inner);
+
     /// <summary>Calls <paramref name="handler"/> whenever <paramref name="property"/> changes on
     /// <paramref name="target"/>.</summary>
     /// <param name="target">The element to watch.</param>
@@ -83,7 +102,7 @@ public static class DependencyWatcher
         Guard.NotNull(target, nameof(target));
         Guard.NotNull(property, nameof(property));
 
-        var subscriptions = Table.GetOrCreateValue(target);
+        var subscriptions = Table.GetValue(target, CreateSubscriptions);
 
         if (!AlreadyNotifies(property))
             subscriptions.Probe(target, property, ProbeFor(property));
@@ -144,8 +163,9 @@ public static class DependencyWatcher
             "NtkWatch" + _probes++.ToString(System.Globalization.CultureInfo.InvariantCulture),
             typeof(object),
             typeof(DependencyWatcher),
-            new PropertyMetadata(
+            Metadata(
                 null,
+                FrameworkPropertyMetadataOptions.None,
                 (target, _) =>
                 {
                     if (Table.TryGetValue(target, out var subscriptions))
@@ -159,7 +179,7 @@ public static class DependencyWatcher
     }
 
     // Noesis swallows whatever escapes here, so a handler that throws would vanish without a trace.
-    static void OnChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
+    internal static void OnChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
     {
         if (Table.TryGetValue(target, out var subscriptions))
             subscriptions.Fire(e.Property);

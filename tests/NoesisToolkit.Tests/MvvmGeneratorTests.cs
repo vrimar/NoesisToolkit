@@ -139,7 +139,7 @@ public class MvvmGeneratorTests
         await Assert
             .That(source)
             .Contains(
-                "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Value(element, SlotProperty)"
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Int(element, SlotProperty)"
             );
     }
 

@@ -41,6 +41,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static Noesis.DependencyProperty SelfNotifying(Noesis.DependencyProperty property) => property;
 
         public static Noesis.PropertyChangedCallback Notifying(Noesis.PropertyChangedCallback? inner) => static (_, _) => { };
+        public static Noesis.FrameworkPropertyMetadata Metadata(object? defaultValue, Noesis.FrameworkPropertyMetadataOptions options, Noesis.PropertyChangedCallback? inner) => new Noesis.FrameworkPropertyMetadata(defaultValue, options, inner);
     }
 
     public readonly struct BindingHop
@@ -61,6 +62,16 @@ namespace NoesisToolkit.Mvvm.CodeGen
     public static class DependencyRead
     {
         public static object? Value(Noesis.DependencyObject source, Noesis.DependencyProperty property) => null;
+        public static bool Bool(Noesis.DependencyObject source, Noesis.DependencyProperty property) => false;
+        public static int Int(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0;
+        public static float Float(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0f;
+        public static double Double(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0d;
+        public static TEnum Enum<TEnum>(Noesis.DependencyObject source, Noesis.DependencyProperty property) where TEnum : struct, System.Enum => default;
+    }
+
+    public static class DependencyWrite
+    {
+        public static void Value<T>(Noesis.DependencyObject target, Noesis.DependencyProperty property, T value) { }
     }
 
     public static class CompiledBindingSetup

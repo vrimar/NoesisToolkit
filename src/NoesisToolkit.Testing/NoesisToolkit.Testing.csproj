@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>NoesisToolkit.Testing</RootNamespace>
     <PackageId>NoesisToolkit.Testing</PackageId>
     <Description>A renderless harness that proves NoesisGUI controls are collectable: every constructible control is added to a live view, removed, and reported if the heap still holds it. Catches the handler and command leaks NTK2101 and NTK2102 cannot see, including anything markup wired.</Description>
