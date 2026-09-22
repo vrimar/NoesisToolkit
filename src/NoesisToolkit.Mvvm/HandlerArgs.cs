@@ -261,17 +261,32 @@ public static class HandlerArgs
     sealed class Pool<T>(Func<T> create, Action<T, nint> point)
         where T : class
     {
-        readonly List<T> _args = [];
+        // Filled up front, so a focus change nested in a click nested in a key never grows it mid-frame.
+        const int Primed = 3;
+
+        readonly List<T> _args = Fill(create);
         int _depth;
+
+        static List<T> Fill(Func<T> create)
+        {
+            var args = new List<T>(Primed);
+            for (var i = 0; i < Primed; i++)
+                args.Add(Fresh(create));
+
+            return args;
+        }
+
+        static T Fresh(Func<T> create)
+        {
+            var fresh = create();
+            GC.SuppressFinalize(fresh);
+            return fresh;
+        }
 
         internal T Borrow(nint native)
         {
             if (_depth == _args.Count)
-            {
-                var fresh = create();
-                GC.SuppressFinalize(fresh);
-                _args.Add(fresh);
-            }
+                _args.Add(Fresh(create));
 
             var args = _args[_depth++];
             point(args, native);

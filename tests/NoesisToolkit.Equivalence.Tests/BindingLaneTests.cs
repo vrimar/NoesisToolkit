@@ -166,4 +166,125 @@ public sealed class BindingLaneTests
         box.Items.Add("c");
         return box;
     }
+
+    static CompiledBindingSpec IndexText() =>
+        new()
+        {
+            Hops = [Hop.Index],
+            Lane = BindingLane.Text<SpikeItem, int>(
+                static o => o.Index,
+                static (int t, Span<char> d, out int w) =>
+                {
+                    var s = new SlotText(d);
+                    s.Literal("#");
+                    s.Integer(t, "N0");
+                    return s.Done(out w);
+                },
+                false
+            ),
+        };
+
+    static CompiledBindingSpec RatioText() =>
+        new()
+        {
+            Hops = [Hop.Ratio],
+            Lane = BindingLane.Text<SpikeItem, double>(
+                static o => o.Ratio,
+                static (double t, Span<char> d, out int w) =>
+                {
+                    var s = new SlotText(d);
+                    s.Fixed(t, "F2");
+                    return s.Done(out w);
+                },
+                false
+            ),
+        };
+
+    [Test]
+    [Arguments(0)]
+    [Arguments(7)]
+    [Arguments(1234567)]
+    [Arguments(-42)]
+    public async Task A_number_rides_a_text_slot_as_the_native_format_writes_it(int index)
+    {
+        NoesisRuntime.Start();
+
+        var native = new SpikeItem { Index = index };
+        var compiled = new SpikeItem { Index = index };
+
+        var nativeText = new TextBlock { DataContext = native };
+        nativeText.SetBinding(
+            TextBlock.TextProperty,
+            new Binding(nameof(SpikeItem.Index)) { StringFormat = "#{0:N0}" }
+        );
+
+        var compiledText = new TextBlock { DataContext = compiled };
+        CompiledBinding.Bind(compiledText, TextBlock.TextProperty, IndexText());
+
+        NoesisRuntime.Show(nativeText, compiledText);
+        await Assert.That(compiledText.Text).IsEqualTo(nativeText.Text);
+
+        native.Index = index + 1;
+        compiled.Index = index + 1;
+        await Assert.That(compiledText.Text).IsEqualTo(nativeText.Text);
+    }
+
+    [Test]
+    [Arguments(2.675)]
+    [Arguments(-0.004)]
+    [Arguments(1e21)]
+    [Arguments(double.PositiveInfinity)]
+    public async Task A_fixed_format_rounds_in_a_text_lane_as_the_engine_rounds(double ratio)
+    {
+        NoesisRuntime.Start();
+
+        var native = new SpikeItem { Ratio = ratio };
+        var compiled = new SpikeItem { Ratio = ratio };
+
+        var nativeText = new TextBlock { DataContext = native };
+        nativeText.SetBinding(
+            TextBlock.TextProperty,
+            new Binding(nameof(SpikeItem.Ratio)) { StringFormat = "{0:F2}" }
+        );
+
+        var compiledText = new TextBlock { DataContext = compiled };
+        CompiledBinding.Bind(compiledText, TextBlock.TextProperty, RatioText());
+
+        NoesisRuntime.Show(nativeText, compiledText);
+        await Assert.That(compiledText.Text).IsEqualTo(nativeText.Text);
+    }
+
+    [Test]
+    public async Task A_text_lane_shows_values_it_never_showed_before_without_allocating()
+    {
+        NoesisRuntime.Start();
+
+        var index = new SpikeItem();
+        var ratio = new SpikeItem();
+        var indexText = new TextBlock { DataContext = index };
+        var ratioText = new TextBlock { DataContext = ratio };
+        CompiledBinding.Bind(indexText, TextBlock.TextProperty, IndexText());
+        CompiledBinding.Bind(ratioText, TextBlock.TextProperty, RatioText());
+        NoesisRuntime.Show(indexText, ratioText);
+
+        for (var i = 0; i < 8; i++)
+        {
+            index.Index += 1001;
+            ratio.Ratio += 0.37;
+        }
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 300; i++)
+        {
+            index.Index += 1001;
+            ratio.Ratio += 0.37;
+        }
+
+        await Assert.That(GC.GetAllocatedBytesForCurrentThread() - before).IsEqualTo(0);
+        await Assert
+            .That(indexText.Text)
+            .IsEqualTo(
+                "#" + index.Index.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+            );
+    }
 }

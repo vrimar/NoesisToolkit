@@ -65,6 +65,110 @@ public abstract class BindingLane
         return new Lane<TOwner, TSource, TSlot>(read, convert, writeBack, guarded);
     }
 
+    /// <summary>A one-way lane off a last hop of type <typeparamref name="TSource"/> into a string
+    /// slot: the value is formatted into a buffer and written to Noesis without a string, so a counter
+    /// or a slider readout costs nothing per value it shows.</summary>
+    /// <typeparam name="TOwner">The type the last hop reads off.</typeparam>
+    /// <typeparam name="TSource">The last hop's type: a number of at most eight bytes.</typeparam>
+    /// <param name="read">Reads the last hop.</param>
+    /// <param name="format">Writes the text the slot shows for a source value.</param>
+    /// <param name="guarded">Whether the owner may turn out not to be a <typeparamref name="TOwner"/>,
+    /// which breaks the path rather than throwing.</param>
+    /// <returns>The lane.</returns>
+    public static BindingLane Text<TOwner, TSource>(
+        Func<TOwner, TSource> read,
+        SlotFormat<TSource> format,
+        bool guarded
+    )
+        where TSource : unmanaged
+    {
+        Guard.NotNull(read, nameof(read));
+        Guard.NotNull(format, nameof(format));
+        if (Unsafe.SizeOf<TSource>() > sizeof(ulong))
+            throw new NotSupportedException(
+                $"A text lane carries a value of at most eight bytes, not {typeof(TSource)}."
+            );
+
+        return new TextLane<TOwner, TSource>(read, format, guarded);
+    }
+
+    sealed class TextLane<TOwner, TSource>(
+        Func<TOwner, TSource> read,
+        SlotFormat<TSource> format,
+        bool guarded
+    ) : BindingLane
+        where TSource : unmanaged
+    {
+        const int StackChars = 128;
+
+        internal override bool TryRead(object owner, out ulong slot)
+        {
+            TOwner typed;
+            if (guarded)
+            {
+                if (owner is not TOwner matched)
+                {
+                    slot = 0;
+                    return false;
+                }
+
+                typed = matched;
+            }
+            else
+            {
+                typed = (TOwner)owner;
+            }
+
+            slot = 0;
+            Unsafe.As<ulong, TSource>(ref slot) = read(typed);
+            return true;
+        }
+
+        internal override void Write(
+            DependencyObject receiver,
+            DependencyProperty property,
+            ulong slot
+        )
+        {
+            var value = Unsafe.As<ulong, TSource>(ref slot);
+            Span<char> buffer = stackalloc char[StackChars];
+            if (format(value, buffer, out var written))
+                DependencyWrite.String(receiver, property, buffer.Slice(0, written));
+            else
+                WriteLong(receiver, property, value);
+        }
+
+        void WriteLong(DependencyObject receiver, DependencyProperty property, TSource value)
+        {
+            for (var size = StackChars * 4; ; size *= 4)
+            {
+                var buffer = System.Buffers.ArrayPool<char>.Shared.Rent(size);
+                try
+                {
+                    if (format(value, buffer, out var written))
+                    {
+                        DependencyWrite.String(receiver, property, buffer.AsSpan(0, written));
+                        return;
+                    }
+                }
+                finally
+                {
+                    System.Buffers.ArrayPool<char>.Shared.Return(buffer);
+                }
+            }
+        }
+
+        // One-way: nothing reads a text slot back into a number.
+        internal override ulong Read(DependencyObject target, DependencyProperty property) => 0;
+
+        internal override bool Same(ulong a, ulong b) => a == b;
+
+        internal override bool WritesBack => false;
+
+        internal override void WriteBack(object owner, ulong slot) =>
+            throw new NotSupportedException("A text lane is one-way.");
+    }
+
     sealed class Lane<TOwner, TSource, TSlot>(
         Func<TOwner, TSource> read,
         Func<TSource, TSlot> convert,

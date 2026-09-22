@@ -1,6 +1,8 @@
 using System;
+using System.Buffers;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Noesis;
 
 namespace NoesisToolkit.Mvvm.CodeGen;
@@ -75,6 +77,39 @@ public static class DependencyWrite
         Native.UInt64(null, Handle(target), Handle(property), raw, false, false);
     }
 
+    /// <summary>Writes <paramref name="text"/> to a string property on <paramref name="target"/> without
+    /// a managed string: the characters go to Noesis as they are, so text formatted into a buffer never
+    /// becomes garbage.</summary>
+    /// <param name="target">The object to write.</param>
+    /// <param name="property">The property to write, of type string.</param>
+    /// <param name="text">The text; empty writes the empty string, as Noesis stores a null one.</param>
+    public static unsafe void String(
+        DependencyObject target,
+        DependencyProperty property,
+        ReadOnlySpan<char> text
+    )
+    {
+        var dependencyObject = Handle(target);
+        var dependencyProperty = Handle(property);
+
+        char[]? rented = null;
+        var buffer =
+            text.Length < StackChars
+                ? stackalloc char[StackChars]
+                : (rented = ArrayPool<char>.Shared.Rent(text.Length + 1));
+
+        // Noesis reads the text up to its terminator.
+        text.CopyTo(buffer);
+        buffer[text.Length] = '\0';
+        fixed (char* chars = buffer)
+            Native.String(dependencyObject, dependencyProperty, chars);
+
+        if (rented is not null)
+            ArrayPool<char>.Shared.Return(rented);
+    }
+
+    const int StackChars = 256;
+
     static nint Handle(BaseComponent component)
     {
         Guard.NotNull(component, nameof(component));
@@ -83,6 +118,14 @@ public static class DependencyWrite
 
     static class Native
     {
+        // Noesis' own setter passes a UTF-16 copy here; a ref char would marshal as one ANSI byte.
+        [DllImport("Noesis", EntryPoint = "Noesis_DependencySet_String")]
+        internal static extern unsafe void String(
+            nint dependencyObject,
+            nint dependencyProperty,
+            char* val
+        );
+
         [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencySet_Bool")]
         internal static extern void Bool(
             DependencyObject? owner,

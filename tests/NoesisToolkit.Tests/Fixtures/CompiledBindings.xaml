@@ -24,6 +24,8 @@
     <TextBlock Text="{Binding Nope}" />
     <TextBlock Text="{Binding DefIdInt, Converter={StaticResource Up}}" />
     <TextBlock Width="{Binding Ratio}" />
+    <TextBlock Text="{Binding Ratio, StringFormat='x {0:F1} m'}" />
+    <TextBlock Height="{Binding Purse}" />
     <TextBlock Tag="{Binding}" />
     <Border CornerRadius="{Binding DefIdInt}" />
     <Image Source="{Binding Def.Family}" />

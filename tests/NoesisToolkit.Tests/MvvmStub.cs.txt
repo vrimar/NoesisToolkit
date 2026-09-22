@@ -91,6 +91,31 @@ namespace NoesisToolkit.Mvvm.CodeGen
     public abstract class BindingLane
     {
         public static BindingLane Of<TOwner, TSource, TSlot>(System.Func<TOwner, TSource> read, System.Func<TSource, TSlot> convert, System.Action<TOwner, TSlot>? writeBack, bool guarded) where TSource : struct where TSlot : struct => null!;
+
+        public static BindingLane Text<TOwner, TSource>(System.Func<TOwner, TSource> read, SlotFormat<TSource> format, bool guarded) where TSource : unmanaged => null!;
+    }
+
+    public delegate bool SlotFormat<T>(T value, System.Span<char> destination, out int written);
+
+    public ref struct SlotText
+    {
+        public SlotText(System.Span<char> destination) { }
+
+        public void Literal(string text) { }
+
+        public void Integer<T>(T value) where T : struct, System.ISpanFormattable { }
+
+        public void Integer<T>(T value, string format) where T : struct, System.ISpanFormattable { }
+
+        public void Number(double value) { }
+
+        public void Number(float value) { }
+
+        public void Fixed(double value, string format) { }
+
+        public void Fixed(float value, string format) { }
+
+        public readonly bool Done(out int written) { written = 0; return true; }
     }
 
     public sealed class CompiledBindingSpec

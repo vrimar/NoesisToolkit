@@ -3,6 +3,32 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A number shown as text rides a text lane.** Where the path ends in an integer, `float` or
+  `double` and the slot is a string, bare or through a `StringFormat` the engine formats alike, the
+  compiler emits `BindingLane.Text`: the value is formatted into a stack buffer by `SlotText` and
+  handed to Noesis without a string. A counter or a slider readout moving through values it never
+  showed before allocates nothing, where the cached conversion formatted each new value once and
+  every value past its cap every time. A format with an aligned hole keeps the string route.
+- **A struct that converts to and from a number through its own operators rides that number's
+  lane.** A typed id bound to an `int`, `long`, `float` or `double` slot is cast through its
+  explicit operators, both ways, instead of boxing into a Noesis extend on every write.
+- **`DependencyWrite.String` writes a string property from a `ReadOnlySpan<char>`**, straight to
+  the native setter, so text formatted into a buffer never becomes a managed string.
+- **`SlotConversion.TryText` formats an `F`, `N` or `P` number into a caller's buffer**, rounded as
+  the engine rounds.
+
+### Changed
+
+- **`HandlerArgs` pools are filled three deep up front.** A focus change nested in a click grew a
+  pool mid-frame the first time it happened; now the pools are filled when `Reuse()` first runs.
+- **`SlotConversion.Text(double, format)` and its `float` twin format on the stack.** The engine's
+  rounding was emulated through a `StringBuilder` and several intermediate strings per value; only
+  the result is allocated now.
+
 ## [0.2.6] - 2026-09-22
 
 ### Added

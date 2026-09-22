@@ -1,5 +1,6 @@
 using Noesis;
 using NoesisToolkit.Mvvm;
+using NoesisToolkit.Mvvm.CodeGen;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
@@ -22,6 +23,9 @@ public sealed partial class Typed : Control
 
     [DependencyProperty]
     public partial Thickness Inset { get; set; }
+
+    [DependencyProperty("")]
+    public partial string Label { get; set; }
 }
 
 [NotInParallel("Noesis")]
@@ -91,5 +95,44 @@ public sealed class TypedWriteTests
             )
             .IsEqualTo(0);
         await Assert.That(Allocated(() => typed.Inset = inset)).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Text_written_from_a_span_is_what_Noesis_reads_back()
+    {
+        NoesisRuntime.Start();
+
+        var typed = new Typed();
+        NoesisRuntime.Show(typed);
+        var longText = new string('x', 700);
+
+        DependencyWrite.String(typed, Typed.LabelProperty, "12,345 ünïcødé".AsSpan());
+        await Assert.That(typed.Label).IsEqualTo("12,345 ünïcødé");
+
+        DependencyWrite.String(typed, Typed.LabelProperty, longText.AsSpan());
+        await Assert.That(typed.Label).IsEqualTo(longText);
+
+        DependencyWrite.String(typed, Typed.LabelProperty, ReadOnlySpan<char>.Empty);
+        await Assert.That(typed.Label).IsEqualTo("");
+    }
+
+    [Test]
+    public async Task Text_formatted_into_a_buffer_is_written_without_allocating()
+    {
+        NoesisRuntime.Start();
+
+        var typed = new Typed();
+        NoesisRuntime.Show(typed);
+        var next = 0;
+
+        var allocated = Allocated(() =>
+        {
+            Span<char> buffer = stackalloc char[16];
+            (next++).TryFormat(buffer, out var written);
+            DependencyWrite.String(typed, Typed.LabelProperty, buffer[..written]);
+        });
+
+        await Assert.That(allocated).IsEqualTo(0);
+        await Assert.That(typed.Label).IsEqualTo((next - 1).ToString());
     }
 }

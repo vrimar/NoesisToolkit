@@ -375,11 +375,15 @@ sealed partial class XamlEmitter
         // A format is one-way arithmetic, and so is most coercion; the numeric/enum widening is the
         // exception, because the cast back is exact enough that the native engine runs it two-way.
         // A detached receiver is one-way by construction.
+        var slotNumber = Wrapped(slot.Type) ?? slot.Type;
         var reversible =
             coercion is not null
             && Wrapped(resolved.Type) is null
-            && IsNumericOrEnum(resolved.Type)
-            && IsNumeric(Wrapped(slot.Type) ?? slot.Type);
+            && IsNumeric(slotNumber)
+            && (
+                IsNumericOrEnum(resolved.Type)
+                || (OperatorNumber(resolved.Type) is { } via && CastsBack(resolved.Type, via))
+            );
         var write =
             receiver is not null || formatted || (coercion is not null && !reversible)
                 ? null
@@ -397,10 +401,20 @@ sealed partial class XamlEmitter
             return No("update-trigger-unsupported");
 
         var fields = SourceFields(source, resolved);
-        var lane =
-            converter is null && !formatted
-                ? Lane(resolved, slot, coercion is not null, write is not null, source.Resolver)
-                : null;
+        var lane = converter is null
+            ? TextLane(resolved, slot, call, formatted, source.Resolver)
+                ?? (
+                    formatted
+                        ? null
+                        : Lane(
+                            resolved,
+                            slot,
+                            coercion is not null,
+                            write is not null,
+                            source.Resolver
+                        )
+                )
+            : null;
 
         if (lane is not null)
         {
@@ -447,7 +461,7 @@ sealed partial class XamlEmitter
     }
 
     // An enum slot keeps the boxed route: it is written through its own accessor.
-    static string? Lane(
+    string? Lane(
         ResolvedPath resolved,
         BindingSlot slot,
         bool converted,
@@ -473,15 +487,15 @@ sealed partial class XamlEmitter
         var last = resolved.Hops[resolved.Hops.Count - 1];
         var from = last.Type;
         var exact = SymbolEqualityComparer.Default.Equals(from, slot.Type);
-        if (!exact && !(converted && IsNumericOrEnum(from)))
+        if (!exact && !(converted && (IsNumericOrEnum(from) || Operates(from, slot.Type))))
             return null;
 
         var owner = XamlTypeResolver.Fqn(last.Owner);
         var fromFqn = XamlTypeResolver.Fqn(from);
         var slotFqn = XamlTypeResolver.Fqn(slot.Type);
-        var convert = exact ? "__t" : $"({slotFqn})__t";
+        var convert = exact ? "__t" : CastTo(slot.Type, from, "__t");
         var writeBack = writes
-            ? $"static (__o, __w) => __o.{last.Name} = {(exact ? "__w" : $"({fromFqn})__w")}"
+            ? $"static (__o, __w) => __o.{last.Name} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
             : "null";
         var guarded = resolver is not null && resolved.Hops.Count == 1 ? "true" : "false";
 
@@ -490,6 +504,160 @@ sealed partial class XamlEmitter
     }
 
     const string BindingLaneFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingLane";
+
+    const string SlotTextFqn = "global::NoesisToolkit.Mvvm.CodeGen.SlotText";
+
+    // A number shown as text is formatted into a buffer and handed to Noesis without a string; a
+    // format with an aligned hole keeps the string route, whose padding the writer does not do.
+    string? TextLane(
+        ResolvedPath resolved,
+        BindingSlot slot,
+        MarkupCall call,
+        bool formatted,
+        string? resolverName
+    )
+    {
+        if (
+            slot.Type.SpecialType != SpecialType.System_String
+            || resolved.Hops.Count == 0
+            || slot.Assign is not null
+            || slot.Registered is not null
+        )
+            return null;
+
+        var last = resolved.Hops[resolved.Hops.Count - 1];
+        var from = last.Type;
+        var real = from.SpecialType is SpecialType.System_Single or SpecialType.System_Double;
+        if (!real && !IsInteger(from))
+            return null;
+
+        var pieces = new List<string>();
+        if (!formatted)
+        {
+            pieces.Add(TextPiece(from, "")!);
+        }
+        else
+        {
+            if (
+                NamedValue(call, "StringFormat") is not string raw
+                || FormatHoles(XamlMarkupParser.Unescape(raw), 1) is not { } parsed
+            )
+                return null;
+
+            var format = parsed.Format;
+            var literal = new System.Text.StringBuilder();
+            var hole = 0;
+            for (var i = 0; i < format.Length; i++)
+            {
+                var c = format[i];
+                if ((c is '{' or '}') && i + 1 < format.Length && format[i + 1] == c)
+                {
+                    literal.Append(c);
+                    i++;
+                    continue;
+                }
+
+                if (c != '{')
+                {
+                    literal.Append(c);
+                    continue;
+                }
+
+                var close = format.IndexOf('}', i);
+                if (format.Substring(i + 1, close - i - 1).IndexOf(',') >= 0)
+                    return null;
+
+                if (TextPiece(from, parsed.Holes[hole++].Spec) is not { } piece)
+                    return null;
+
+                if (literal.Length > 0)
+                {
+                    pieces.Add($"__s.Literal({Quote(literal.ToString())});");
+                    literal.Clear();
+                }
+
+                pieces.Add(piece);
+                i = close;
+            }
+
+            if (literal.Length > 0)
+                pieces.Add($"__s.Literal({Quote(literal.ToString())});");
+        }
+
+        var owner = XamlTypeResolver.Fqn(last.Owner);
+        var fromFqn = XamlTypeResolver.Fqn(from);
+        var guarded = resolverName is not null && resolved.Hops.Count == 1 ? "true" : "false";
+
+        return $"{BindingLaneFqn}.Text<{owner}, {fromFqn}>("
+            + $"static __o => __o.{last.Name}, "
+            + $"static ({fromFqn} __t, global::System.Span<char> __d, out int __w) => "
+            + $"{{ var __s = new {SlotTextFqn}(__d); {string.Join(" ", pieces.ToArray())} "
+            + "return __s.Done(out __w); }, "
+            + $"{guarded})";
+    }
+
+    // The same text FormatArgument and TextOf produce, written instead of returned.
+    static string? TextPiece(ITypeSymbol type, string spec)
+    {
+        if (type.SpecialType is SpecialType.System_Single or SpecialType.System_Double)
+        {
+            if (spec.Length == 0)
+                return "__s.Number(__t);";
+
+            return NumberFormat(spec, "NFP") ? $"__s.Fixed(__t, {Quote(spec)});" : null;
+        }
+
+        if (spec.Length == 0)
+            return "__s.Integer(__t);";
+
+        return
+            NumberFormat(spec, "DNFPX")
+            && !(type.SpecialType == SpecialType.System_SByte && spec[0] is 'X' or 'x')
+            ? $"__s.Integer(__t, {Quote(spec)});"
+            : null;
+    }
+
+    // A struct that casts to a number and back through its own operators rides the lane that number
+    // would, cast through it both ways: C# will not chain the operator to an unrelated number itself.
+    static bool Operates(ITypeSymbol from, ITypeSymbol slot) =>
+        IsNumeric(slot) && OperatorNumber(from) is not null;
+
+    // The number a struct casts to through an operator it declares, as a typed id casts to its backing.
+    static ITypeSymbol? OperatorNumber(ITypeSymbol type)
+    {
+        if (type.TypeKind != TypeKind.Struct || Wrapped(type) is not null || IsNumericOrEnum(type))
+            return null;
+
+        foreach (var op in Operators(type))
+        {
+            if (
+                SymbolEqualityComparer.Default.Equals(op.Parameters[0].Type, type)
+                && IsNumeric(op.ReturnType)
+            )
+                return op.ReturnType;
+        }
+
+        return null;
+    }
+
+    static bool CastsBack(ITypeSymbol type, ITypeSymbol number) =>
+        Operators(type)
+            .Any(op =>
+                SymbolEqualityComparer.Default.Equals(op.Parameters[0].Type, number)
+                && SymbolEqualityComparer.Default.Equals(op.ReturnType, type)
+            );
+
+    static IEnumerable<IMethodSymbol> Operators(ITypeSymbol type) =>
+        type.GetMembers("op_Implicit")
+            .Concat(type.GetMembers("op_Explicit"))
+            .OfType<IMethodSymbol>()
+            .Where(op => op.Parameters.Length == 1);
+
+    // A cast into or out of an operator-carrying struct goes through its operator's number.
+    static string CastTo(ITypeSymbol to, ITypeSymbol structType, string value) =>
+        OperatorNumber(structType) is { } via
+            ? $"({XamlTypeResolver.Fqn(to)})({XamlTypeResolver.Fqn(via)}){value}"
+            : $"({XamlTypeResolver.Fqn(to)}){value}";
 
     // Found by a mark rather than a position: the host's own code can add objects ahead of these.
     (string Anchor, INamedTypeSymbol AnchorType, string Receiver)? DetachedReceiver(
@@ -827,7 +995,7 @@ sealed partial class XamlEmitter
             var inFqn = XamlTypeResolver.Fqn(Wrapped(incoming) ?? incoming);
             var outFqn = XamlTypeResolver.Fqn(last.Type);
             return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{last.Name} = "
-                + $"__v is {inFqn} __w ? ({outFqn})__w : default({outFqn})";
+                + $"__v is {inFqn} __w ? {CastTo(last.Type, last.Type, "__w")} : default({outFqn})";
         }
 
         var property = resolver.FindProperty(last.Owner, last.Name);
@@ -1924,6 +2092,9 @@ sealed partial class XamlEmitter
 
         if (Constructed(from, Wrapped(slot) ?? slot) is { } constructed)
             return constructed;
+
+        if (Operates(from, Wrapped(slot) ?? slot))
+            return Cached(from, $"(object){CastTo(slot, from, "__t")}", NullInto(slot));
 
         if (!IsNumericOrEnum(from) || !IsNumeric(Wrapped(slot) ?? slot))
             return null;

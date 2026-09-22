@@ -156,8 +156,11 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "Convert = global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Cached<int>(static __t => (object)"
-                    + "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion.Text((int)__t), null)"
+                "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Text<global::Sample.Ui.ItemViewModel, int>("
+                    + "static __o => __o.DefIdInt, "
+                    + "static (int __t, global::System.Span<char> __d, out int __w) => "
+                    + "{ var __s = new global::NoesisToolkit.Mvvm.CodeGen.SlotText(__d); __s.Integer(__t); "
+                    + "return __s.Done(out __w); }, false)"
             );
         await Assert
             .That(source)
@@ -165,6 +168,38 @@ public partial class XamlCompilerTests
                 "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, double, float>("
                     + "static __o => __o.Ratio, static __t => (float)__t, "
                     + "static (__o, __w) => __o.Ratio = (double)__w, false)"
+            );
+    }
+
+    [Test]
+    public async Task A_formatted_number_is_written_as_text_without_a_string()
+    {
+        var run = CompiledBindings();
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "BindingLane.Text<global::Sample.Ui.ItemViewModel, double>(static __o => __o.Ratio, "
+                    + "static (double __t, global::System.Span<char> __d, out int __w) => "
+                    + "{ var __s = new global::NoesisToolkit.Mvvm.CodeGen.SlotText(__d); "
+                    + "__s.Literal(\"x \"); __s.Fixed(__t, \"F1\"); __s.Literal(\" m\"); "
+                    + "return __s.Done(out __w); }, false)"
+            );
+    }
+
+    [Test]
+    public async Task A_struct_with_number_operators_rides_the_numbers_lane_both_ways()
+    {
+        var run = CompiledBindings();
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, global::Sample.Ui.Coins, float>("
+                    + "static __o => __o.Purse, static __t => (float)(long)__t, "
+                    + "static (__o, __w) => __o.Purse = (global::Sample.Ui.Coins)(long)__w, false)"
             );
     }
 
@@ -770,8 +805,18 @@ public partial class XamlCompilerTests
             public object? Parameter { get => GetValue(ParameterProperty); set => SetValue(ParameterProperty, value); }
         }
 
+        public readonly struct Coins(long value)
+        {
+            readonly long _value = value;
+
+            public static explicit operator long(Coins coins) => coins._value;
+
+            public static explicit operator Coins(long value) => new(value);
+        }
+
         public class ItemViewModel
         {
+            public Coins Purse { get; set; }
             public int DefIdInt { get; set; }
             public double Ratio { get; set; }
             public bool Ticked { get; set; }
