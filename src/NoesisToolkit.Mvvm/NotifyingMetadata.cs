@@ -37,6 +37,8 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
         Bind(null, swigCPtr, Trampoline);
     }
 
+    // A browser build makes a native entry only for a delegate target marked so; unmarked, Noesis calls null.
+    [MonoPInvokeCallback(typeof(ManagedPropertyChangedCallback))]
     static void OnChanged(nint cPtr, nint d, nint e)
     {
         try

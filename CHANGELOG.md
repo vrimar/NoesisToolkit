@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A browser build no longer traps on the first change to a property the toolkit registered.**
+  `NotifyingMetadata` hands Noesis a managed trampoline as its native change callback, and a
+  WebAssembly build generates the native entry for such a delegate only when its target carries
+  `[MonoPInvokeCallback]`. Without it Noesis called a null function the first time the property
+  changed. The trampoline now carries the attribute Noesis' own change callback does.
+
 ## [0.3.1] - 2026-09-23
 
 ### Fixed
