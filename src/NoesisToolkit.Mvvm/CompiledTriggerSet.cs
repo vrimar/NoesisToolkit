@@ -208,8 +208,10 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     // A setter's write can reach a nested pass, so evaluation stays under the guard too.
     void Apply()
     {
-        if (_target.Element is not { } target)
+        if (!_target.Alive)
             return;
+
+        var target = _target.Handle;
 
         _pushing = true;
         try
@@ -237,7 +239,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                 {
                     if (holds)
                     {
-                        if (SetterTarget(target, setter) is null)
+                        if (SetterTarget(target, setter) == IntPtr.Zero)
                             missing = true;
                         else
                             Set(active, slot);
@@ -273,9 +275,10 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                     Has(previous, i)
                     && !Has(winners, i)
                     && !Has(keysWon, keys[i])
-                    && SetterTarget(target, slots[i]) is { } cleared
+                    && SetterTarget(target, slots[i]) is var cleared
+                    && cleared != IntPtr.Zero
                 )
-                    cleared.ClearValue(slots[i].Property);
+                    DependencyWrite.Clear(cleared, slots[i].Property);
             }
 
             for (var i = 0; i < slots.Length; i++)
@@ -283,15 +286,15 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                 if (
                     !Has(winners, i)
                     || Has(previous, i)
-                    || SetterTarget(target, slots[i]) is not { } element
+                    || SetterTarget(target, slots[i]) is var element && element == IntPtr.Zero
                 )
                     continue;
 
                 var setter = slots[i];
                 if (setter.Assign is null)
-                    element.SetValue(setter.Property, setter.Value);
-                else
-                    setter.Assign(element, setter.Value);
+                    DependencyWrite.Value(element, setter.Property, setter.Value);
+                else if (NoesisInternals.Proxy(null, element, false) is FrameworkElement assigned)
+                    setter.Assign(assigned, setter.Value);
             }
         }
         finally
@@ -315,6 +318,6 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         return false;
     }
 
-    static FrameworkElement? SetterTarget(FrameworkElement target, CompiledSetter setter) =>
-        setter.TargetName is null ? target : target.FindName(setter.TargetName) as FrameworkElement;
+    static nint SetterTarget(nint target, CompiledSetter setter) =>
+        setter.TargetName is null ? target : NoesisInternals.FindElement(target, setter.TargetName);
 }

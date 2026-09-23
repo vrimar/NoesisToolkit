@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A compiled binding, MultiBinding or trigger set no longer mints a proxy after a collection to
+  read or write a native element.** It read its source and wrote its target through the element's
+  managed proxy, which Noesis lets go at every collection, so the first update after one minted a
+  proxy per element touched: a data-context binding on a `TextBlock`, a template trigger and its
+  named setter target, a list row's trigger rooted at its `ListBoxItem` on every reload. Reads and
+  writes now go through the native handle, dispatched on the property's type as Noesis' own
+  `GetValue` and `SetValue` are, and a `TemplatedParent` or `Self` source is found off the handle.
+
+### Changed
+
+- **`CompiledBindingSpec` and `CompiledBindingPart` carry a `Root`**, where the runtime finds a
+  source it can reach by handle. Generated code sets it in place of a `Source` resolver for
+  `TemplatedParent` and `Self`, so it needs this runtime or later.
+
 ## [0.3.0] - 2026-09-23
 
 ### Fixed

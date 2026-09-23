@@ -171,6 +171,7 @@ public sealed class CompiledBinding
         _chain = new SourceChain(
             _target,
             spec.Source,
+            spec.Root,
             spec.SourceProperty,
             spec.Hops,
             _watched,
@@ -495,7 +496,9 @@ public sealed class CompiledBinding
             _pushing = true;
             try
             {
-                _receiver?.Object?.ClearValue(_property);
+                if (_receiver is { Alive: true } cleared)
+                    DependencyWrite.Clear(cleared.Handle, _property);
+
                 Settle();
             }
             finally
@@ -527,7 +530,7 @@ public sealed class CompiledBinding
             _writable = owner;
         }
 
-        if (_receiver?.Object is not { } receiver)
+        if (_receiver is not { Alive: true } receiver)
             return;
 
         _pushing = true;
@@ -542,7 +545,7 @@ public sealed class CompiledBinding
             if (!broke)
             {
                 if (_spec.Lane is { } typed)
-                    typed.Write(receiver, _property, slot);
+                    typed.Write(receiver.Handle, _property, slot);
                 else
                     WriteTarget(receiver, Forward(current));
 
@@ -562,7 +565,7 @@ public sealed class CompiledBinding
         }
     }
 
-    void WriteTarget(DependencyObject receiver, object? produced)
+    void WriteTarget(ElementState receiver, object? produced)
     {
         var value =
             ReferenceEquals(produced, DependencyProperty.UnsetValue)
@@ -587,27 +590,28 @@ public sealed class CompiledBinding
 
         // Off a view the engine converts on attach, outside _pushing; the load rebuilds instead.
         if (
-            _target.Element is { IsLoaded: true }
-            && produced is not null
-            && !SlotConversion.Convert(receiver, _property, produced)
+            produced is not null
+            && _target.Element is { IsLoaded: true }
+            && receiver.Object is { } resolved
+            && !SlotConversion.Convert(resolved, _property, produced)
         )
             WriteDefault(receiver);
     }
 
-    void WriteDefault(DependencyObject receiver)
+    void WriteDefault(ElementState receiver)
     {
         if (_clearWhenUnset)
-            receiver.ClearValue(_property);
+            DependencyWrite.Clear(receiver.Handle, _property);
         else
             Assign(receiver, _unset);
     }
 
-    void Assign(DependencyObject receiver, object? value)
+    void Assign(ElementState receiver, object? value)
     {
-        if (_spec.Assign is not null && receiver is FrameworkElement element)
+        if (_spec.Assign is not null && receiver.Element is { } element)
             _spec.Assign(element, value);
         else
-            receiver.SetValue(_property, value);
+            DependencyWrite.Value(receiver.Handle, _property, value);
     }
 
     void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)
@@ -630,36 +634,36 @@ public sealed class CompiledBinding
     // What the binding itself left in the target is not an edit, however late the change reports.
     void Settle()
     {
-        if (!_twoWay || _target.Object is not { } target)
+        if (!_twoWay || !_target.Alive)
             return;
 
         if (_spec.Lane is { } lane)
-            _writtenSlot = lane.Read(target, _property);
+            _writtenSlot = lane.Read(_target.Handle, _property);
         else
-            _written = DependencyRead.Value(target, _property);
+            _written = DependencyRead.Value(_target.Handle, _property);
     }
 
     void OnTargetChanged()
     {
-        if (_onLostFocus || _target.Object is not { } target)
+        if (_onLostFocus || !_target.Alive)
             return;
 
         var edited = _spec.Lane is { } lane
-            ? !lane.Same(lane.Read(target, _property), _writtenSlot)
-            : !Equals(DependencyRead.Value(target, _property), _written);
+            ? !lane.Same(lane.Read(_target.Handle, _property), _writtenSlot)
+            : !Equals(DependencyRead.Value(_target.Handle, _property), _written);
         if (edited)
             Push();
     }
 
     void Push()
     {
-        if (_pushing || _writable is null || _target.Object is not { } target)
+        if (_pushing || _writable is null || !_target.Alive)
             return;
 
         if (_spec.Lane is { } lane)
         {
             if (lane.WritesBack)
-                PushTyped(lane, target, _writable);
+                PushTyped(lane, _target.Handle, _writable);
 
             return;
         }
@@ -667,7 +671,7 @@ public sealed class CompiledBinding
         if (_spec.Write is null)
             return;
 
-        var value = DependencyRead.Value(target, _property);
+        var value = DependencyRead.Value(_target.Handle, _property);
         if (_spec.Converter is not null)
             value = _spec.Converter.ConvertBack(
                 value,
@@ -697,7 +701,7 @@ public sealed class CompiledBinding
         }
     }
 
-    void PushTyped(BindingLane lane, DependencyObject target, object writable)
+    void PushTyped(BindingLane lane, nint target, object writable)
     {
         var slot = lane.Read(target, _property);
 

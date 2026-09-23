@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -83,13 +84,151 @@ public static class DependencyWrite
     /// <param name="target">The object to write.</param>
     /// <param name="property">The property to write, of type string.</param>
     /// <param name="text">The text; empty writes the empty string, as Noesis stores a null one.</param>
-    public static unsafe void String(
+    public static void String(
         DependencyObject target,
+        DependencyProperty property,
+        ReadOnlySpan<char> text
+    ) => String(Handle(target), property, text);
+
+    internal static void Value(nint target, DependencyProperty property, bool value) =>
+        Native.Bool(null, target, Handle(property), value, false, false);
+
+    internal static void Value(nint target, DependencyProperty property, int value) =>
+        Native.Int(null, target, Handle(property), value, false, false);
+
+    internal static void Value(nint target, DependencyProperty property, long value) =>
+        Native.Int64(null, target, Handle(property), value, false, false);
+
+    internal static void Value(nint target, DependencyProperty property, float value) =>
+        Native.Float(null, target, Handle(property), value, false, false);
+
+    internal static void Value(nint target, DependencyProperty property, double value) =>
+        Native.Double(null, target, Handle(property), value, false, false);
+
+    /// <summary>What Noesis' <c>SetValue</c> writes, dispatched on the property's type the same way,
+    /// without the target's proxy: only a struct Noesis marshals itself still goes through one.</summary>
+    internal static void Value(nint target, DependencyProperty property, object? value)
+    {
+        switch (SlotOf(property))
+        {
+            case Slot.Bits:
+                Native.UInt64(
+                    null,
+                    target,
+                    Handle(property),
+                    Convert.ToUInt64(value),
+                    false,
+                    false
+                );
+                break;
+            case Slot.Bool:
+                Value(target, property, (bool)value!);
+                break;
+            case Slot.Int:
+                Value(target, property, (int)value!);
+                break;
+            case Slot.Long:
+                Value(target, property, (long)value!);
+                break;
+            case Slot.Float:
+                Value(target, property, (float)value!);
+                break;
+            case Slot.Double:
+                Value(target, property, (double)value!);
+                break;
+            case Slot.String:
+                String(target, property, value is null ? "" : value.ToString());
+                break;
+            case Slot.Thickness:
+                var thickness = (Thickness)value!;
+                Native.Thickness(null, target, Handle(property), ref thickness, false, false);
+                break;
+            case Slot.Color:
+                var color = (Color)value!;
+                Native.Color(null, target, Handle(property), ref color, false, false);
+                break;
+            case Slot.Point:
+                var point = (Point)value!;
+                Native.Point(null, target, Handle(property), ref point, false, false);
+                break;
+            case Slot.Size:
+                var size = (Size)value!;
+                Native.Size(null, target, Handle(property), ref size, false, false);
+                break;
+            case Slot.CornerRadius:
+                var radius = (CornerRadius)value!;
+                Native.CornerRadius(null, target, Handle(property), ref radius, false, false);
+                break;
+            case Slot.Proxy:
+                (NoesisInternals.Proxy(null, target, false) as DependencyObject)?.SetValue(
+                    property,
+                    value
+                );
+                break;
+            default:
+                var instance = NoesisInternals.InstanceHandle(null, value);
+                Native.Component(null, target, Handle(property), instance.Handle);
+                GC.KeepAlive(instance.Wrapper);
+                break;
+        }
+    }
+
+    internal static void Clear(nint target, DependencyProperty property) =>
+        NoesisInternals.ClearValue(target, property);
+
+    enum Slot : byte
+    {
+        Component,
+        Bits,
+        Bool,
+        Int,
+        Long,
+        Float,
+        Double,
+        String,
+        Thickness,
+        Color,
+        Point,
+        Size,
+        CornerRadius,
+        Proxy,
+    }
+
+    static readonly Dictionary<DependencyProperty, Slot> Slots =
+        new Dictionary<DependencyProperty, Slot>();
+
+    static Slot SlotOf(DependencyProperty property)
+    {
+        if (Slots.TryGetValue(property, out var slot))
+            return slot;
+
+        var type = property.PropertyType;
+        slot =
+            type.IsEnum ? Slot.Bits
+            : type == typeof(bool) ? Slot.Bool
+            : type == typeof(int) ? Slot.Int
+            : type == typeof(long) ? Slot.Long
+            : type == typeof(float) ? Slot.Float
+            : type == typeof(double) ? Slot.Double
+            : type == typeof(string) ? Slot.String
+            : type == typeof(Thickness) ? Slot.Thickness
+            : type == typeof(Color) ? Slot.Color
+            : type == typeof(Point) ? Slot.Point
+            : type == typeof(Size) ? Slot.Size
+            : type == typeof(CornerRadius) ? Slot.CornerRadius
+            : NativeSlots.Typed(type) ? Slot.Proxy
+            : Slot.Component;
+        Slots[property] = slot;
+        return slot;
+    }
+
+    internal static unsafe void String(
+        nint target,
         DependencyProperty property,
         ReadOnlySpan<char> text
     )
     {
-        var dependencyObject = Handle(target);
+        var dependencyObject = target;
         var dependencyProperty = Handle(property);
 
         char[]? rented = null;
@@ -118,6 +257,17 @@ public static class DependencyWrite
 
     static class Native
     {
+        [UnsafeAccessor(
+            UnsafeAccessorKind.StaticMethod,
+            Name = "Noesis_DependencySet_BaseComponent"
+        )]
+        internal static extern void Component(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            nint val
+        );
+
         // Noesis' own setter passes a UTF-16 copy here; a ref char would marshal as one ANSI byte.
         [DllImport("Noesis", EntryPoint = "Noesis_DependencySet_String")]
         internal static extern unsafe void String(

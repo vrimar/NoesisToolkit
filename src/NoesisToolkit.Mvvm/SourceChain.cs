@@ -10,6 +10,7 @@ sealed class SourceChain : IChangeListener
 {
     readonly ElementState _target;
     readonly Func<FrameworkElement, FrameworkElement?>? _resolve;
+    readonly SourceRoot _root;
     readonly DependencyProperty? _sourceProperty;
     readonly BindingHop[] _hops;
     readonly NotifierSet _watched;
@@ -20,6 +21,7 @@ sealed class SourceChain : IChangeListener
     internal SourceChain(
         ElementState target,
         Func<FrameworkElement, FrameworkElement?>? resolve,
+        SourceRoot root,
         DependencyProperty? sourceProperty,
         BindingHop[] hops,
         NotifierSet watched,
@@ -28,6 +30,7 @@ sealed class SourceChain : IChangeListener
     {
         _target = target;
         _resolve = resolve;
+        _root = root;
         _sourceProperty = sourceProperty;
         _hops = hops;
         _watched = watched;
@@ -37,19 +40,27 @@ sealed class SourceChain : IChangeListener
     internal ElementState? Source => _source is { Alive: true } ? _source : null;
 
     /// <summary>A stated source the walk has not found yet, which is what the layout retry is for.</summary>
-    internal bool Missing => _resolve is not null && Source is null;
+    internal bool Missing =>
+        (_resolve is not null || _root == SourceRoot.TemplatedParent) && Source is null;
 
     /// <summary>Re-resolves the root and re-subscribes. True where the root moved.</summary>
     internal bool Resolve()
     {
-        if (_resolve is null)
-            return Attach(_target.Alive ? _target : null);
+        if (_resolve is not null)
+            return Attach(
+                _target.Element is { } target && _resolve(target) is { } found
+                    ? ElementState.Of(found)
+                    : null
+            );
 
-        return Attach(
-            _target.Element is { } target && _resolve(target) is { } found
-                ? ElementState.Of(found)
-                : null
-        );
+        if (!_target.Alive)
+            return Attach(null);
+
+        if (_root == SourceRoot.Target)
+            return Attach(_target);
+
+        var parent = NoesisInternals.TemplatedParent(_target.Handle);
+        return Attach(parent == IntPtr.Zero ? null : ElementState.Of(parent));
     }
 
     internal void Detach() => Attach(null);
@@ -91,11 +102,11 @@ sealed class SourceChain : IChangeListener
     {
         owner = null;
 
-        var source = Source?.Element;
+        var source = Source;
         var current =
             source is null ? null
-            : _sourceProperty is null ? source.DataContext
-            : DependencyRead.Value(source, _sourceProperty);
+            : _sourceProperty is null ? NoesisInternals.DataContext(source.Handle)
+            : DependencyRead.Value(source.Handle, _sourceProperty);
 
         root = current;
 

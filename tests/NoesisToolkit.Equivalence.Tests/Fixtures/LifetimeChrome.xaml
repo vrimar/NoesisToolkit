@@ -11,6 +11,7 @@
     <ControlTemplate.Triggers>
       <Trigger Property="HorizontalContentAlignment" Value="Right">
         <Setter TargetName="Chrome" Property="Background" Value="Green" />
+        <Setter TargetName="Chrome" Property="Padding" Value="4" />
       </Trigger>
     </ControlTemplate.Triggers>
   </ControlTemplate>

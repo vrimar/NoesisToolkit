@@ -11,8 +11,12 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CompiledBindingPart
 {
-    /// <summary>Given the target, the element the path starts at; null starts it at the target.</summary>
+    /// <summary>Given the target, the element the path starts at; null starts it at
+    /// <see cref="Root"/>.</summary>
     public Func<FrameworkElement, FrameworkElement?>? Source { get; set; }
+
+    /// <summary>Where the path starts when <see cref="Source"/> is null.</summary>
+    public SourceRoot Root { get; set; }
 
     /// <summary>The property on the source the path reads through; null reads its DataContext.</summary>
     public DependencyProperty? SourceProperty { get; set; }
@@ -132,7 +136,7 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         else
             combined = _spec.Format(values);
 
-        if (_target.Element is not { } target)
+        if (!_target.Alive)
             return;
 
         _pushing = true;
@@ -147,11 +151,11 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
             // A failed binding still occupies the slot, so the metadata default is what shows.
             if (!ReferenceEquals(value, DependencyProperty.UnsetValue))
-                Assign(target, value);
+                Assign(value);
             else if (_clearWhenUnset)
-                target.ClearValue(_property);
+                DependencyWrite.Clear(_target.Handle, _property);
             else
-                Assign(target, _unset);
+                Assign(_unset);
         }
         finally
         {
@@ -159,11 +163,11 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         }
     }
 
-    void Assign(FrameworkElement target, object? value)
+    void Assign(object? value)
     {
         if (_spec.Assign is null)
-            target.SetValue(_property, value);
-        else
+            DependencyWrite.Value(_target.Handle, _property, value);
+        else if (_target.Element is { } target)
             _spec.Assign(target, value);
     }
 }

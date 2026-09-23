@@ -10,8 +10,12 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CompiledBindingSpec
 {
-    /// <summary>Given the target, the element the path starts at; null starts it at the target.</summary>
+    /// <summary>Given the target, the element the path starts at; null starts it at
+    /// <see cref="Root"/>.</summary>
     public Func<FrameworkElement, FrameworkElement?>? Source { get; set; }
+
+    /// <summary>Where the path starts when <see cref="Source"/> is null.</summary>
+    public SourceRoot Root { get; set; }
 
     /// <summary>The property on the source the path reads through; null reads its DataContext.</summary>
     public DependencyProperty? SourceProperty { get; set; }
@@ -52,4 +56,17 @@ public sealed class CompiledBindingSpec
     /// <summary>As the document wrote it. <see cref="UpdateSourceTrigger.Default"/> defers to the
     /// target property's own <c>DefaultUpdateSourceTrigger</c>.</summary>
     public UpdateSourceTrigger Trigger { get; set; } = UpdateSourceTrigger.Default;
+}
+
+/// <summary>Where a compiled path starts when no resolver is given, found off the target's native
+/// handle so a collected proxy is never minted again to answer it.</summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public enum SourceRoot
+{
+    /// <summary>The target itself.</summary>
+    Target,
+
+    /// <summary>The control the target's template was applied to; missing outside template
+    /// content, and on a template prototype.</summary>
+    TemplatedParent,
 }

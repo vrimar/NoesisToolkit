@@ -23,6 +23,7 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
             _chains[i] = new SourceChain(
                 target,
                 parts[i].Source,
+                parts[i].Root,
                 parts[i].SourceProperty,
                 parts[i].Hops,
                 _watched,

@@ -128,8 +128,26 @@ public static class DependencyRead
         Guard.NotNull(source, nameof(source));
         Guard.NotNull(property, nameof(property));
 
-        return ReaderOf(property).Read(source, property);
+        return ReaderOf(property).Read(Handle(source), property);
     }
+
+    internal static object? Value(nint source, DependencyProperty property) =>
+        ReaderOf(property).Read(source, property);
+
+    internal static bool Bool(nint source, DependencyProperty property) =>
+        Native.Bool(null, source, Handle(property), false, out _);
+
+    internal static int Int(nint source, DependencyProperty property) =>
+        Native.Int(null, source, Handle(property), false, out _);
+
+    internal static long Long(nint source, DependencyProperty property) =>
+        Native.Int64(null, source, Handle(property), false, out _);
+
+    internal static float Float(nint source, DependencyProperty property) =>
+        Native.Float(null, source, Handle(property), false, out _);
+
+    internal static double Double(nint source, DependencyProperty property) =>
+        Native.Double(null, source, Handle(property), false, out _);
 
     abstract class Reader
     {
@@ -153,26 +171,36 @@ public static class DependencyRead
             // Noesis reports its own object-typed properties as BaseComponent.
             if (type == typeof(object) || type == typeof(BaseComponent))
                 return ObjectReader.Instance;
-            return PlainReader.Instance;
+            return NativeSlots.Typed(type) ? PlainReader.Instance : ComponentReader.Instance;
         }
 
-        internal abstract object? Read(DependencyObject source, DependencyProperty property);
+        internal abstract object? Read(nint source, DependencyProperty property);
     }
 
+    // A struct or nullable Noesis marshals itself; only this read still goes through a proxy.
     sealed class PlainReader : Reader
     {
         internal static readonly PlainReader Instance = new PlainReader();
 
-        internal override object? Read(DependencyObject source, DependencyProperty property) =>
-            source.GetValue(property);
+        internal override object? Read(nint source, DependencyProperty property) =>
+            (NoesisInternals.Proxy(null, source, false) as DependencyObject)?.GetValue(property);
+    }
+
+    // What Noesis' GetValue does for any type its typed getters do not know, minus the source's proxy.
+    sealed class ComponentReader : Reader
+    {
+        internal static readonly ComponentReader Instance = new ComponentReader();
+
+        internal override object? Read(nint source, DependencyProperty property) =>
+            NoesisInternals.Proxy(null, Native.Component(null, source, Handle(property)), false);
     }
 
     sealed class StringReader : Reader
     {
         internal static readonly StringReader Instance = new StringReader();
 
-        internal override object Read(DependencyObject source, DependencyProperty property) =>
-            String(source, property);
+        internal override object Read(nint source, DependencyProperty property) =>
+            NativeStrings.Decode(Native.String(null, source, Handle(property)));
     }
 
     // An object slot holding text, a flag or a number holds a native box, unboxed afresh per read.
@@ -195,11 +223,11 @@ public static class DependencyRead
         static readonly Dictionary<float, object> Floats = new Dictionary<float, object>();
         static readonly Dictionary<double, object> Doubles = new Dictionary<double, object>();
 
-        internal override object? Read(DependencyObject source, DependencyProperty property)
+        internal override object? Read(nint source, DependencyProperty property)
         {
-            var value = Native.Component(null, Handle(source), Handle(property));
+            var value = Native.Component(null, source, Handle(property));
             if (value == IntPtr.Zero)
-                return source.GetValue(property);
+                return null;
 
             var type = Native.DynamicType(null, value);
             if (type == BoxedString)
@@ -213,7 +241,7 @@ public static class DependencyRead
             if (type == BoxedDouble)
                 return Shared(Doubles, Native.UnboxDouble(null, value));
 
-            return source.GetValue(property);
+            return NoesisInternals.Proxy(null, value, false);
         }
 
         static object Int(int raw) =>
@@ -240,16 +268,8 @@ public static class DependencyRead
         static readonly object True = true;
         static readonly object False = false;
 
-        internal override object Read(DependencyObject source, DependencyProperty property) =>
-            Native.Bool(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            )
-                ? True
-                : False;
+        internal override object Read(nint source, DependencyProperty property) =>
+            Native.Bool(null, source, Handle(property), false, out _) ? True : False;
     }
 
     sealed class IntReader : Reader
@@ -257,15 +277,9 @@ public static class DependencyRead
         // A counter shown in the UI lives in small values; a larger one boxes as Noesis would.
         readonly object?[] _small = new object?[256];
 
-        internal override object Read(DependencyObject source, DependencyProperty property)
+        internal override object Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Int(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            );
+            var raw = Native.Int(null, source, Handle(property), false, out _);
 
             return (uint)raw < (uint)_small.Length ? _small[raw] ??= raw : raw;
         }
@@ -277,15 +291,9 @@ public static class DependencyRead
 
         readonly Dictionary<long, object> _boxes = new Dictionary<long, object>();
 
-        internal override object Read(DependencyObject source, DependencyProperty property)
+        internal override object Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Int64(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            );
+            var raw = Native.Int64(null, source, Handle(property), false, out _);
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
@@ -304,15 +312,9 @@ public static class DependencyRead
 
         readonly Dictionary<ulong, object> _boxes = new Dictionary<ulong, object>();
 
-        internal override object Read(DependencyObject source, DependencyProperty property)
+        internal override object Read(nint source, DependencyProperty property)
         {
-            var raw = Native.UInt64(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            );
+            var raw = Native.UInt64(null, source, Handle(property), false, out _);
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
@@ -332,15 +334,9 @@ public static class DependencyRead
 
         readonly Dictionary<float, object> _boxes = new Dictionary<float, object>();
 
-        internal override object Read(DependencyObject source, DependencyProperty property)
+        internal override object Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Float(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            );
+            var raw = Native.Float(null, source, Handle(property), false, out _);
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
@@ -359,15 +355,9 @@ public static class DependencyRead
 
         readonly Dictionary<double, object> _boxes = new Dictionary<double, object>();
 
-        internal override object Read(DependencyObject source, DependencyProperty property)
+        internal override object Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Double(
-                null,
-                BaseComponent.getCPtr(source).Handle,
-                BaseComponent.getCPtr(property).Handle,
-                false,
-                out _
-            );
+            var raw = Native.Double(null, source, Handle(property), false, out _);
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;

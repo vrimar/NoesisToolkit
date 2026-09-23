@@ -124,8 +124,10 @@ when Noesis destroys the element.
 Nothing a binding keeps holds a proxy either. A proxy holds a native reference, and a template
 part's binding usually reads its templated parent or an ancestor, which holds the part: a proxy held
 from there would keep the whole subtree alive. A binding holds the elements it touches by handle and
-resolves a proxy only when it reads or writes one, so after a collection each element it touches
-costs one proxy until the next.
+reads and writes them by handle too — its source, its target, a templated parent it roots at and a
+trigger's named setter targets — so a collection costs it nothing. A proxy is minted only to hand an
+element to code that takes one: an `ElementName` or `FindAncestor` lookup, a custom assignment, and a
+`Watch` or `Events.On` handler.
 
 An element can be destroyed while a binding still refers to it — the source of an `ElementName`
 binding removed from its panel, say. Its handle is told when the element ends and reads as missing

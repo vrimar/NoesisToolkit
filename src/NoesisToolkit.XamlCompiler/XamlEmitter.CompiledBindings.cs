@@ -14,6 +14,7 @@ sealed partial class XamlEmitter
     const string CompiledBindingFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBinding";
 
     const string BindingHopFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingHop";
+    const string SourceRootFqn = "global::NoesisToolkit.Mvvm.CodeGen.SourceRoot";
 
     const string SetupFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBindingSetup";
 
@@ -800,7 +801,9 @@ sealed partial class XamlEmitter
 
         var fields = new List<string>();
 
-        if (source.Resolver is not null)
+        if (source.Root is not null)
+            fields.Add($"Root = {SourceRootFqn}.{source.Root}");
+        else if (source.Resolver is not null)
             fields.Add($"Source = {source.Resolver}");
 
         if (resolved.Slot is not null)
@@ -1090,11 +1093,16 @@ sealed partial class XamlEmitter
         INamedTypeSymbol? type = null,
         bool detached = false,
         bool structural = false,
-        bool templated = false
+        bool templated = false,
+        string? root = null
     )
     {
         public string? Resolver { get; } = resolver;
         public XElement Scope { get; } = scope;
+
+        /// <summary>The runtime's own root, emitted in place of <see cref="Resolver"/>: it finds the
+        /// source by native handle, where a resolver needs the target's proxy.</summary>
+        public string? Root { get; } = root;
 
         /// <summary>Set where the template's own shape says which element the source is, so the
         /// binding names no identifier the app authored and none can be renamed out from under it.</summary>
@@ -1170,7 +1178,8 @@ sealed partial class XamlEmitter
                 element,
                 target,
                 structural: true,
-                templated: true
+                templated: true,
+                root: "TemplatedParent"
             )
             : null;
 
@@ -1185,7 +1194,7 @@ sealed partial class XamlEmitter
             return TemplatedSource(element);
 
         if (mode == "Self")
-            return new BindingSource("__s => __s", element, structural: true);
+            return new BindingSource("__s => __s", element, structural: true, root: "Target");
 
         // A deeper ancestor has no compiled walk, so it stays native.
         if (level != "1")

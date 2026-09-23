@@ -21,13 +21,9 @@ public abstract class BindingLane
     // False where a guarded owner is not the lane's type, which breaks the path.
     internal abstract bool TryRead(object owner, out ulong slot);
 
-    internal abstract void Write(
-        DependencyObject receiver,
-        DependencyProperty property,
-        ulong slot
-    );
+    internal abstract void Write(nint receiver, DependencyProperty property, ulong slot);
 
-    internal abstract ulong Read(DependencyObject target, DependencyProperty property);
+    internal abstract ulong Read(nint target, DependencyProperty property);
 
     internal abstract bool Same(ulong a, ulong b);
 
@@ -124,11 +120,7 @@ public abstract class BindingLane
             return true;
         }
 
-        internal override void Write(
-            DependencyObject receiver,
-            DependencyProperty property,
-            ulong slot
-        )
+        internal override void Write(nint receiver, DependencyProperty property, ulong slot)
         {
             var value = Unsafe.As<ulong, TSource>(ref slot);
             Span<char> buffer = stackalloc char[StackChars];
@@ -138,7 +130,7 @@ public abstract class BindingLane
                 WriteLong(receiver, property, value);
         }
 
-        void WriteLong(DependencyObject receiver, DependencyProperty property, TSource value)
+        void WriteLong(nint receiver, DependencyProperty property, TSource value)
         {
             for (var size = StackChars * 4; ; size *= 4)
             {
@@ -159,7 +151,7 @@ public abstract class BindingLane
         }
 
         // One-way: nothing reads a text slot back into a number.
-        internal override ulong Read(DependencyObject target, DependencyProperty property) => 0;
+        internal override ulong Read(nint target, DependencyProperty property) => 0;
 
         internal override bool Same(ulong a, ulong b) => a == b;
 
@@ -200,13 +192,10 @@ public abstract class BindingLane
             return true;
         }
 
-        internal override void Write(
-            DependencyObject receiver,
-            DependencyProperty property,
-            ulong slot
-        ) => Slots<TSlot>.Write(receiver, property, Slots<TSlot>.Value(slot));
+        internal override void Write(nint receiver, DependencyProperty property, ulong slot) =>
+            Slots<TSlot>.Write(receiver, property, Slots<TSlot>.Value(slot));
 
-        internal override ulong Read(DependencyObject target, DependencyProperty property) =>
+        internal override ulong Read(nint target, DependencyProperty property) =>
             Slots<TSlot>.Bits(Slots<TSlot>.Read(target, property));
 
         internal override bool Same(ulong a, ulong b) =>
@@ -238,7 +227,7 @@ public abstract class BindingLane
 
         internal static TSlot Value(ulong bits) => Unsafe.As<ulong, TSlot>(ref bits);
 
-        internal static TSlot Read(DependencyObject target, DependencyProperty property)
+        internal static TSlot Read(nint target, DependencyProperty property)
         {
             if (typeof(TSlot) == typeof(bool))
                 return As(DependencyRead.Bool(target, property));
@@ -251,11 +240,7 @@ public abstract class BindingLane
             return As(DependencyRead.Double(target, property));
         }
 
-        internal static void Write(
-            DependencyObject target,
-            DependencyProperty property,
-            TSlot value
-        )
+        internal static void Write(nint target, DependencyProperty property, TSlot value)
         {
             if (typeof(TSlot) == typeof(bool))
                 DependencyWrite.Value(target, property, Unsafe.As<TSlot, bool>(ref value));

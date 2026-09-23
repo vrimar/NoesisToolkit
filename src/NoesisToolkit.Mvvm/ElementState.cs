@@ -18,10 +18,10 @@ sealed unsafe class ElementState
     internal ElementEvents.Entry? Events;
     internal List<CompiledTriggerSet>? TriggerSets;
 
-    ElementState(nint handle, DependencyObject proxy)
+    ElementState(nint handle, DependencyObject? proxy)
     {
         _handle = handle;
-        _proxy = new WeakReference<DependencyObject>(proxy);
+        _proxy = new WeakReference<DependencyObject>(proxy!);
     }
 
     internal bool Alive => _handle != IntPtr.Zero;
@@ -48,9 +48,14 @@ sealed unsafe class ElementState
 
     internal FrameworkElement? Element => Object as FrameworkElement;
 
-    internal static ElementState Of(DependencyObject target)
+    internal static ElementState Of(DependencyObject target) =>
+        Of(BaseComponent.getCPtr(target).Handle, target);
+
+    /// <summary>The state of a live native object, found or begun without its proxy.</summary>
+    internal static ElementState Of(nint handle) => Of(handle, null);
+
+    static ElementState Of(nint handle, DependencyObject? target)
     {
-        var handle = BaseComponent.getCPtr(target).Handle;
         lock (Live)
         {
             if (Live.TryGetValue(handle, out var state))
