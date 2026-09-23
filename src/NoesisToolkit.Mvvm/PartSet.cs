@@ -13,7 +13,7 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
     readonly IPartSetOwner _owner;
     readonly ElementLifecycle _life;
 
-    internal PartSet(FrameworkElement target, CompiledBindingPart[] parts, IPartSetOwner owner)
+    internal PartSet(ElementState target, CompiledBindingPart[] parts, IPartSetOwner owner)
     {
         _owner = owner;
         _watched = new NotifierSet(this);

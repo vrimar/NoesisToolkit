@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
 
@@ -26,15 +25,6 @@ public static class DependencyWatcher
 {
     static readonly Dictionary<DependencyProperty, DependencyProperty> Probes =
         new Dictionary<DependencyProperty, DependencyProperty>();
-
-    static readonly ConditionalWeakTable<DependencyObject, Subscriptions> Table =
-        new ConditionalWeakTable<DependencyObject, Subscriptions>();
-
-    // GetOrCreateValue would go through Activator for every element.
-    static readonly ConditionalWeakTable<
-        DependencyObject,
-        Subscriptions
-    >.CreateValueCallback CreateSubscriptions = static _ => new Subscriptions();
 
     static readonly HashSet<DependencyProperty> Notifies = new HashSet<DependencyProperty>();
 
@@ -80,71 +70,84 @@ public static class DependencyWatcher
         PropertyChangedCallback? inner
     ) => new NotifyingMetadata(defaultValue, options, inner);
 
-    /// <summary>Calls <paramref name="handler"/> whenever <paramref name="property"/> changes on
-    /// <paramref name="target"/>.</summary>
+    /// <summary>Calls <paramref name="handler"/> with <paramref name="target"/> whenever
+    /// <paramref name="property"/> changes on it.</summary>
     /// <param name="target">The element to watch.</param>
     /// <param name="property">The property to watch on it.</param>
-    /// <param name="handler">Runs after the value has changed.</param>
+    /// <param name="handler">Runs after the value has changed; watching again with the same handler
+    /// does nothing.</param>
     /// <remarks>An object outside a live view raises nothing at all, so a watcher on a detached
-    /// element only starts reporting once the tree it is in is shown.</remarks>
-    public static void Watch(FrameworkElement target, DependencyProperty property, Action handler)
-    {
-        Guard.NotNull(handler, nameof(handler));
-        Watch(target, property, new ActionListener(handler));
-    }
-
-    internal static void Watch(
+    /// element only starts reporting once the tree it is in is shown. The subscription lasts until
+    /// the element is destroyed, as one on a Noesis event does, so a handler that holds the element or
+    /// the control around it keeps both alive: take the element from the argument instead.</remarks>
+    public static void Watch(
         FrameworkElement target,
         DependencyProperty property,
-        IChangeListener listener
+        Action<FrameworkElement> handler
     )
     {
         Guard.NotNull(target, nameof(target));
         Guard.NotNull(property, nameof(property));
+        Guard.NotNull(handler, nameof(handler));
 
-        var subscriptions = Table.GetValue(target, CreateSubscriptions);
-
-        if (!AlreadyNotifies(property))
-            subscriptions.Probe(target, property, ProbeFor(property));
-
-        subscriptions.Add(property, listener);
+        var state = ElementState.Of(target);
+        Watch(state, property, new ElementListener(state, handler));
     }
 
-    /// <summary>Stops a <see cref="Watch(FrameworkElement, DependencyProperty, Action)"/>
+    internal static void Watch(
+        ElementState target,
+        DependencyProperty property,
+        IChangeListener listener
+    )
+    {
+        if (!target.Alive)
+            return;
+
+        Probe(target, property);
+        (target.Watchers ??= new Listeners()).Add(property, listener);
+    }
+
+    /// <summary>Stops a <see cref="Watch(FrameworkElement, DependencyProperty, Action{FrameworkElement})"/>
     /// subscription.</summary>
     /// <param name="target">The element being watched.</param>
     /// <param name="property">The property being watched on it.</param>
     /// <param name="handler">The handler that was registered.</param>
-    public static void Unwatch(FrameworkElement target, DependencyProperty property, Action handler)
-    {
-        Guard.NotNull(handler, nameof(handler));
-        Unwatch(target, property, new ActionListener(handler));
-    }
-
-    internal static void Unwatch(
+    public static void Unwatch(
         FrameworkElement target,
         DependencyProperty property,
-        IChangeListener listener
+        Action<FrameworkElement> handler
     )
     {
         Guard.NotNull(target, nameof(target));
         Guard.NotNull(property, nameof(property));
+        Guard.NotNull(handler, nameof(handler));
 
-        if (Table.TryGetValue(target, out var subscriptions))
-            subscriptions.Remove(property, listener);
+        if (ElementState.Find(BaseComponent.getCPtr(target).Handle) is { } state)
+            Unwatch(state, property, new ElementListener(state, handler));
     }
 
+    internal static void Unwatch(
+        ElementState target,
+        DependencyProperty property,
+        IChangeListener listener
+    ) => target.Watchers?.Remove(property, listener);
+
     // Equal by the action it wraps, so the unwatch finds the watch's entry.
-    sealed class ActionListener(Action handler) : IChangeListener
+    sealed class ElementListener(ElementState target, Action<FrameworkElement> handler)
+        : IChangeListener
     {
-        public void Changed() => handler();
+        public void Changed()
+        {
+            if (target.Element is { } element)
+                handler(element);
+        }
 
         public override bool Equals(object? obj) =>
-            obj is ActionListener other && other.Handler.Equals(handler);
+            obj is ElementListener other && other.Handler.Equals(handler);
 
         public override int GetHashCode() => handler.GetHashCode();
 
-        Action Handler => handler;
+        Action<FrameworkElement> Handler => handler;
     }
 
     static bool AlreadyNotifies(DependencyProperty property)
@@ -153,63 +156,67 @@ public static class DependencyWatcher
             return Notifies.Contains(property);
     }
 
+    // The probe stays bound once no handler is left: a recycled container watches the same property
+    // again on its next load, and binding it anew costs a native expression each time.
+    static void Probe(ElementState target, DependencyProperty property)
+    {
+        if (AlreadyNotifies(property) || (target.Probed?.Contains(property) ?? false))
+            return;
+
+        if (target.Element is not { } element)
+            return;
+
+        (target.Probed ??= new List<DependencyProperty>()).Add(property);
+        element.SetBinding(
+            ProbeFor(property),
+            new Binding(property)
+            {
+                RelativeSource = RelativeSource.Self,
+                Mode = BindingMode.OneWay,
+            }
+        );
+    }
+
     static DependencyProperty ProbeFor(DependencyProperty property) =>
         Probes.TryGetValue(property, out var probe) ? probe : RegisterProbe(property);
 
-    // Apart, so the closure over the property is built only on the miss.
     static DependencyProperty RegisterProbe(DependencyProperty property)
     {
         var probe = DependencyProperty.RegisterAttached(
             "NtkWatch" + _probes++.ToString(System.Globalization.CultureInfo.InvariantCulture),
             typeof(object),
             typeof(DependencyWatcher),
-            Metadata(
-                null,
-                FrameworkPropertyMetadataOptions.None,
-                (target, _) =>
-                {
-                    if (Table.TryGetValue(target, out var subscriptions))
-                        subscriptions.Fire(property);
-                }
-            )
+            new NotifyingMetadata(null, FrameworkPropertyMetadataOptions.None, null, property)
         );
 
         Probes[property] = probe;
         return probe;
     }
 
-    // Noesis swallows whatever escapes here, so a handler that throws would vanish without a trace.
     internal static void OnChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
     {
-        if (Table.TryGetValue(target, out var subscriptions))
-            subscriptions.Fire(e.Property);
+        if (ElementState.Find(BaseComponent.getCPtr(target).Handle) is { } state)
+            Fire(state, e.Property);
     }
 
-    sealed class Subscriptions
+    // Noesis swallows whatever escapes here, so a handler that throws would vanish without a trace.
+    internal static void OnChanged(
+        nint target,
+        DependencyProperty? reports,
+        DependencyPropertyChangedEventArgs e
+    )
+    {
+        if (ElementState.Find(target) is { } state)
+            Fire(state, reports ?? e.Property);
+    }
+
+    static void Fire(ElementState state, DependencyProperty property) =>
+        state.Watchers?.Fire(property);
+
+    internal sealed class Listeners
     {
         readonly Dictionary<DependencyProperty, HandlerList<IChangeListener>> _handlers =
             new Dictionary<DependencyProperty, HandlerList<IChangeListener>>();
-        readonly List<DependencyProperty> _probed = new List<DependencyProperty>();
-
-        internal void Probe(
-            FrameworkElement target,
-            DependencyProperty property,
-            DependencyProperty probe
-        )
-        {
-            if (_probed.Contains(property))
-                return;
-
-            _probed.Add(property);
-            target.SetBinding(
-                probe,
-                new Binding(property)
-                {
-                    RelativeSource = RelativeSource.Self,
-                    Mode = BindingMode.OneWay,
-                }
-            );
-        }
 
         internal void Add(DependencyProperty property, IChangeListener listener)
         {
@@ -223,8 +230,6 @@ public static class DependencyWatcher
                 listeners.Add(listener);
         }
 
-        // The probe stays bound once no handler is left: a recycled container watches the same
-        // property again on its next load, and binding it anew costs a native expression each time.
         internal void Remove(DependencyProperty property, IChangeListener listener)
         {
             if (_handlers.TryGetValue(property, out var listeners))

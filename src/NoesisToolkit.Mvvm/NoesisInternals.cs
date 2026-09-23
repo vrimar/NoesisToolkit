@@ -12,14 +12,6 @@ static class NoesisInternals
         bool ownMemory
     );
 
-    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "GetProxy")]
-    internal static extern object? Proxy(
-        [UnsafeAccessorType("Noesis.Extend, Noesis.GUI")] object? owner,
-        nint nativeType,
-        nint cPtr,
-        bool ownMemory
-    );
-
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "GetExtendInstance")]
     internal static extern object? ExtendInstance(
         [UnsafeAccessorType("Noesis.Extend, Noesis.GUI")] object? owner,

@@ -21,6 +21,30 @@ public sealed class CompiledTemplateTests
         await Assert.That(CompiledBindingSetup.Register("probe#1", _ => { })).IsNotEqualTo(first);
     }
 
+    static int _wired;
+
+    [Test]
+    public async Task Wiring_an_element_past_the_small_boxes_allocates_nothing()
+    {
+        NoesisRuntime.Start();
+
+        var index = -1;
+        for (var i = 0; index < 300; i++)
+            index = CompiledBindingSetup.Register($"late#{i}", static _ => _wired++);
+
+        var element = new Border();
+        NoesisRuntime.Show(element);
+        CompiledBindingSetup.SetIndex(element, -1);
+
+        _wired = 0;
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        CompiledBindingSetup.SetIndex(element, index);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        await Assert.That(_wired).IsEqualTo(1);
+        await Assert.That(allocated).IsEqualTo(0L);
+    }
+
     [Test]
     public async Task Each_clone_binds_to_its_own_item()
     {

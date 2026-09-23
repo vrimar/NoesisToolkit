@@ -58,7 +58,7 @@ public sealed class CompiledMultiBindingSpec
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CompiledMultiBinding : IPartSetOwner
 {
-    readonly FrameworkElement _target;
+    readonly ElementState _target;
     readonly DependencyProperty _property;
     readonly CompiledMultiBindingSpec _spec;
     readonly PartSet _parts;
@@ -74,10 +74,10 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         CompiledMultiBindingSpec spec
     )
     {
-        _target = target;
+        _target = ElementState.Of(target);
         _property = property;
         _spec = spec;
-        _parts = new PartSet(target, spec.Parts, this);
+        _parts = new PartSet(_target, spec.Parts, this);
         _values = new object?[spec.Parts.Length];
 
         (_unset, _clearWhenUnset) = SlotDefault.For(target, property);
@@ -110,7 +110,7 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
     void Rebuild()
     {
-        if (_pushing)
+        if (_pushing || !_target.Alive)
             return;
 
         _parts.Unwatch();
@@ -132,6 +132,9 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         else
             combined = _spec.Format(values);
 
+        if (_target.Element is not { } target)
+            return;
+
         _pushing = true;
         try
         {
@@ -144,11 +147,11 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
             // A failed binding still occupies the slot, so the metadata default is what shows.
             if (!ReferenceEquals(value, DependencyProperty.UnsetValue))
-                Assign(value);
+                Assign(target, value);
             else if (_clearWhenUnset)
-                _target.ClearValue(_property);
+                target.ClearValue(_property);
             else
-                Assign(_unset);
+                Assign(target, _unset);
         }
         finally
         {
@@ -156,11 +159,11 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         }
     }
 
-    void Assign(object? value)
+    void Assign(FrameworkElement target, object? value)
     {
         if (_spec.Assign is null)
-            _target.SetValue(_property, value);
+            target.SetValue(_property, value);
         else
-            _spec.Assign(_target, value);
+            _spec.Assign(target, value);
     }
 }

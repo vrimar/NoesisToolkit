@@ -10,8 +10,10 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// depth, where Noesis' trampoline mints a finalizable one per change.</summary>
 sealed class NotifyingMetadata : FrameworkPropertyMetadata
 {
-    static readonly Dictionary<long, PropertyChangedCallback?> Inner =
-        new Dictionary<long, PropertyChangedCallback?>();
+    static readonly Dictionary<
+        long,
+        (PropertyChangedCallback? Inner, DependencyProperty? Reports)
+    > Hooks = new Dictionary<long, (PropertyChangedCallback?, DependencyProperty?)>();
 
     static readonly List<DependencyPropertyChangedEventArgs> Args =
         new List<DependencyPropertyChangedEventArgs>();
@@ -24,12 +26,13 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
     internal NotifyingMetadata(
         object? defaultValue,
         FrameworkPropertyMetadataOptions options,
-        PropertyChangedCallback? inner
+        PropertyChangedCallback? inner,
+        DependencyProperty? reports = null
     )
         : base(defaultValue, options)
     {
-        lock (Inner)
-            Inner[(long)swigCPtr.Handle] = inner;
+        lock (Hooks)
+            Hooks[(long)swigCPtr.Handle] = (inner, reports);
 
         Bind(null, swigCPtr, Trampoline);
     }
@@ -38,31 +41,34 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
     {
         try
         {
-            PropertyChangedCallback? inner;
-            lock (Inner)
+            (PropertyChangedCallback? Inner, DependencyProperty? Reports) hook;
+            lock (Hooks)
             {
-                if (!Inner.TryGetValue((long)cPtr, out inner))
+                if (!Hooks.TryGetValue((long)cPtr, out hook))
                     return;
 
                 // Noesis reports the metadata's end as a change with neither object nor args.
                 if (d == IntPtr.Zero && e == IntPtr.Zero)
                 {
-                    Inner.Remove((long)cPtr);
+                    Hooks.Remove((long)cPtr);
                     return;
                 }
             }
 
-            if (
-                !NoesisInternals.Initialized(null)
-                || NoesisInternals.Proxy(null, d, false) is not DependencyObject target
-            )
+            if (!NoesisInternals.Initialized(null))
                 return;
 
             var args = Borrow(e);
             try
             {
-                inner?.Invoke(target, args);
-                DependencyWatcher.OnChanged(target, args);
+                // Only the callback takes the object: a native one's proxy is minted anew after every collection.
+                if (
+                    hook.Inner is not null
+                    && NoesisInternals.Proxy(null, d, false) is DependencyObject target
+                )
+                    hook.Inner(target, args);
+
+                DependencyWatcher.OnChanged(d, hook.Reports, args);
             }
             finally
             {

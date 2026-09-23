@@ -34,6 +34,7 @@ public sealed class RenderDeviceTilesTests
 
         public int Resolves { get; private set; }
         public Tile Last { get; private set; }
+        public int MostTiles { get; private set; }
 
         public override DeviceCaps Caps => new() { CenterPixelOffset = 0 };
 
@@ -60,6 +61,7 @@ public sealed class RenderDeviceTilesTests
         public override void ResolveRenderTarget(RenderTarget surface, Tile[] tiles)
         {
             Resolves++;
+            MostTiles = Math.Max(MostTiles, tiles.Length);
             if (tiles.Length > 0)
                 Last = tiles[^1];
         }
@@ -106,17 +108,29 @@ public sealed class RenderDeviceTilesTests
     }
 
     // A group opacity over two children is drawn to an offscreen target and resolved once a frame.
-    static (View View, StubDevice Device) Offscreen()
+    static (View View, StubDevice Device, Panel Root) Offscreen()
     {
         NoesisRuntime.Start();
         RenderDeviceTiles.Reuse();
 
+        var root = new StackPanel { Width = 200, Height = 100 };
+        root.Children.Add(Group());
+
+        var view = GUI.CreateView(root);
+        view.SetSize(200, 100);
+        var device = new StubDevice();
+        view.Renderer.Init(device);
+        return (view, device, root);
+    }
+
+    static StackPanel Group()
+    {
         var group = new StackPanel { Opacity = 0.5f };
         group.Children.Add(
             new Border
             {
                 Width = 40,
-                Height = 20,
+                Height = 10,
                 Background = Brushes.Red,
             }
         );
@@ -124,18 +138,11 @@ public sealed class RenderDeviceTilesTests
             new Border
             {
                 Width = 40,
-                Height = 20,
+                Height = 10,
                 Background = Brushes.Blue,
             }
         );
-        var root = new Grid { Width = 200, Height = 100 };
-        root.Children.Add(group);
-
-        var view = GUI.CreateView(root);
-        view.SetSize(200, 100);
-        var device = new StubDevice();
-        view.Renderer.Init(device);
-        return (view, device);
+        return group;
     }
 
     static void Frame(View view, int i)
@@ -149,7 +156,7 @@ public sealed class RenderDeviceTilesTests
     [Test]
     public async Task AnOffscreenPass_ResolvesWithoutAllocating()
     {
-        var (view, device) = Offscreen();
+        var (view, device, _) = Offscreen();
         try
         {
             for (var i = 0; i < Warmup; i++)
@@ -167,6 +174,36 @@ public sealed class RenderDeviceTilesTests
                 .Because("the group opacity takes an offscreen pass every frame");
             await Assert.That(device.Last.Width).IsGreaterThan(0u).And.IsLessThanOrEqualTo(200u);
             await Assert.That(device.Last.Height).IsGreaterThan(0u).And.IsLessThanOrEqualTo(100u);
+            await Assert.That(allocated).IsEqualTo(0L);
+        }
+        finally
+        {
+            view.Renderer.Shutdown();
+            device.Free();
+        }
+    }
+
+    [Test]
+    public async Task A_tile_count_never_resolved_before_resolves_without_allocating()
+    {
+        var (view, device, root) = Offscreen();
+        try
+        {
+            for (var i = 0; i < Warmup; i++)
+                Frame(view, i);
+
+            var warmed = device.MostTiles;
+            for (var g = 0; g < 4; g++)
+                root.Children.Add(Group());
+
+            view.Update(Warmup * 0.016);
+            view.Renderer.UpdateRenderTree();
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            view.Renderer.RenderOffscreen();
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            await Assert.That(device.MostTiles).IsGreaterThan(warmed);
             await Assert.That(allocated).IsEqualTo(0L);
         }
         finally

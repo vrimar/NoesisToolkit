@@ -8,17 +8,17 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// several, so the walk and its subscriptions are stated once.</summary>
 sealed class SourceChain : IChangeListener
 {
-    readonly FrameworkElement _target;
+    readonly ElementState _target;
     readonly Func<FrameworkElement, FrameworkElement?>? _resolve;
     readonly DependencyProperty? _sourceProperty;
     readonly BindingHop[] _hops;
     readonly NotifierSet _watched;
     readonly IChainOwner _owner;
 
-    FrameworkElement? _source;
+    ElementState? _source;
 
     internal SourceChain(
-        FrameworkElement target,
+        ElementState target,
         Func<FrameworkElement, FrameworkElement?>? resolve,
         DependencyProperty? sourceProperty,
         BindingHop[] hops,
@@ -34,13 +34,23 @@ sealed class SourceChain : IChangeListener
         _owner = owner;
     }
 
-    internal FrameworkElement? Source => _source;
+    internal ElementState? Source => _source is { Alive: true } ? _source : null;
 
     /// <summary>A stated source the walk has not found yet, which is what the layout retry is for.</summary>
-    internal bool Missing => _resolve is not null && _source is null;
+    internal bool Missing => _resolve is not null && Source is null;
 
     /// <summary>Re-resolves the root and re-subscribes. True where the root moved.</summary>
-    internal bool Resolve() => Attach(_resolve is null ? _target : _resolve(_target));
+    internal bool Resolve()
+    {
+        if (_resolve is null)
+            return Attach(_target.Alive ? _target : null);
+
+        return Attach(
+            _target.Element is { } target && _resolve(target) is { } found
+                ? ElementState.Of(found)
+                : null
+        );
+    }
 
     internal void Detach() => Attach(null);
 
@@ -73,23 +83,24 @@ sealed class SourceChain : IChangeListener
 
     // Compared natively: a text box's placeholder trigger would otherwise decode its text per keystroke.
     internal bool? TextEquals(string text) =>
-        _hops.Length == 0 && _source is not null && _sourceProperty is not null
-            ? DependencyRead.TextEquals(_source, _sourceProperty, text)
+        _hops.Length == 0 && Source is { } source && _sourceProperty is not null
+            ? DependencyRead.TextEquals(source.Handle, _sourceProperty, text)
             : null;
 
     object? Walk(int hops, out object? root, out object? owner, out bool broke)
     {
         owner = null;
 
+        var source = Source?.Element;
         var current =
-            _source is null ? null
-            : _sourceProperty is null ? _source.DataContext
-            : DependencyRead.Value(_source, _sourceProperty);
+            source is null ? null
+            : _sourceProperty is null ? source.DataContext
+            : DependencyRead.Value(source, _sourceProperty);
 
         root = current;
 
         // A null root is a value the binding writes; only a hop with nothing to read off breaks it.
-        broke = _source is null;
+        broke = source is null;
 
         for (var i = 0; i < hops; i++)
         {
@@ -119,7 +130,7 @@ sealed class SourceChain : IChangeListener
         return current;
     }
 
-    bool Attach(FrameworkElement? source)
+    bool Attach(ElementState? source)
     {
         if (ReferenceEquals(source, _source))
             return false;

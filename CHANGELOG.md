@@ -3,6 +3,42 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A compiled binding, MultiBinding or trigger set lives as long as its element, not its proxy.**
+  Noesis holds a native element's managed proxy weakly, and every compiled graph was reached only
+  through tables keyed by that proxy, so the first collection after the element's last proxy went
+  took the graph with it while the element lived on. A list row's hover trigger, a template trigger,
+  a template binding over an item that raises no change, and any binding on an element unloaded and
+  loaded again all stopped updating. Per-element state is now keyed by the native handle and ends
+  when Noesis destroys the element; nothing in it holds a proxy, so it cannot pin what it watches.
+- **A change on a native element no longer mints a proxy after a collection just to find nothing to
+  tell.** Probes, generated properties with no callback and the element events the toolkit binds
+  are dispatched by handle; a proxy is resolved only where a callback or a read needs one.
+- **A subscription taken through `Events.On` or `DependencyWatcher.Watch` lasts as long as its
+  element.** It lasted as long as the proxy it was taken on, so a handler on a native element — a
+  tooltip's mouse enter, a scroll viewer's auto-hide — stopped firing at the first collection after
+  the caller let the proxy go.
+- **A two-way binding that writes back on `LostFocus` no longer pins its element.** It subscribed
+  through Noesis' own handler store, which lets go only when the element is destroyed, while holding
+  the element's proxy, so the element never was. It hears the event through the toolkit's native
+  binding now.
+
+### Changed
+
+- **`DependencyWatcher.Watch` and `Unwatch` take an `Action<FrameworkElement>`**, handed the
+  element that changed. A subscription now lives as long as the element, so a handler that captured
+  it, or the control around it, would keep both alive; one that takes the element needs no capture.
+- **Subscribing the same handler to the same event of an element again does nothing**, as watching
+  the same property with the same handler already did.
+- **A template clone's wiring index is read and written typed.** Past the first 256 wirings an
+  app registers, every clone boxed its index on the way in.
+- **`RenderDeviceTiles` fills its tile arrays for up to 16 tiles up front**, on `Reuse()` and on a
+  render thread's first resolve. A pass's tile count follows what is on screen, so a count first
+  seen mid-game allocated its array in that frame.
+
 ## [0.2.7] - 2026-09-22
 
 ### Added

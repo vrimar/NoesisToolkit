@@ -65,20 +65,6 @@ public sealed class CompiledTriggerSpec
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CompiledTriggerSet : IPartSetOwner
 {
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
-        FrameworkElement,
-        List<CompiledTriggerSet>
-    > _byElement = new System.Runtime.CompilerServices.ConditionalWeakTable<
-        FrameworkElement,
-        List<CompiledTriggerSet>
-    >();
-
-    // GetOrCreateValue would go through Activator for every element.
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
-        FrameworkElement,
-        List<CompiledTriggerSet>
-    >.CreateValueCallback CreateSets = static _ => new List<CompiledTriggerSet>();
-
     /// <summary>The trigger sets bound to <paramref name="element"/>, for tooling that compares the
     /// compiled graph against the parsed one.</summary>
     /// <param name="element">The element the sets were bound to.</param>
@@ -86,15 +72,15 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     public static IReadOnlyList<CompiledTriggerSet> SetsOf(FrameworkElement element)
     {
         Guard.NotNull(element, nameof(element));
-        return _byElement.TryGetValue(element, out var sets)
+        return ElementState.Find(BaseComponent.getCPtr(element).Handle)?.TriggerSets is { } sets
             ? sets
-            : (IReadOnlyList<CompiledTriggerSet>)Array.Empty<CompiledTriggerSet>();
+            : Array.Empty<CompiledTriggerSet>();
     }
 
     /// <summary>What the compiler resolved, in document order.</summary>
     public IReadOnlyList<CompiledTriggerSpec> Specs => _triggers;
 
-    readonly FrameworkElement _target;
+    readonly ElementState _target;
     readonly CompiledTriggerSpec[] _triggers;
     readonly PartSet _parts;
     readonly Layout _layout;
@@ -158,7 +144,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
 
     CompiledTriggerSet(FrameworkElement target, CompiledTriggerSpec[] triggers)
     {
-        _target = target;
+        _target = ElementState.Of(target);
         _triggers = triggers;
         _layout = _layouts.GetValue(triggers, CreateLayout);
         _applied = new ulong[Layout.Words(_layout.Slots.Length)];
@@ -175,9 +161,9 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                 parts[next++] = condition.Part;
         }
 
-        _parts = new PartSet(target, parts, this);
+        _parts = new PartSet(_target, parts, this);
 
-        var bound = _byElement.GetValue(target, CreateSets);
+        var bound = _target.TriggerSets ??= new List<CompiledTriggerSet>();
         bound.RemoveAll(set => ReferenceEquals(set._triggers, triggers));
         bound.Add(this);
 
@@ -222,6 +208,9 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     // A setter's write can reach a nested pass, so evaluation stays under the guard too.
     void Apply()
     {
+        if (_target.Element is not { } target)
+            return;
+
         _pushing = true;
         try
         {
@@ -248,7 +237,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                 {
                     if (holds)
                     {
-                        if (SetterTarget(setter) is null)
+                        if (SetterTarget(target, setter) is null)
                             missing = true;
                         else
                             Set(active, slot);
@@ -284,7 +273,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                     Has(previous, i)
                     && !Has(winners, i)
                     && !Has(keysWon, keys[i])
-                    && SetterTarget(slots[i]) is { } cleared
+                    && SetterTarget(target, slots[i]) is { } cleared
                 )
                     cleared.ClearValue(slots[i].Property);
             }
@@ -294,7 +283,7 @@ public sealed class CompiledTriggerSet : IPartSetOwner
                 if (
                     !Has(winners, i)
                     || Has(previous, i)
-                    || SetterTarget(slots[i]) is not { } element
+                    || SetterTarget(target, slots[i]) is not { } element
                 )
                     continue;
 
@@ -326,8 +315,6 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         return false;
     }
 
-    FrameworkElement? SetterTarget(CompiledSetter setter) =>
-        setter.TargetName is null
-            ? _target
-            : _target.FindName(setter.TargetName) as FrameworkElement;
+    static FrameworkElement? SetterTarget(FrameworkElement target, CompiledSetter setter) =>
+        setter.TargetName is null ? target : target.FindName(setter.TargetName) as FrameworkElement;
 }

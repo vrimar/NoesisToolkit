@@ -142,9 +142,9 @@ public sealed class SettledCostTests
         var floor = Allocated(() => gauge.Level++);
 
         var seen = 0;
-        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, () => seen += 1);
-        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, () => seen += 10);
-        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, () => seen += 100);
+        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, _ => seen += 1);
+        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, _ => seen += 10);
+        DependencyWatcher.Watch(gauge, Gauge.LevelProperty, _ => seen += 100);
 
         var watched = Allocated(() => gauge.Level++);
 

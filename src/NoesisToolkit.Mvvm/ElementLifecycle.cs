@@ -1,5 +1,3 @@
-using Noesis;
-
 namespace NoesisToolkit.Mvvm.CodeGen;
 
 /// <summary>When a binding settles, releases and retries, for as long as its element lives.
@@ -8,12 +6,12 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// raising Loaded, so an unresolved source retries off the layout pass that must follow.</summary>
 sealed class ElementLifecycle : IChangeListener
 {
-    readonly FrameworkElement _target;
+    readonly ElementState _target;
     readonly IElementLifecycleOwner _owner;
 
     bool _armed;
 
-    internal ElementLifecycle(FrameworkElement target, IElementLifecycleOwner owner)
+    internal ElementLifecycle(ElementState target, IElementLifecycleOwner owner)
     {
         _target = target;
         _owner = owner;
@@ -40,6 +38,12 @@ sealed class ElementLifecycle : IChangeListener
     {
         _owner.Release();
         Retry(false);
+    }
+
+    internal void OnEnded()
+    {
+        _armed = false;
+        _owner.Release();
     }
 
     void IChangeListener.Changed() => _owner.Retry();

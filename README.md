@@ -152,6 +152,10 @@ object it mints per call — an element's events deliver the element itself rath
 object, and a translated point or a desired size comes back unboxed. Both matter where something
 runs per child, such as a panel arranging its children or testing them against the viewport.
 
+A subscription through `Events.On` or `DependencyWatcher.Watch` lasts until the element is
+destroyed, as one on a Noesis event does. The handler is handed the element for that reason: one
+that captured the element, or the control around it, would keep both alive.
+
 ## NoesisToolkit.Testing
 
 ```xml

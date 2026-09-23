@@ -68,7 +68,7 @@ public sealed class ManagedWatchTests
 
         var target = new Gauge();
         var seen = 0;
-        DependencyWatcher.Watch(target, Gauge.LevelProperty, () => seen++);
+        DependencyWatcher.Watch(target, Gauge.LevelProperty, _ => seen++);
 
         var grid = new Grid { Width = 400, Height = 300 };
         var view = NoesisRuntime.Show(grid, target);
@@ -90,7 +90,7 @@ public sealed class ManagedWatchTests
 
         var target = new Gauge();
         var seen = 0;
-        DependencyWatcher.Watch(target, Gauge.ReadingProperty, () => seen++);
+        DependencyWatcher.Watch(target, Gauge.ReadingProperty, _ => seen++);
 
         var grid = new Grid { Width = 400, Height = 300 };
         var view = NoesisRuntime.Show(grid, target);
@@ -119,7 +119,7 @@ public sealed class ManagedWatchTests
         var view = NoesisRuntime.Show(grid, target);
 
         var seen = 0;
-        DependencyWatcher.Watch(target, Gauge.LevelProperty, () => seen++);
+        DependencyWatcher.Watch(target, Gauge.LevelProperty, _ => seen++);
         NoesisRuntime.Pump(view, grid);
         var baseline = seen;
 
@@ -139,7 +139,7 @@ public sealed class ManagedWatchTests
 
         var target = new HandGauge();
         var seen = 0;
-        DependencyWatcher.Watch(target, HandGauge.LevelProperty, () => seen++);
+        DependencyWatcher.Watch(target, HandGauge.LevelProperty, _ => seen++);
 
         var grid = new Grid { Width = 400, Height = 300 };
         var view = NoesisRuntime.Show(grid, target);
@@ -160,7 +160,7 @@ public sealed class ManagedWatchTests
 
         var target = new Border();
         var seen = 0;
-        DependencyWatcher.Watch(target, HandGauge.MarkProperty, () => seen++);
+        DependencyWatcher.Watch(target, HandGauge.MarkProperty, _ => seen++);
 
         var grid = new Grid { Width = 400, Height = 300 };
         var view = NoesisRuntime.Show(grid, target);

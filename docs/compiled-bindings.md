@@ -113,6 +113,28 @@ stripped. A trigger the compiler cannot resolve whole keeps its native form, and
 style still compiles. A setter that moves a condition of its own set is evaluated again until the set
 settles, as the engine does as it applies each setter.
 
+## Lifetime
+
+A compiled binding, MultiBinding or trigger set lives exactly as long as the native element it was
+bound to. Noesis holds a native element's managed proxy weakly: one is minted whenever managed code
+asks for the element and collected once nothing managed holds it, while the element lives on in the
+tree. So what the toolkit keeps per element is keyed by the native handle, not the proxy, and ends
+when Noesis destroys the element.
+
+Nothing a binding keeps holds a proxy either. A proxy holds a native reference, and a template
+part's binding usually reads its templated parent or an ancestor, which holds the part: a proxy held
+from there would keep the whole subtree alive. A binding holds the elements it touches by handle and
+resolves a proxy only when it reads or writes one, so after a collection each element it touches
+costs one proxy until the next.
+
+An element can be destroyed while a binding still refers to it — the source of an `ElementName`
+binding removed from its panel, say. Its handle is told when the element ends and reads as missing
+from then on, as a source the resolver could not find does.
+
+Subscriptions taken through `DependencyWatcher.Watch` and `Events.On` follow the same rule: they
+last until the element is destroyed, as one on a Noesis event does. Each handler is handed the
+element, because a handler that captured it, or the control that holds it, would keep both alive.
+
 ## What does not compile
 
 Everything below stays a `Noesis.Binding`. Opting a document in is safe regardless: what cannot

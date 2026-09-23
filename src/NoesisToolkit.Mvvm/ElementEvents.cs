@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using Noesis;
 
 namespace NoesisToolkit.Mvvm.CodeGen;
@@ -8,49 +7,47 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// <summary>The element events bindings subscribe to, bound natively so a delivery allocates nothing.</summary>
 static class ElementEvents
 {
-    static readonly ConditionalWeakTable<FrameworkElement, Entry> Table =
-        new ConditionalWeakTable<FrameworkElement, Entry>();
+    static readonly Action<nint> BindDataContext = NativeEvents.BindDataContext;
+    static readonly Action<nint> BindLayout = NativeEvents.BindLayout;
 
-    // GetOrCreateValue would go through Activator for every element.
-    static readonly ConditionalWeakTable<FrameworkElement, Entry>.CreateValueCallback CreateEntry =
-        static _ => new Entry();
-
-    static readonly Action<FrameworkElement> BindDataContext = NativeEvents.BindDataContext;
-    static readonly Action<FrameworkElement> BindLayout = NativeEvents.BindLayout;
-
-    internal static void WatchDataContext(FrameworkElement element, IChangeListener listener) =>
-        Table.GetValue(element, CreateEntry).DataContextChanged.Add(element, listener);
-
-    internal static void UnwatchDataContext(FrameworkElement element, IChangeListener listener)
+    internal static void WatchDataContext(ElementState element, IChangeListener listener)
     {
-        if (Table.TryGetValue(element, out var entry))
-            entry.DataContextChangedIfAny?.Remove(listener);
+        if (element.Alive)
+            EntryOf(element).DataContextChanged.Add(element.Handle, listener);
     }
 
-    internal static void WatchLayout(FrameworkElement element, IChangeListener listener) =>
-        Table.GetValue(element, CreateEntry).LayoutUpdated.Add(element, listener);
+    internal static void UnwatchDataContext(ElementState element, IChangeListener listener) =>
+        element.Events?.DataContextChangedIfAny?.Remove(listener);
 
-    internal static void UnwatchLayout(FrameworkElement element, IChangeListener listener)
+    internal static void WatchLayout(ElementState element, IChangeListener listener)
     {
-        if (Table.TryGetValue(element, out var entry))
-            entry.LayoutUpdatedIfAny?.Remove(listener);
+        if (element.Alive)
+            EntryOf(element).LayoutUpdated.Add(element.Handle, listener);
     }
+
+    internal static void UnwatchLayout(ElementState element, IChangeListener listener) =>
+        element.Events?.LayoutUpdatedIfAny?.Remove(listener);
 
     /// <summary>Hears Loaded, Reloaded and Unloaded for as long as the element lives.</summary>
-    internal static void WatchLifecycle(FrameworkElement element, ElementLifecycle lifecycle) =>
-        Table.GetValue(element, CreateEntry).Lifecycle(element).Add(lifecycle);
-
-    internal static void DispatchLoaded(FrameworkElement element)
+    internal static void WatchLifecycle(ElementState element, ElementLifecycle lifecycle)
     {
-        if (Table.TryGetValue(element, out var entry))
-            entry.OnLoaded();
+        if (element.Alive)
+            EntryOf(element).Lifecycle(element.Handle).Add(lifecycle);
     }
 
-    internal static void DispatchUnloaded(FrameworkElement element)
+    internal static void WatchRouted(ElementState element, nint routed, IChangeListener listener)
     {
-        if (Table.TryGetValue(element, out var entry))
-            entry.OnUnloaded();
+        if (!element.Alive)
+            return;
+
+        var entry = EntryOf(element);
+        Bind(entry, element.Handle, routed, 0);
+        entry.Routed.Add(new RoutedWatch(routed, listener));
     }
+
+    internal static void DispatchLoaded(ElementState element) => element.Events?.OnLoaded();
+
+    internal static void DispatchUnloaded(ElementState element) => element.Events?.OnUnloaded();
 
     internal static void Subscribe(
         FrameworkElement element,
@@ -59,16 +56,13 @@ static class ElementEvents
         Delegate handler
     )
     {
-        var entry = Table.GetValue(element, CreateEntry);
-        if (entry.Bind(routed, named))
-        {
-            if (routed != 0)
-                NativeEvents.BindRouted(element, routed);
-            else
-                NativeEvents.BindNamed(element, named);
-        }
+        var state = ElementState.Of(element);
+        var entry = EntryOf(state);
+        Bind(entry, state.Handle, routed, named);
 
-        entry.Subscriptions.Add(new Subscription(routed, named, handler));
+        var list = entry.Subscriptions;
+        if (Find(list, routed, named, handler) is null)
+            list.Add(new Subscription(routed, named, handler));
     }
 
     internal static void Unsubscribe(
@@ -78,9 +72,21 @@ static class ElementEvents
         Delegate handler
     )
     {
-        if (!Table.TryGetValue(element, out var entry) || entry.SubscriptionsIfAny is not { } list)
-            return;
+        if (
+            ElementState.Find(BaseComponent.getCPtr(element).Handle)?.Events?.SubscriptionsIfAny
+                is { } list
+            && Find(list, routed, named, handler) is { } subscription
+        )
+            list.Remove(subscription);
+    }
 
+    static Subscription? Find(
+        HandlerList<Subscription> list,
+        nint routed,
+        uint named,
+        Delegate handler
+    )
+    {
         using var run = list.Start();
         while (run.Next(out var subscription))
         {
@@ -89,28 +95,32 @@ static class ElementEvents
                 && subscription.Named == named
                 && subscription.Handler.Equals(handler)
             )
-            {
-                list.Remove(subscription);
-                return;
-            }
+                return subscription;
         }
+
+        return null;
     }
 
-    internal static void DispatchRouted(FrameworkElement element, nint routed, nint args)
+    internal static void DispatchRouted(ElementState element, nint routed, nint args)
     {
-        if (Table.TryGetValue(element, out var entry) && entry.SubscriptionsIfAny is { } list)
+        if (element.Events is not { } entry)
+            return;
+
+        entry.RaiseRouted(routed);
+        if (entry.SubscriptionsIfAny is { } list)
             Raise(list, element, routed, 0, args);
     }
 
-    internal static void DispatchNamed(FrameworkElement element, uint named)
+    internal static void DispatchNamed(ElementState element, uint named)
     {
-        if (Table.TryGetValue(element, out var entry) && entry.SubscriptionsIfAny is { } list)
+        if (element.Events?.SubscriptionsIfAny is { } list)
             Raise(list, element, 0, named, 0);
     }
 
+    // Resolved per matching handler only: a native element's proxy is minted anew after a collection.
     static void Raise(
         HandlerList<Subscription> list,
-        FrameworkElement element,
+        ElementState state,
         nint routed,
         uint named,
         nint args
@@ -119,7 +129,11 @@ static class ElementEvents
         using var run = list.Start();
         while (run.Next(out var subscription))
         {
-            if (subscription.Routed != routed || subscription.Named != named)
+            if (
+                subscription.Routed != routed
+                || subscription.Named != named
+                || state.Element is not { } element
+            )
                 continue;
 
             switch (subscription.Handler)
@@ -134,37 +148,46 @@ static class ElementEvents
         }
     }
 
-    internal static void DispatchDataContextChanged(FrameworkElement element)
+    internal static void DispatchDataContextChanged(ElementState element) =>
+        element.Events?.DataContextChangedIfAny?.Raise();
+
+    internal static void DispatchLayoutUpdated(ElementState element) =>
+        element.Events?.LayoutUpdatedIfAny?.Raise();
+
+    static Entry EntryOf(ElementState element) => element.Events ??= new Entry();
+
+    static void Bind(Entry entry, nint handle, nint routed, uint named)
     {
-        if (Table.TryGetValue(element, out var entry))
-            entry.DataContextChangedIfAny?.Raise();
+        if (!entry.Bind(routed, named))
+            return;
+
+        if (routed != 0)
+            NativeEvents.BindRouted(handle, routed);
+        else
+            NativeEvents.BindNamed(handle, named);
     }
 
-    internal static void DispatchLayoutUpdated(FrameworkElement element)
-    {
-        if (Table.TryGetValue(element, out var entry))
-            entry.LayoutUpdatedIfAny?.Raise();
-    }
-
-    sealed class Subscription(nint routed, uint named, Delegate handler)
+    internal sealed class Subscription(nint routed, uint named, Delegate handler)
     {
         internal nint Routed => routed;
         internal uint Named => named;
         internal Delegate Handler => handler;
     }
 
-    sealed class Entry
+    internal sealed class RoutedWatch(nint routed, IChangeListener listener)
+    {
+        internal nint Routed => routed;
+        internal IChangeListener Listener => listener;
+    }
+
+    internal sealed class Entry
     {
         NamedEvent? _dataContextChanged;
         NamedEvent? _layoutUpdated;
         HandlerList<ElementLifecycle>? _lifecycle;
+        HandlerList<RoutedWatch>? _routed;
         HandlerList<Subscription>? _subscriptions;
         List<(nint Routed, uint Named)>? _bound;
-
-        internal HandlerList<Subscription> Subscriptions =>
-            _subscriptions ??= new HandlerList<Subscription>();
-
-        internal HandlerList<Subscription>? SubscriptionsIfAny => _subscriptions;
 
         // True the first time an event is asked for on this element, when the native bind is owed.
         internal bool Bind(nint routed, uint named)
@@ -186,12 +209,19 @@ static class ElementEvents
 
         internal NamedEvent? LayoutUpdatedIfAny => _layoutUpdated;
 
-        internal HandlerList<ElementLifecycle> Lifecycle(FrameworkElement element)
+        internal HandlerList<RoutedWatch> Routed => _routed ??= new HandlerList<RoutedWatch>();
+
+        internal HandlerList<Subscription> Subscriptions =>
+            _subscriptions ??= new HandlerList<Subscription>();
+
+        internal HandlerList<Subscription>? SubscriptionsIfAny => _subscriptions;
+
+        internal HandlerList<ElementLifecycle> Lifecycle(nint handle)
         {
             if (_lifecycle is null)
             {
                 _lifecycle = new HandlerList<ElementLifecycle>();
-                NativeEvents.BindLifecycle(element);
+                NativeEvents.BindLifecycle(handle);
             }
 
             return _lifecycle;
@@ -216,15 +246,38 @@ static class ElementEvents
             while (run.Next(out var lifecycle))
                 lifecycle.OnUnloaded();
         }
+
+        internal void OnEnded()
+        {
+            if (_lifecycle is null)
+                return;
+
+            using var run = _lifecycle.Start();
+            while (run.Next(out var lifecycle))
+                lifecycle.OnEnded();
+        }
+
+        internal void RaiseRouted(nint routed)
+        {
+            if (_routed is null)
+                return;
+
+            using var run = _routed.Start();
+            while (run.Next(out var watch))
+            {
+                if (watch.Routed == routed)
+                    watch.Listener.Changed();
+            }
+        }
     }
 
     /// <summary>One subscription, taken on the first listener and kept for the element's life.</summary>
-    sealed class NamedEvent(Action<FrameworkElement> bind)
+    internal sealed class NamedEvent(Action<nint> bind)
     {
         readonly HandlerList<IChangeListener> _listeners = new HandlerList<IChangeListener>();
         bool _bound;
 
-        internal void Add(FrameworkElement element, IChangeListener listener)
+        internal void Add(nint element, IChangeListener listener)
         {
             _listeners.Add(listener);
             if (!_bound)

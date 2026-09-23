@@ -14,7 +14,7 @@ public sealed class AttachedWatchTests
 
         var target = new TextBlock();
         var seen = 0;
-        DependencyWatcher.Watch(target, Grid.RowProperty, () => seen++);
+        DependencyWatcher.Watch(target, Grid.RowProperty, _ => seen++);
 
         var grid = new Grid { Width = 400, Height = 300 };
         var view = NoesisRuntime.Show(grid, target);

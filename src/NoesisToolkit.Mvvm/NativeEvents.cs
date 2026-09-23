@@ -15,25 +15,24 @@ static unsafe class NativeEvents
     static readonly uint DataContextChanged = NoesisInternals.EventId(null, "DataContextChanged");
     static readonly uint LayoutUpdated = NoesisInternals.EventId(null, "LayoutUpdated");
 
-    internal static void BindLifecycle(FrameworkElement element)
+    internal static void BindLifecycle(nint element)
     {
-        var handle = BaseComponent.getCPtr(element).Handle;
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, handle, Loaded);
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, handle, Reloaded);
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, handle, Unloaded);
+        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Loaded);
+        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Reloaded);
+        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Unloaded);
     }
 
-    internal static void BindDataContext(FrameworkElement element) =>
-        Noesis_Event_Bind(&OnEvent, BaseComponent.getCPtr(element).Handle, DataContextChanged);
+    internal static void BindDataContext(nint element) =>
+        Noesis_Event_Bind(&OnEvent, element, DataContextChanged);
 
-    internal static void BindLayout(FrameworkElement element) =>
-        Noesis_Event_Bind(&OnEvent, BaseComponent.getCPtr(element).Handle, LayoutUpdated);
+    internal static void BindLayout(nint element) =>
+        Noesis_Event_Bind(&OnEvent, element, LayoutUpdated);
 
-    internal static void BindRouted(FrameworkElement element, nint routedEvent) =>
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, BaseComponent.getCPtr(element).Handle, routedEvent);
+    internal static void BindRouted(nint element, nint routedEvent) =>
+        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, routedEvent);
 
-    internal static void BindNamed(FrameworkElement element, uint eventId) =>
-        Noesis_Event_Bind(&OnEvent, BaseComponent.getCPtr(element).Handle, eventId);
+    internal static void BindNamed(nint element, uint eventId) =>
+        Noesis_Event_Bind(&OnEvent, element, eventId);
 
     internal static Key KeyOf(nint args) => (Key)KeyGet(null, new HandleRef(null, args));
 
@@ -46,7 +45,7 @@ static unsafe class NativeEvents
             if ((sender == IntPtr.Zero && e == IntPtr.Zero) || !NoesisInternals.Initialized(null))
                 return;
 
-            if (NoesisInternals.Proxy(null, cPtrType, cPtr, false) is not FrameworkElement element)
+            if (ElementState.Find(cPtr) is not { } element)
                 return;
 
             if (routedEvent == Unloaded)
@@ -70,7 +69,7 @@ static unsafe class NativeEvents
             if ((sender == IntPtr.Zero && e == IntPtr.Zero) || !NoesisInternals.Initialized(null))
                 return;
 
-            if (NoesisInternals.Proxy(null, cPtrType, cPtr, false) is not FrameworkElement element)
+            if (ElementState.Find(cPtr) is not { } element)
                 return;
 
             if (eventId == DataContextChanged)

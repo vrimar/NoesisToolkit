@@ -13,6 +13,9 @@ namespace NoesisToolkit.Mvvm;
 /// mask, effect and group opacity takes — mints a fresh one.</summary>
 public static unsafe class RenderDeviceTiles
 {
+    // A pass's tile count varies with what is on screen, so a count first seen mid-game would allocate then.
+    const int Filled = 16;
+
     [ThreadStatic]
     static Tile[]?[]? _bySize;
 
@@ -25,6 +28,7 @@ public static unsafe class RenderDeviceTiles
         if (_reused)
             return;
 
+        _bySize ??= Fill();
         RuntimeHelpers.RunClassConstructor(typeof(RenderDevice).TypeHandle);
         Noesis_RenderDevice_SetCallbacks(
             Pointer("_getCaps"),
@@ -51,16 +55,25 @@ public static unsafe class RenderDeviceTiles
 
     internal static Tile[] Tiles(Tile* tiles, int count)
     {
-        var bySize = _bySize;
-        if (bySize is null || bySize.Length <= count)
+        var bySize = _bySize ??= Fill();
+        if (bySize.Length <= count)
         {
-            Array.Resize(ref bySize, Math.Max(count + 1, 8));
+            Array.Resize(ref bySize, count + 1);
             _bySize = bySize;
         }
 
         var array = bySize[count] ??= new Tile[count];
         new ReadOnlySpan<Tile>(tiles, count).CopyTo(array);
         return array;
+    }
+
+    static Tile[]?[] Fill()
+    {
+        var bySize = new Tile[]?[Filled + 1];
+        for (var count = 0; count <= Filled; count++)
+            bySize[count] = new Tile[count];
+
+        return bySize;
     }
 
     // Noesis keeps these delegates in statics for the process, which is what keeps each pointer valid.

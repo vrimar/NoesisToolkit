@@ -135,7 +135,7 @@ public sealed class CompiledBinding
         IElementLifecycleOwner,
         IChangeListener
 {
-    readonly FrameworkElement _target;
+    readonly ElementState _target;
     readonly DependencyProperty _property;
     readonly CompiledBindingSpec _spec;
     readonly Func<FrameworkElement, DependencyObject?>? _receiverResolver;
@@ -146,8 +146,10 @@ public sealed class CompiledBinding
 
     static readonly object NotBroke = new object();
 
+    static readonly nint LostFocus = BaseComponent.getCPtr(UIElement.LostFocusEvent).Handle;
+
     SourceChain _chain = null!;
-    DependencyObject? _receiver;
+    ElementState? _receiver;
     object? _writable;
     object? _unset;
     bool _clearWhenUnset;
@@ -164,16 +166,16 @@ public sealed class CompiledBinding
         Func<FrameworkElement, DependencyObject?>? receiverResolver = null
     )
     {
+        _target = ElementState.Of(target);
         _watched = new NotifierSet(this);
         _chain = new SourceChain(
-            target,
+            _target,
             spec.Source,
             spec.SourceProperty,
             spec.Hops,
             _watched,
             this
         );
-        _target = target;
         _property = property;
         _spec = spec;
         _receiverResolver = receiverResolver;
@@ -194,13 +196,13 @@ public sealed class CompiledBinding
                 : spec.Trigger;
         _onLostFocus = trigger == UpdateSourceTrigger.LostFocus;
 
-        _life = new ElementLifecycle(target, this);
+        _life = new ElementLifecycle(_target, this);
 
         if (_twoWay)
         {
             DependencyWatcher.Watch(_target, _property, this);
             if (_onLostFocus)
-                _target.LostFocus += OnTargetLostFocus;
+                ElementEvents.WatchRouted(_target, LostFocus, new LostFocusListener(this));
         }
 
         Resolve();
@@ -438,16 +440,20 @@ public sealed class CompiledBinding
 
     void Resolve()
     {
-        var receiver = _receiverResolver is null ? _target : _receiverResolver(_target);
+        var receiver =
+            _receiverResolver is null ? _target
+            : _target.Element is { } anchor && _receiverResolver(anchor) is { } found
+                ? ElementState.Of(found)
+            : null;
         if (!ReferenceEquals(receiver, _receiver))
         {
             _receiver = receiver;
 
             // The binding occupies the slot either way, so what a failing one shows is the default
             // in force for this receiver -- the one a subclass overrode the property to.
-            (_unset, _clearWhenUnset) = receiver is null
-                ? (null, false)
-                : SlotDefault.For(receiver, _property);
+            (_unset, _clearWhenUnset) = receiver?.Object is { } resolved
+                ? SlotDefault.For(resolved, _property)
+                : (null, false);
         }
 
         _chain.Resolve();
@@ -457,7 +463,8 @@ public sealed class CompiledBinding
     // The receiver is resolved separately from the source, so either being absent keeps the retry
     // running -- an element can gain its ancestor, its behaviors or its input bindings without ever
     // raising Loaded.
-    bool Unresolved() => _chain.Missing || (_receiverResolver is not null && _receiver is null);
+    bool Unresolved() =>
+        _chain.Missing || (_receiverResolver is not null && _receiver is not { Alive: true });
 
     void IElementLifecycleOwner.Retry()
     {
@@ -470,7 +477,7 @@ public sealed class CompiledBinding
 
     void Rebuild()
     {
-        if (_pushing)
+        if (_pushing || !_target.Alive)
             return;
 
         // The attached object is added after the binding is wired, so it may only turn up now.
@@ -488,7 +495,7 @@ public sealed class CompiledBinding
             _pushing = true;
             try
             {
-                _receiver?.ClearValue(_property);
+                _receiver?.Object?.ClearValue(_property);
                 Settle();
             }
             finally
@@ -520,7 +527,7 @@ public sealed class CompiledBinding
             _writable = owner;
         }
 
-        if (_receiver is null)
+        if (_receiver?.Object is not { } receiver)
             return;
 
         _pushing = true;
@@ -535,15 +542,15 @@ public sealed class CompiledBinding
             if (!broke)
             {
                 if (_spec.Lane is { } typed)
-                    typed.Write(_receiver, _property, slot);
+                    typed.Write(receiver, _property, slot);
                 else
-                    WriteTarget(Forward(current));
+                    WriteTarget(receiver, Forward(current));
 
                 _brokeFor = NotBroke;
             }
             else if (!ReferenceEquals(root, _brokeFor))
             {
-                WriteDefault();
+                WriteDefault(receiver);
                 _brokeFor = root;
             }
 
@@ -555,7 +562,7 @@ public sealed class CompiledBinding
         }
     }
 
-    void WriteTarget(object? produced)
+    void WriteTarget(DependencyObject receiver, object? produced)
     {
         var value =
             ReferenceEquals(produced, DependencyProperty.UnsetValue)
@@ -568,40 +575,39 @@ public sealed class CompiledBinding
 
         if (ReferenceEquals(value, DependencyProperty.UnsetValue))
         {
-            WriteDefault();
+            WriteDefault(receiver);
             return;
         }
 
         if (!ReferenceEquals(value, SlotConversion.Unconverted))
         {
-            Assign(value);
+            Assign(receiver, value);
             return;
         }
 
         // Off a view the engine converts on attach, outside _pushing; the load rebuilds instead.
         if (
-            _target.IsLoaded
-            && _receiver is not null
+            _target.Element is { IsLoaded: true }
             && produced is not null
-            && !SlotConversion.Convert(_receiver, _property, produced)
+            && !SlotConversion.Convert(receiver, _property, produced)
         )
-            WriteDefault();
+            WriteDefault(receiver);
     }
 
-    void WriteDefault()
+    void WriteDefault(DependencyObject receiver)
     {
         if (_clearWhenUnset)
-            _receiver?.ClearValue(_property);
+            receiver.ClearValue(_property);
         else
-            Assign(_unset);
+            Assign(receiver, _unset);
     }
 
-    void Assign(object? value)
+    void Assign(DependencyObject receiver, object? value)
     {
-        if (_spec.Assign is not null && _receiver is FrameworkElement element)
+        if (_spec.Assign is not null && receiver is FrameworkElement element)
             _spec.Assign(element, value);
         else
-            _receiver?.SetValue(_property, value);
+            receiver.SetValue(_property, value);
     }
 
     void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)
@@ -624,38 +630,36 @@ public sealed class CompiledBinding
     // What the binding itself left in the target is not an edit, however late the change reports.
     void Settle()
     {
-        if (!_twoWay)
+        if (!_twoWay || _target.Object is not { } target)
             return;
 
         if (_spec.Lane is { } lane)
-            _writtenSlot = lane.Read(_target, _property);
+            _writtenSlot = lane.Read(target, _property);
         else
-            _written = DependencyRead.Value(_target, _property);
+            _written = DependencyRead.Value(target, _property);
     }
 
     void OnTargetChanged()
     {
-        if (_onLostFocus)
+        if (_onLostFocus || _target.Object is not { } target)
             return;
 
         var edited = _spec.Lane is { } lane
-            ? !lane.Same(lane.Read(_target, _property), _writtenSlot)
-            : !Equals(DependencyRead.Value(_target, _property), _written);
+            ? !lane.Same(lane.Read(target, _property), _writtenSlot)
+            : !Equals(DependencyRead.Value(target, _property), _written);
         if (edited)
             Push();
     }
 
-    void OnTargetLostFocus(object sender, RoutedEventArgs e) => Push();
-
     void Push()
     {
-        if (_pushing || _writable is null)
+        if (_pushing || _writable is null || _target.Object is not { } target)
             return;
 
         if (_spec.Lane is { } lane)
         {
             if (lane.WritesBack)
-                PushTyped(lane, _writable);
+                PushTyped(lane, target, _writable);
 
             return;
         }
@@ -663,7 +667,7 @@ public sealed class CompiledBinding
         if (_spec.Write is null)
             return;
 
-        var value = DependencyRead.Value(_target, _property);
+        var value = DependencyRead.Value(target, _property);
         if (_spec.Converter is not null)
             value = _spec.Converter.ConvertBack(
                 value,
@@ -693,9 +697,9 @@ public sealed class CompiledBinding
         }
     }
 
-    void PushTyped(BindingLane lane, object writable)
+    void PushTyped(BindingLane lane, DependencyObject target, object writable)
     {
-        var slot = lane.Read(_target, _property);
+        var slot = lane.Read(target, _property);
 
         _pushing = true;
         try
@@ -707,5 +711,10 @@ public sealed class CompiledBinding
             _pushing = false;
             Rebuild();
         }
+    }
+
+    sealed class LostFocusListener(CompiledBinding owner) : IChangeListener
+    {
+        public void Changed() => owner.Push();
     }
 }

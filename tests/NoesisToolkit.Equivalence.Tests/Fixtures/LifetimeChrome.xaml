@@ -1,0 +1,33 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <ControlTemplate x:Key="Aligned" TargetType="ContentControl">
+    <Border x:Name="Chrome" Background="Red">
+      <ContentPresenter />
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="HorizontalContentAlignment" Value="Right">
+        <Setter TargetName="Chrome" Property="Background" Value="Green" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+  <Style x:Key="HoverItem" TargetType="ListBoxItem">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Row" Background="Red" Height="20">
+            <ContentPresenter />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Row" Property="Background" Value="Green" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>

@@ -97,13 +97,9 @@ public static class DependencyRead
             out written
         );
 
-    internal static bool? TextEquals(
-        DependencyObject source,
-        DependencyProperty property,
-        string text
-    ) =>
+    internal static bool? TextEquals(nint source, DependencyProperty property, string text) =>
         ReaderOf(property) is StringReader
-            ? NativeStrings.Matches(Native.String(null, Handle(source), Handle(property)), text)
+            ? NativeStrings.Matches(Native.String(null, source, Handle(property)), text)
             : null;
 
     static Reader ReaderOf(DependencyProperty property)

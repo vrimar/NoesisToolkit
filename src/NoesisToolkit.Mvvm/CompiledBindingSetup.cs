@@ -59,17 +59,16 @@ public static class CompiledBindingSetup
     public static void SetIndex(DependencyObject target, int value)
     {
         Guard.NotNull(target, nameof(target));
-        target.SetValue(IndexProperty, value);
+        DependencyWrite.Value(target, IndexProperty, value);
     }
 
     static void OnIndexChanged(DependencyObject target, DependencyPropertyChangedEventArgs e)
     {
         // e.NewValue boxes on every read.
-        if (
-            target is not FrameworkElement element
-            || DependencyRead.Value(target, IndexProperty) is not int index
-        )
+        if (target is not FrameworkElement element)
             return;
+
+        var index = DependencyRead.Int(target, IndexProperty);
 
         Action<FrameworkElement>? wire = null;
         lock (Registered)

@@ -6,6 +6,9 @@ namespace NoesisToolkit.Mvvm;
 
 /// <summary>Subscribes to an element's events without Noesis' handler store or the args object it
 /// mints per delivery. The handler gets the element; what it needs off the event is read natively.</summary>
+/// <remarks>A subscription lasts until the element is destroyed, as one on a Noesis event does, and
+/// subscribing the same handler again does nothing. A handler that holds the element or the control
+/// around it keeps both alive: take the element from the argument instead.</remarks>
 public static class Events
 {
     /// <summary>Runs <paramref name="handler"/> whenever <paramref name="routedEvent"/> reaches
