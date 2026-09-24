@@ -14,6 +14,15 @@ All notable changes to this project are documented here. The format follows
   warmup and the measured runs share a no-GC region when the runtime grants one, since a collection
   between them lets Noesis drop what the warmup paid for and charges it again.
 
+### Fixed
+
+- **A row a list scrolls back to after a collection no longer mints its image again.** The image a
+  compiled path-to-image binding converts into was held only while an element showed it, so a list
+  that hands its rows to pooled or recycled containers lost the image of every row it scrolled past at
+  the next collection, then minted a URI and an image for it and had Noesis resolve the texture again
+  when the row came back. The 512 most recently used images are now held past their last element;
+  one no element shows and nothing used lately is still let go.
+
 ## [0.3.2] - 2026-09-23
 
 ### Fixed

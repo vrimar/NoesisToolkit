@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
 using NoesisToolkit.Mvvm.CodeGen;
@@ -230,6 +231,44 @@ public sealed class CompiledConversionTests
         await Assert
             .That(((BitmapImage)first).UriSource.OriginalString)
             .IsEqualTo("Fixtures/icon.png");
+    }
+
+    [Test]
+    public async Task A_recently_used_image_outlives_a_collection_after_its_element_lets_go()
+    {
+        NoesisRuntime.Start();
+
+        var weak = Converted("Fixtures/recent.png");
+        Collect();
+
+        await Assert.That(weak.TryGetTarget(out var held)).IsTrue();
+        await Assert.That(ImageSources.From("Fixtures/recent.png")).IsSameReferenceAs(held);
+    }
+
+    [Test]
+    public async Task An_image_pushed_out_of_the_recent_ones_is_let_go()
+    {
+        NoesisRuntime.Start();
+
+        var weak = Converted("Fixtures/stale.png");
+        for (var i = 0; i < ImageSources.Recent; i++)
+            ImageSources.From("Fixtures/icon.png");
+        Collect();
+
+        await Assert.That(weak.TryGetTarget(out _)).IsFalse();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static WeakReference<BitmapImage> Converted(string path) =>
+        new((BitmapImage)ImageSources.From(path));
+
+    static void Collect()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
     }
 
     static string? SourcePath(Image image) =>
