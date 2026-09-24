@@ -1,5 +1,6 @@
 using Noesis;
 using NoesisToolkit.Mvvm;
+using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
@@ -9,17 +10,7 @@ public sealed class HandlerArgsTests
     const int Warmup = 8;
     const int Iterations = 64;
 
-    static long Allocated(Action body)
-    {
-        for (var i = 0; i < Warmup; i++)
-            body();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-            body();
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
+    static long Allocated(Action body) => AllocationCost.Of(body, Warmup, Iterations);
 
     static void Start()
     {

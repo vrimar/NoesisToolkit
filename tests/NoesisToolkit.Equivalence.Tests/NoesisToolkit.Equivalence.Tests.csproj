@@ -27,6 +27,7 @@
       ReferenceOutputAssembly="false"
     />
     <ProjectReference Include="../../src/NoesisToolkit.Mvvm/NoesisToolkit.Mvvm.csproj" />
+    <ProjectReference Include="../../src/NoesisToolkit.Testing/NoesisToolkit.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

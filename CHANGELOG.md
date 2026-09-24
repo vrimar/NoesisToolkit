@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`AllocationCost.Of` in `NoesisToolkit.Testing` measures what a piece of work allocates once
+  warm.** It runs the body unmeasured first, so a JIT'd path, a proxy Noesis mints on first sight or
+  a cache filling is not charged to steady state, then returns the managed bytes across the measured
+  runs. Measure a floor the same way and compare, and a layout pass's own cost cancels out. The
+  warmup and the measured runs share a no-GC region when the runtime grants one, since a collection
+  between them lets Noesis drop what the warmup paid for and charges it again.
+
 ## [0.3.2] - 2026-09-23
 
 ### Fixed

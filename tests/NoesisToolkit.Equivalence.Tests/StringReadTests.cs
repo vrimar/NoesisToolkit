@@ -1,23 +1,12 @@
 using Noesis;
 using NoesisToolkit.Mvvm.CodeGen;
+using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
 [NotInParallel("Noesis")]
 public sealed class StringReadTests
 {
-    const int Iterations = 64;
-
-    static long Allocated(Action body)
-    {
-        body();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-            body();
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
-
     public static IEnumerable<Func<string?>> Texts() =>
         [() => "abc", () => "", () => null, () => "héllo ✓ 𝄞", () => new string('x', 600)];
 
@@ -62,7 +51,7 @@ public sealed class StringReadTests
         var block = new TextBlock { Text = "héllo ✓ 𝄞" };
         var buffer = new char[64];
 
-        var allocated = Allocated(() =>
+        var allocated = AllocationCost.Of(() =>
             DependencyRead.TryCopyString(block, TextBlock.TextProperty, buffer, out _)
         );
         var fits = DependencyRead.TryCopyString(
@@ -88,7 +77,7 @@ public sealed class StringReadTests
 
         await Assert.That(b).IsSameReferenceAs(a);
         await Assert
-            .That(Allocated(() => DependencyRead.Value(first, TextBlock.TextProperty)))
+            .That(AllocationCost.Of(() => DependencyRead.Value(first, TextBlock.TextProperty)))
             .IsEqualTo(0);
     }
 
@@ -102,7 +91,9 @@ public sealed class StringReadTests
 
         await Assert.That(read).IsEqualTo("tip");
         await Assert
-            .That(Allocated(() => DependencyRead.Value(border, FrameworkElement.TagProperty)))
+            .That(
+                AllocationCost.Of(() => DependencyRead.Value(border, FrameworkElement.TagProperty))
+            )
             .IsEqualTo(0);
     }
 
@@ -124,7 +115,9 @@ public sealed class StringReadTests
 
         await Assert.That(read).IsEqualTo(border.GetValue(FrameworkElement.TagProperty));
         await Assert
-            .That(Allocated(() => DependencyRead.Value(border, FrameworkElement.TagProperty)))
+            .That(
+                AllocationCost.Of(() => DependencyRead.Value(border, FrameworkElement.TagProperty))
+            )
             .IsEqualTo(0);
     }
 

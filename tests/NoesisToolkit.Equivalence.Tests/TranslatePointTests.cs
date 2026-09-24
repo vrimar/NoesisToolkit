@@ -1,26 +1,12 @@
 using Noesis;
 using NoesisToolkit.Mvvm;
+using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
 [NotInParallel("Noesis")]
 public sealed class TranslatePointTests
 {
-    const int Warmup = 8;
-    const int Iterations = 64;
-
-    static long Allocated(Action body)
-    {
-        for (var i = 0; i < Warmup; i++)
-            body();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-            body();
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
-
     static (Border Child, Grid Root) Laid()
     {
         NoesisRuntime.Start();
@@ -82,8 +68,8 @@ public sealed class TranslatePointTests
     {
         var (child, _) = Laid();
 
-        var native = Allocated(() => _ = child.DesiredSize);
-        var typed = Allocated(() => ElementGeometry.DesiredSize(child));
+        var native = AllocationCost.Of(() => _ = child.DesiredSize);
+        var typed = AllocationCost.Of(() => ElementGeometry.DesiredSize(child));
 
         await Assert
             .That(native)
@@ -97,8 +83,10 @@ public sealed class TranslatePointTests
     {
         var (child, root) = Laid();
 
-        var native = Allocated(() => child.TranslatePoint(new Point(), root));
-        var typed = Allocated(() => ElementGeometry.TranslatePoint(child, new Point(), root));
+        var native = AllocationCost.Of(() => child.TranslatePoint(new Point(), root));
+        var typed = AllocationCost.Of(() =>
+            ElementGeometry.TranslatePoint(child, new Point(), root)
+        );
 
         await Assert
             .That(native)

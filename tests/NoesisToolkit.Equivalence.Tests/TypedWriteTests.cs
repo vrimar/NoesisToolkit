@@ -1,6 +1,7 @@
 using Noesis;
 using NoesisToolkit.Mvvm;
 using NoesisToolkit.Mvvm.CodeGen;
+using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
@@ -31,21 +32,6 @@ public sealed partial class Typed : Control
 [NotInParallel("Noesis")]
 public sealed class TypedWriteTests
 {
-    const int Warmup = 8;
-    const int Iterations = 64;
-
-    static long Allocated(Action body)
-    {
-        for (var i = 0; i < Warmup; i++)
-            body();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-            body();
-
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
-
     [Test]
     public async Task A_typed_write_lands_where_Noesis_reads_it()
     {
@@ -80,13 +66,17 @@ public sealed class TypedWriteTests
         NoesisRuntime.Show(typed);
         var inset = new Thickness(2);
 
-        await Assert.That(Allocated(() => typed.Count++)).IsEqualTo(0);
-        await Assert.That(Allocated(() => typed.On = !typed.On)).IsEqualTo(0);
-        await Assert.That(Allocated(() => typed.Scale = typed.Scale > 0 ? 0 : 1)).IsEqualTo(0);
-        await Assert.That(Allocated(() => typed.Ratio = typed.Ratio > 0 ? 0 : 1)).IsEqualTo(0);
+        await Assert.That(AllocationCost.Of(() => typed.Count++)).IsEqualTo(0);
+        await Assert.That(AllocationCost.Of(() => typed.On = !typed.On)).IsEqualTo(0);
+        await Assert
+            .That(AllocationCost.Of(() => typed.Scale = typed.Scale > 0 ? 0 : 1))
+            .IsEqualTo(0);
+        await Assert
+            .That(AllocationCost.Of(() => typed.Ratio = typed.Ratio > 0 ? 0 : 1))
+            .IsEqualTo(0);
         await Assert
             .That(
-                Allocated(() =>
+                AllocationCost.Of(() =>
                     typed.Align =
                         typed.Align == VerticalAlignment.Top
                             ? VerticalAlignment.Bottom
@@ -94,7 +84,7 @@ public sealed class TypedWriteTests
                 )
             )
             .IsEqualTo(0);
-        await Assert.That(Allocated(() => typed.Inset = inset)).IsEqualTo(0);
+        await Assert.That(AllocationCost.Of(() => typed.Inset = inset)).IsEqualTo(0);
     }
 
     [Test]
@@ -125,7 +115,7 @@ public sealed class TypedWriteTests
         NoesisRuntime.Show(typed);
         var next = 0;
 
-        var allocated = Allocated(() =>
+        var allocated = AllocationCost.Of(() =>
         {
             Span<char> buffer = stackalloc char[16];
             (next++).TryFormat(buffer, out var written);
