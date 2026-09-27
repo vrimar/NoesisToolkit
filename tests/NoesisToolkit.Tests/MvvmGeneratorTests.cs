@@ -180,6 +180,84 @@ public class MvvmGeneratorTests
     }
 
     [Test]
+    public async Task A_callback_that_takes_a_handle_registers_through_the_handle_metadata()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, HandleCallbackOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyWatcher.Metadata(default(object), FrameworkPropertyMetadataOptions.None, OnHintChanged)"
+            );
+    }
+
+    [Test]
+    public async Task An_attached_property_reads_by_handle_as_it_reads_by_object()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, AttachedOwner, HandleCallbackOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "public static int GetSlot(global::NoesisToolkit.Mvvm.ElementHandle element) =>"
+            );
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Int(element, SlotProperty)"
+            );
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead.Value(element, HintProperty)!"
+            );
+    }
+
+    [Test]
+    public async Task A_property_without_a_callback_registers_through_the_bare_metadata()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, AttachedOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyWatcher.Metadata(default(int), FrameworkPropertyMetadataOptions.None)"
+            );
+    }
+
+    [Test]
+    public async Task A_callback_written_as_null_is_no_callback()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, NullCallbackOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert
+            .That(run.AllSources)
+            .Contains(
+                "global::NoesisToolkit.Mvvm.CodeGen.DependencyWatcher.Metadata(default(object), FrameworkPropertyMetadataOptions.BindsTwoWayByDefault)"
+            );
+    }
+
+    [Test]
     public async Task Named_arguments_land_in_the_right_slot()
     {
         var run = GeneratorHarness.Run(
@@ -243,6 +321,34 @@ public class MvvmGeneratorTests
             public partial float Size { get; set; }
 
             static void OnTitleChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) { }
+        }
+        """;
+
+    const string HandleCallbackOwner = """
+        using NoesisToolkit.Mvvm;
+        using Noesis;
+
+        namespace Sample;
+
+        public static partial class Hints
+        {
+            [DependencyProperty(null, nameof(OnHintChanged))]
+            public static partial object Hint { get; set; }
+
+            static void OnHintChanged(ElementHandle element, DependencyPropertyChangedEventArgs e) { }
+        }
+        """;
+
+    const string NullCallbackOwner = """
+        using NoesisToolkit.Mvvm;
+        using Noesis;
+
+        namespace Sample;
+
+        public static partial class Sorts
+        {
+            [DependencyProperty(null, null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault)]
+            public static partial object Key { get; set; }
         }
         """;
 

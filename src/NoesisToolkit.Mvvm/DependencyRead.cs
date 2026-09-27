@@ -60,15 +60,18 @@ public static class DependencyRead
     public static TEnum Enum<TEnum>(DependencyObject source, DependencyProperty property)
         where TEnum : struct, System.Enum
     {
-        var raw = Native.UInt64(null, Handle(source), Handle(property), false, out _);
-        return Unsafe.SizeOf<TEnum>() switch
+        return Bits<TEnum>(Native.UInt64(null, Handle(source), Handle(property), false, out _));
+    }
+
+    static TEnum Bits<TEnum>(ulong raw)
+        where TEnum : struct, System.Enum =>
+        Unsafe.SizeOf<TEnum>() switch
         {
             1 => Unsafe.BitCast<byte, TEnum>((byte)raw),
             2 => Unsafe.BitCast<ushort, TEnum>((ushort)raw),
             4 => Unsafe.BitCast<uint, TEnum>((uint)raw),
             _ => Unsafe.BitCast<ulong, TEnum>(raw),
         };
-    }
 
     /// <summary>Reads a string property as the string already decoded for the same text, where Noesis
     /// decodes a fresh one on every read.</summary>
@@ -130,6 +133,67 @@ public static class DependencyRead
 
         return ReaderOf(property).Read(Handle(source), property);
     }
+
+    /// <summary>The value of <paramref name="property"/> on the object <paramref name="source"/> names.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value, boxed as <see cref="Value(DependencyObject, DependencyProperty)"/> boxes it.</returns>
+    public static object? Value(ElementHandle source, DependencyProperty property)
+    {
+        Guard.NotNull(property, nameof(property));
+        return Value(source.Pointer, property);
+    }
+
+    /// <summary>Reads a bool property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static bool Bool(ElementHandle source, DependencyProperty property) =>
+        Bool(source.Pointer, property);
+
+    /// <summary>Reads an int property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static int Int(ElementHandle source, DependencyProperty property) =>
+        Int(source.Pointer, property);
+
+    /// <summary>Reads a long property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static long Long(ElementHandle source, DependencyProperty property) =>
+        Long(source.Pointer, property);
+
+    /// <summary>Reads a float property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static float Float(ElementHandle source, DependencyProperty property) =>
+        Float(source.Pointer, property);
+
+    /// <summary>Reads a string property as the string already decoded for the same text.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value; empty for a null string, as Noesis returns it.</returns>
+    public static string String(ElementHandle source, DependencyProperty property) =>
+        NativeStrings.Decode(Native.String(null, source.Pointer, Handle(property)));
+
+    /// <summary>Reads a double property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static double Double(ElementHandle source, DependencyProperty property) =>
+        Double(source.Pointer, property);
+
+    /// <summary>Reads an enum property with no box at all.</summary>
+    /// <typeparam name="TEnum">The enum type, stored by Noesis as its unsigned bits.</typeparam>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static TEnum Enum<TEnum>(ElementHandle source, DependencyProperty property)
+        where TEnum : struct, System.Enum =>
+        Bits<TEnum>(Native.UInt64(null, source.Pointer, Handle(property), false, out _));
 
     internal static object? Value(nint source, DependencyProperty property) =>
         ReaderOf(property).Read(source, property);

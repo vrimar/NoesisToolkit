@@ -70,6 +70,32 @@ public static class DependencyWatcher
         PropertyChangedCallback? inner
     ) => new NotifyingMetadata(defaultValue, options, inner);
 
+    /// <summary>Metadata that reports every change here, with one reused args object per change.</summary>
+    /// <param name="defaultValue">The property's default.</param>
+    /// <param name="options">The framework options to register with.</param>
+    /// <returns>The metadata to register the property with.</returns>
+    public static FrameworkPropertyMetadata Metadata(
+        object? defaultValue,
+        FrameworkPropertyMetadataOptions options
+    ) => new NotifyingMetadata(defaultValue, options, (PropertyChangedCallback?)null);
+
+    /// <summary>Metadata whose change callback runs <paramref name="inner"/> with its object by handle
+    /// and then reports here, so a change on a native element mints no proxy for it.</summary>
+    /// <param name="defaultValue">The property's default.</param>
+    /// <param name="options">The framework options to register with.</param>
+    /// <param name="inner">The property's own change callback.</param>
+    /// <returns>The metadata to register the property with.</returns>
+    /// <remarks>The args are valid for the callback's duration only; kept, they read null.</remarks>
+    public static FrameworkPropertyMetadata Metadata(
+        object? defaultValue,
+        FrameworkPropertyMetadataOptions options,
+        ElementChangedCallback inner
+    )
+    {
+        Guard.NotNull(inner, nameof(inner));
+        return new NotifyingMetadata(defaultValue, options, inner);
+    }
+
     /// <summary>Calls <paramref name="handler"/> with <paramref name="target"/> whenever
     /// <paramref name="property"/> changes on it.</summary>
     /// <param name="target">The element to watch.</param>

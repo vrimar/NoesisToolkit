@@ -64,7 +64,7 @@ static class NoesisInternals
             new HandleRef(null, BaseComponent.getCPtr(property).Handle)
         );
 
-    static bool IsFrameworkElement(nint component)
+    internal static bool IsFrameworkElement(nint component)
     {
         var type = DynamicType(null, component);
         lock (FrameworkTypes)

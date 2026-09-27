@@ -147,6 +147,12 @@ static void OnWidthChanged(DependencyObject d, DependencyPropertyChangedEventArg
 A `static` partial property registers as an attached property and gains generated `GetSlot` /
 `SetSlot` accessors instead.
 
+A callback may take its object by handle instead, `(ElementHandle element,
+DependencyPropertyChangedEventArgs e)`. Noesis holds a native element's managed proxy weakly and mints
+a new one on the first touch after every collection; a callback that reads through `GetSlot(element)`
+or `DependencyRead`, writes through `DependencyWrite` and subscribes through `Events.On` never has one
+minted, which matters for an attached property bound in a template that a list rebinds per row.
+
 `Events.On` and `ElementGeometry` are the same reads Noesis' managed layer offers, without the
 object it mints per call — an element's events deliver the element itself rather than a fresh args
 object, and a translated point or a desired size comes back unboxed. Both matter where something

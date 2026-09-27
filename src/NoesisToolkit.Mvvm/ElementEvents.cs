@@ -54,9 +54,10 @@ static class ElementEvents
         nint routed,
         uint named,
         Delegate handler
-    )
+    ) => Subscribe(ElementState.Of(element), routed, named, handler);
+
+    internal static void Subscribe(ElementState state, nint routed, uint named, Delegate handler)
     {
-        var state = ElementState.Of(element);
         var entry = EntryOf(state);
         Bind(entry, state.Handle, routed, named);
 
@@ -70,11 +71,12 @@ static class ElementEvents
         nint routed,
         uint named,
         Delegate handler
-    )
+    ) => Unsubscribe(BaseComponent.getCPtr(element).Handle, routed, named, handler);
+
+    internal static void Unsubscribe(nint element, nint routed, uint named, Delegate handler)
     {
         if (
-            ElementState.Find(BaseComponent.getCPtr(element).Handle)?.Events?.SubscriptionsIfAny
-                is { } list
+            ElementState.Find(element)?.Events?.SubscriptionsIfAny is { } list
             && Find(list, routed, named, handler) is { } subscription
         )
             list.Remove(subscription);

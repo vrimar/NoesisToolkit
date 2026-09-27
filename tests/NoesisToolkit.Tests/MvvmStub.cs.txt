@@ -2,6 +2,10 @@
 // reference back to NoesisToolkit.Mvvm.
 namespace NoesisToolkit.Mvvm
 {
+    public readonly struct ElementHandle { }
+
+    public delegate void ElementChangedCallback(ElementHandle element, Noesis.DependencyPropertyChangedEventArgs e);
+
     [System.AttributeUsage(System.AttributeTargets.Property)]
     public sealed class DependencyPropertyAttribute : System.Attribute
     {
@@ -42,6 +46,8 @@ namespace NoesisToolkit.Mvvm.CodeGen
 
         public static Noesis.PropertyChangedCallback Notifying(Noesis.PropertyChangedCallback? inner) => static (_, _) => { };
         public static Noesis.FrameworkPropertyMetadata Metadata(object? defaultValue, Noesis.FrameworkPropertyMetadataOptions options, Noesis.PropertyChangedCallback? inner) => new Noesis.FrameworkPropertyMetadata(defaultValue, options, inner);
+        public static Noesis.FrameworkPropertyMetadata Metadata(object? defaultValue, Noesis.FrameworkPropertyMetadataOptions options) => new Noesis.FrameworkPropertyMetadata(defaultValue, options);
+        public static Noesis.FrameworkPropertyMetadata Metadata(object? defaultValue, Noesis.FrameworkPropertyMetadataOptions options, NoesisToolkit.Mvvm.ElementChangedCallback inner) => new Noesis.FrameworkPropertyMetadata(defaultValue, options);
     }
 
     public readonly struct BindingHop
@@ -69,6 +75,14 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static double Double(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0d;
         public static string String(Noesis.DependencyObject source, Noesis.DependencyProperty property) => "";
         public static TEnum Enum<TEnum>(Noesis.DependencyObject source, Noesis.DependencyProperty property) where TEnum : struct, System.Enum => default;
+        public static object? Value(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => null;
+        public static bool Bool(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => false;
+        public static int Int(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => 0;
+        public static long Long(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => 0L;
+        public static float Float(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => 0f;
+        public static double Double(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => 0d;
+        public static string String(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) => "";
+        public static TEnum Enum<TEnum>(NoesisToolkit.Mvvm.ElementHandle source, Noesis.DependencyProperty property) where TEnum : struct, System.Enum => default;
     }
 
     public static class ImageSources

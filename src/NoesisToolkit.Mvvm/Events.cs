@@ -44,6 +44,50 @@ public static class Events
         ElementEvents.Unsubscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
     }
 
+    /// <summary>Runs <paramref name="handler"/> whenever <paramref name="routedEvent"/> reaches the
+    /// element <paramref name="element"/> names; subscribing mints no proxy for it.</summary>
+    /// <param name="element">The element to listen on, by handle.</param>
+    /// <param name="routedEvent">The routed event.</param>
+    /// <param name="handler">Takes the element the event reached.</param>
+    public static void On(
+        ElementHandle element,
+        RoutedEvent routedEvent,
+        Action<FrameworkElement> handler
+    )
+    {
+        Guard.NotNull(routedEvent, nameof(routedEvent));
+        Guard.NotNull(handler, nameof(handler));
+        if (!element.IsFrameworkElement)
+            throw new ArgumentException("The handle names no FrameworkElement.", nameof(element));
+
+        ElementEvents.Subscribe(
+            ElementState.Of(element.Pointer),
+            BaseComponent.getCPtr(routedEvent).Handle,
+            0,
+            handler
+        );
+    }
+
+    /// <summary>Stops a subscription taken with <see cref="On(ElementHandle, RoutedEvent, Action{FrameworkElement})"/>.</summary>
+    /// <param name="element">The element listened on, by handle.</param>
+    /// <param name="routedEvent">The routed event.</param>
+    /// <param name="handler">The handler that was registered.</param>
+    public static void Off(
+        ElementHandle element,
+        RoutedEvent routedEvent,
+        Action<FrameworkElement> handler
+    )
+    {
+        Guard.NotNull(routedEvent, nameof(routedEvent));
+        Guard.NotNull(handler, nameof(handler));
+        ElementEvents.Unsubscribe(
+            element.Pointer,
+            BaseComponent.getCPtr(routedEvent).Handle,
+            0,
+            handler
+        );
+    }
+
     /// <summary>Runs <paramref name="handler"/> whenever the named event, one Noesis raises by name
     /// such as <c>SizeChanged</c> or <c>IsVisibleChanged</c>, fires on <paramref name="element"/>.</summary>
     /// <param name="element">The element to listen on.</param>

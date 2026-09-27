@@ -61,22 +61,80 @@ public static class DependencyWrite
 
     /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on <paramref name="target"/>.</summary>
     /// <typeparam name="TEnum">The enum type, stored by Noesis as its unsigned bits.</typeparam>
+    /// <remarks>Only a property registered from managed code takes an enum this way: one Noesis
+    /// registered natively rejects it silently, as it rejects its own <c>SetValue</c>.</remarks>
     public static void Value<TEnum>(
         DependencyObject target,
         DependencyProperty property,
         TEnum value
     )
-        where TEnum : struct, Enum
+        where TEnum : struct, Enum =>
+        Native.UInt64(null, Handle(target), Handle(property), Bits(value), false, false);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, bool value) =>
+        Value(target.Pointer, property, value);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, int value) =>
+        Value(target.Pointer, property, value);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, long value) =>
+        Value(target.Pointer, property, value);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, float value) =>
+        Value(target.Pointer, property, value);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, double value) =>
+        Value(target.Pointer, property, value);
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object <paramref name="target"/> names.</summary>
+    /// <typeparam name="TEnum">The enum type, stored by Noesis as its unsigned bits.</typeparam>
+    /// <remarks>Only a property registered from managed code takes an enum this way: one Noesis
+    /// registered natively rejects it silently, as it rejects its own <c>SetValue</c>.</remarks>
+    public static void Value<TEnum>(ElementHandle target, DependencyProperty property, TEnum value)
+        where TEnum : struct, Enum =>
+        Native.UInt64(null, target.Pointer, Handle(property), Bits(value), false, false);
+
+    /// <summary>Sets <see cref="UIElement.Visibility"/> on the element <paramref name="target"/> names,
+    /// through the native setter the property's own accessor uses.</summary>
+    /// <param name="target">The element, by handle.</param>
+    /// <param name="value">The visibility.</param>
+    public static void Visibility(ElementHandle target, Visibility value)
     {
-        var raw = Unsafe.SizeOf<TEnum>() switch
+        if (!target.IsFrameworkElement)
+            throw new ArgumentException("The handle names no FrameworkElement.", nameof(target));
+
+        VisibilitySet(null, new HandleRef(null, target.Pointer), (int)value);
+    }
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "UIElement_Visibility_set")]
+    static extern void VisibilitySet(
+        [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
+        HandleRef element,
+        int value
+    );
+
+    /// <summary>Writes <paramref name="value"/> to <paramref name="property"/> on the object
+    /// <paramref name="target"/> names, as Noesis' <c>SetValue</c> writes it.</summary>
+    public static void Value(ElementHandle target, DependencyProperty property, object? value)
+    {
+        Guard.NotNull(property, nameof(property));
+        Value(target.Pointer, property, value);
+    }
+
+    static ulong Bits<TEnum>(TEnum value)
+        where TEnum : struct, Enum =>
+        Unsafe.SizeOf<TEnum>() switch
         {
             1 => Unsafe.As<TEnum, byte>(ref value),
             2 => Unsafe.As<TEnum, ushort>(ref value),
             4 => Unsafe.As<TEnum, uint>(ref value),
             _ => Unsafe.As<TEnum, ulong>(ref value),
         };
-        Native.UInt64(null, Handle(target), Handle(property), raw, false, false);
-    }
 
     /// <summary>Writes <paramref name="text"/> to a string property on <paramref name="target"/> without
     /// a managed string: the characters go to Noesis as they are, so text formatted into a buffer never

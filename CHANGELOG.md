@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A `[DependencyProperty]` change callback can take its object as an `ElementHandle`.** Noesis holds
+  a native element's managed proxy weakly and mints a new one on the first touch after every
+  collection, so a callback taking a `DependencyObject` paid a proxy for every native element it ran
+  on after each collection: an attached property bound in a card template, say, once per card a list
+  rebinds. Declared as `(ElementHandle element, DependencyPropertyChangedEventArgs e)`, the callback
+  runs with the native handle and nothing is minted. `DependencyRead`, `DependencyWrite` and
+  `Events.On`/`Events.Off` take the handle, an attached property's generated `Get{Name}` gains a
+  handle overload, and `ElementHandle.Object` mints the proxy for the rare path that needs one.
+  `DependencyWrite.Visibility` sets an element's visibility by handle through Noesis' own setter,
+  since a property Noesis registered natively rejects an enum written as bits.
+
+### Changed
+
+- **A property registered without a change callback emits `DependencyWatcher.Metadata(default,
+  options)`**, since a `null` callback no longer picks between the object and the handle overloads.
+  Generated code needs this runtime or later. A hand-written `Metadata(value, options, null)` or an
+  untyped lambda passed to it is ambiguous now; drop the `null`, or pass a method group or a typed
+  delegate.
+
 ## [0.3.3] - 2026-09-24
 
 ### Added

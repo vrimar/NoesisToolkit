@@ -10,10 +10,7 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// depth, where Noesis' trampoline mints a finalizable one per change.</summary>
 sealed class NotifyingMetadata : FrameworkPropertyMetadata
 {
-    static readonly Dictionary<
-        long,
-        (PropertyChangedCallback? Inner, DependencyProperty? Reports)
-    > Hooks = new Dictionary<long, (PropertyChangedCallback?, DependencyProperty?)>();
+    static readonly Dictionary<long, Hook> Hooks = new Dictionary<long, Hook>();
 
     static readonly List<DependencyPropertyChangedEventArgs> Args =
         new List<DependencyPropertyChangedEventArgs>();
@@ -29,10 +26,19 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
         PropertyChangedCallback? inner,
         DependencyProperty? reports = null
     )
-        : base(defaultValue, options)
+        : base(defaultValue, options) => Register(new Hook(inner, null, reports));
+
+    internal NotifyingMetadata(
+        object? defaultValue,
+        FrameworkPropertyMetadataOptions options,
+        ElementChangedCallback inner
+    )
+        : base(defaultValue, options) => Register(new Hook(null, inner, null));
+
+    void Register(Hook hook)
     {
         lock (Hooks)
-            Hooks[(long)swigCPtr.Handle] = (inner, reports);
+            Hooks[(long)swigCPtr.Handle] = hook;
 
         Bind(null, swigCPtr, Trampoline);
     }
@@ -43,7 +49,7 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
     {
         try
         {
-            (PropertyChangedCallback? Inner, DependencyProperty? Reports) hook;
+            Hook hook;
             lock (Hooks)
             {
                 if (!Hooks.TryGetValue((long)cPtr, out hook))
@@ -64,7 +70,9 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
             try
             {
                 // Only the callback takes the object: a native one's proxy is minted anew after every collection.
-                if (
+                if (hook.ByHandle is not null)
+                    hook.ByHandle(new ElementHandle(d), args);
+                else if (
                     hook.Inner is not null
                     && NoesisInternals.Proxy(null, d, false) is DependencyObject target
                 )
@@ -104,6 +112,12 @@ sealed class NotifyingMetadata : FrameworkPropertyMetadata
         Pointer(args) = new HandleRef(args, IntPtr.Zero);
         _depth--;
     }
+
+    readonly record struct Hook(
+        PropertyChangedCallback? Inner,
+        ElementChangedCallback? ByHandle,
+        DependencyProperty? Reports
+    );
 
     [UnsafeAccessor(
         UnsafeAccessorKind.StaticMethod,

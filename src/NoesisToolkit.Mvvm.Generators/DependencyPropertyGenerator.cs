@@ -244,6 +244,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
     private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
 
+    private const string HandleFqn = "global::NoesisToolkit.Mvvm.ElementHandle";
+
+    // What a change callback that takes its object by handle reads its sibling properties with.
+    private static string ReadByHandle(Model m, string target) =>
+        m.TypedRead is { } typed
+            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"
+            : $"({m.TypeFqnNullable}){ReadFqn}.Value({target}, {m.PropertyName}Property)!";
+
     private static string Write(Model m, string target) =>
         m.WritesTyped
             ? $"{WriteFqn}.Value({target}, {m.PropertyName}Property, value)"
@@ -287,6 +295,11 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             w.Line($"{Read(m, "element")};");
 
         w.Line();
+        w.Line($"public static {m.TypeFqnNullable} Get{m.PropertyName}({HandleFqn} element) =>");
+        using (w.Indented())
+            w.Line($"{ReadByHandle(m, "element")};");
+
+        w.Line();
         w.Line(
             $"public static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
         );
@@ -309,10 +322,12 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     private static string BuildMetadata(Model m)
     {
         string def = m.DefaultValue ?? $"default({m.TypeFqn})";
-        string changed = m.PropertyChanged ?? "null";
         string opts = m.MetadataOptions ?? "FrameworkPropertyMetadataOptions.None";
 
-        return $"{WatcherFqn}.Metadata({def}, {opts}, {changed})";
+        // A null callback would not pick between the object and the handle overloads.
+        return m.PropertyChanged is { } changed
+            ? $"{WatcherFqn}.Metadata({def}, {opts}, {changed})"
+            : $"{WatcherFqn}.Metadata({def}, {opts})";
     }
 
     private static string? CleanCallbackString(string raw)
@@ -331,7 +346,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             s = s.Substring(1, s.Length - 2);
 
         // A blank name is no callback at all; interpolated, it leaves the argument missing.
-        return s.Length == 0 ? null : s;
+        return s.Length == 0 || s == "null" ? null : s;
     }
 
     private readonly record struct Model(
