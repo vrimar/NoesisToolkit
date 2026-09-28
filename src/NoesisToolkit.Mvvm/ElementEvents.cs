@@ -146,6 +146,10 @@ static class ElementEvents
                 case Action<FrameworkElement, Key> keyed:
                     keyed(element, NativeEvents.KeyOf(args));
                     break;
+                case Func<FrameworkElement, Key, bool> claiming:
+                    if (claiming(element, NativeEvents.KeyOf(args)))
+                        NativeEvents.MarkHandled(args);
+                    break;
             }
         }
     }

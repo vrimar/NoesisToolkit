@@ -65,6 +65,52 @@ public sealed class EventsTests
     }
 
     [Test]
+    public async Task A_key_left_unclaimed_lets_the_view_move_focus()
+    {
+        var (view, first, second) = ShowFocusPair(claim: false);
+
+        view.KeyDown(Key.Down);
+
+        await Assert.That(second.IsKeyboardFocused).IsTrue();
+        await Assert.That(first.IsKeyboardFocused).IsFalse();
+    }
+
+    [Test]
+    public async Task A_claimed_key_is_handled_so_the_view_keeps_focus()
+    {
+        var (view, first, _) = ShowFocusPair(claim: true);
+
+        view.KeyDown(Key.Down);
+
+        await Assert.That(first.IsKeyboardFocused).IsTrue();
+        await Assert.That(Allocated(() => view.KeyDown(Key.Down))).IsEqualTo(0);
+    }
+
+    static (View View, SpikeControl First, SpikeControl Second) ShowFocusPair(bool claim)
+    {
+        NoesisRuntime.Start();
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var first = new SpikeControl
+        {
+            Width = 100,
+            Height = 100,
+            Focusable = true,
+        };
+        var second = new SpikeControl
+        {
+            Width = 100,
+            Height = 100,
+            Focusable = true,
+        };
+        Events.OnKeyClaim(root, UIElement.KeyDownEvent, (_, key) => claim && key == Key.Down);
+
+        var view = NoesisRuntime.Show(root, first, second);
+        first.Focus();
+        return (view, first, second);
+    }
+
+    [Test]
     public async Task A_routed_size_change_reaches_its_handler_and_stops_when_removed()
     {
         NoesisRuntime.Start();

@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`Events.OnKeyClaim` lets a key handler mark the key handled.** `Events.OnKey` can only read the
+  key, so a handler that acts on it could not stop what Noesis does next: a key that bubbles to the
+  root unhandled still drives the view's own keyboard navigation, and an arrow moves focus between
+  controls. `OnKeyClaim` takes a handler that returns whether it handled the key and, when it does,
+  sets `Handled` on the native args, so a delivery still allocates nothing. It is its own name rather
+  than an `OnKey` overload because C# would bind any bool-returning lambda to the new overload.
+
 ## [0.3.4] - 2026-09-27
 
 ### Added

@@ -153,4 +153,39 @@ public static class Events
         Guard.NotNull(handler, nameof(handler));
         ElementEvents.Unsubscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
     }
+
+    /// <summary>Runs <paramref name="handler"/> with the key whenever the key event reaches
+    /// <paramref name="element"/>, and marks the event handled when it returns true.</summary>
+    /// <remarks>A handled key goes no further: handlers further along the route skip it, and so does
+    /// the view's own keyboard navigation once the route ends.</remarks>
+    /// <param name="element">The element to listen on.</param>
+    /// <param name="routedEvent"><see cref="UIElement.KeyDownEvent"/>, <see cref="UIElement.KeyUpEvent"/> or a preview of either.</param>
+    /// <param name="handler">Takes the element and the key; returns whether it handled the key.</param>
+    public static void OnKeyClaim(
+        FrameworkElement element,
+        RoutedEvent routedEvent,
+        Func<FrameworkElement, Key, bool> handler
+    )
+    {
+        Guard.NotNull(element, nameof(element));
+        Guard.NotNull(routedEvent, nameof(routedEvent));
+        Guard.NotNull(handler, nameof(handler));
+        ElementEvents.Subscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
+    }
+
+    /// <summary>Stops a subscription taken with <see cref="OnKeyClaim"/>.</summary>
+    /// <param name="element">The element listened on.</param>
+    /// <param name="routedEvent">The key event.</param>
+    /// <param name="handler">The handler that was registered.</param>
+    public static void OffKeyClaim(
+        FrameworkElement element,
+        RoutedEvent routedEvent,
+        Func<FrameworkElement, Key, bool> handler
+    )
+    {
+        Guard.NotNull(element, nameof(element));
+        Guard.NotNull(routedEvent, nameof(routedEvent));
+        Guard.NotNull(handler, nameof(handler));
+        ElementEvents.Unsubscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
+    }
 }

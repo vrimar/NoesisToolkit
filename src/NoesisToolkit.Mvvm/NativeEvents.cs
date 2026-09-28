@@ -36,6 +36,9 @@ static unsafe class NativeEvents
 
     internal static Key KeyOf(nint args) => (Key)KeyGet(null, new HandleRef(null, args));
 
+    internal static void MarkHandled(nint args) =>
+        HandledSet(null, new HandleRef(null, args), true);
+
     [UnmanagedCallersOnly]
     static void OnRoutedEvent(nint cPtrType, nint cPtr, nint routedEvent, nint sender, nint e)
     {
@@ -93,6 +96,17 @@ static unsafe class NativeEvents
         [System.Runtime.CompilerServices.UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")]
             object? owner,
         HandleRef args
+    );
+
+    [System.Runtime.CompilerServices.UnsafeAccessor(
+        System.Runtime.CompilerServices.UnsafeAccessorKind.StaticMethod,
+        Name = "RoutedEventArgs_Handled_set"
+    )]
+    static extern void HandledSet(
+        [System.Runtime.CompilerServices.UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")]
+            object? owner,
+        HandleRef args,
+        bool handled
     );
 
     [DllImport("Noesis")]
