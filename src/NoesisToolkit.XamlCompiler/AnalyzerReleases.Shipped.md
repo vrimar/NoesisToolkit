@@ -19,3 +19,12 @@ NTK1003 | NoesisToolkit | Error | XAML compiler failed
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1004 | NoesisToolkit | Warning | A name left to the engine cannot be rooted for trimming
+
+## Release 0.3.7
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1005 | NoesisToolkit | Info | A document is parsed at run time
+NTK1006 | NoesisToolkit | Warning | A type the document states does not resolve
