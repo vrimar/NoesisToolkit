@@ -77,6 +77,10 @@ static class NoesisInternals
         }
     }
 
+    // A teardown hands back objects whose count already reached zero; Proxy logs an error for those.
+    internal static bool IsReleased(nint component) =>
+        BaseComponent.GetNumReferences(component) == 0;
+
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "GetDynamicType")]
     static extern nint DynamicType(BaseComponent? owner, nint cPtr);
 

@@ -167,6 +167,10 @@ A subscription through `Events.On` or `DependencyWatcher.Watch` lasts until the 
 destroyed, as one on a Noesis event does. The handler is handed the element for that reason: one
 that captured the element, or the control around it, would keep both alive.
 
+`AttachedObjects.AssociatedObjectOf` reads what a behavior or trigger is attached to. A teardown
+detaches it after Noesis has let the element go, where `AssociatedObject` logs "Extend already
+removed"; this returns null there instead, so `OnDetaching` can tell a teardown from a removal.
+
 ## NoesisToolkit.Testing
 
 ```xml
