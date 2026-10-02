@@ -65,7 +65,7 @@ sealed partial class XamlEmitter
 
             case "Binding":
             case "TemplateBinding":
-                return EmitBindingLike(element, call);
+                return EmitBindingLike(element, call, null);
 
             default:
                 return EmitCustomExtension(element, call, targetType);
@@ -166,7 +166,7 @@ sealed partial class XamlEmitter
         return member is not null ? text : Fail($"'{text}' is not a member of {enumName}");
     }
 
-    string? EmitBindingLike(XElement element, MarkupCall call)
+    string? EmitBindingLike(XElement element, MarkupCall call, string? slot)
     {
         if (call.Name == "TemplateBinding")
         {
@@ -174,7 +174,7 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        return EmitBinding(element, call);
+        return EmitBinding(element, call, slot);
     }
 
     static readonly System.Text.RegularExpressions.Regex PrefixedPathOwner = new(
@@ -200,10 +200,11 @@ sealed partial class XamlEmitter
             ? ns.ToDisplayString() + "." + type.Name
         : type.Name;
 
-    string? EmitBinding(XElement element, MarkupCall call)
+    string? EmitBinding(XElement element, MarkupCall call, string? slot)
     {
         var name = NextName("binding");
         ClassifyFallback();
+        RootBinding(element, call, slot);
         var path = call.Positional.FirstOrDefault() ?? NamedValue(call, "Path") as string;
 
         _lines.Add(
@@ -384,14 +385,14 @@ sealed partial class XamlEmitter
         };
     }
 
-    string? EmitMultiBinding(XElement element)
+    string? EmitMultiBinding(XElement element, string slot)
     {
         // Each child is emitted through the ordinary native route, so without this the reason they
         // fell back would read as nothing at all rather than as the multi-binding around them.
         _inMultiBinding++;
         try
         {
-            return EmitMultiBindingCore(element);
+            return EmitMultiBindingCore(element, slot);
         }
         finally
         {
@@ -403,7 +404,7 @@ sealed partial class XamlEmitter
 
     int _inMultiBinding;
 
-    string? EmitMultiBindingCore(XElement element)
+    string? EmitMultiBindingCore(XElement element, string slot)
     {
         var name = NextName("multi");
         _lines.Add($"var {name} = new global::Noesis.MultiBinding();");
@@ -499,7 +500,7 @@ sealed partial class XamlEmitter
                 return Fail($"<{child.Name.LocalName}> inside a MultiBinding is not supported");
             }
 
-            var inner = EmitBindingElement(child);
+            var inner = EmitBindingElement(child, slot);
             if (inner is null)
                 return null;
 
@@ -509,7 +510,7 @@ sealed partial class XamlEmitter
         return name;
     }
 
-    string? EmitBindingElement(XElement element)
+    string? EmitBindingElement(XElement element, string slot)
     {
         var call = BindingElementCall(element);
         if (call is null)
@@ -517,7 +518,7 @@ sealed partial class XamlEmitter
             return Fail($"could not parse an attribute of <{element.Name.LocalName}>");
         }
 
-        return EmitBinding(element, call);
+        return EmitBinding(element, call, slot);
     }
 
     static MarkupCall? BindingElementCall(XElement element)

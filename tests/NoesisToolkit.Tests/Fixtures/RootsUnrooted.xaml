@@ -1,0 +1,17 @@
+<UserControl
+  x:Class="Sample.Roots.UnrootedHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+>
+  <StackPanel>
+    <TextBlock Text="{Binding Headline.Text}" />
+    <TextBlock Text="{Binding}" />
+    <TextBlock x:Name="Named" Text="{Binding Text, ElementName=Named}" />
+    <ItemsControl DisplayMemberPath="Name" />
+    <TextBlock Text="{Binding DataContext.Headline, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}" />
+    <TextBlock ntk:DataType="r:PanelViewModel" Text="{Binding Missing}" />
+    <TextBlock ntk:DataType="r:PanelViewModel" Text="{Binding Loose.Anything}" />
+  </StackPanel>
+</UserControl>

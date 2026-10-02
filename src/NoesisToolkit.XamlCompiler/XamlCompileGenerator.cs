@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Text;
 using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
@@ -30,6 +31,18 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         "NoesisToolkit",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true
+    );
+
+    static readonly DiagnosticDescriptor Unrootable = new(
+        "NTK1004",
+        "A name left to the engine cannot be rooted for trimming",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The engine resolves a binding it was left, and a name the document hands it as "
+            + "text, by reflection at run time. A trimmed build keeps only what the compiler can "
+            + "name, and it cannot name a member of a type it cannot determine."
     );
 
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
@@ -152,6 +165,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         foreach (var error in document.Errors)
             spc.ReportDiagnostic(
                 Diagnostic.Create(Unsupported, null, $"{document.File} :: {error}")
+            );
+
+        foreach (var unrooted in document.Unrooted)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    Unrootable,
+                    unrooted.Location?.ToLocation(),
+                    $"{document.File} :: {unrooted.Message}"
+                )
             );
 
         if (document.Source is null || (document.Gated && document.Errors.Count > 0))
@@ -457,7 +479,10 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         XDocument parsed;
         try
         {
-            parsed = XDocument.Parse(text, LoadOptions.PreserveWhitespace);
+            parsed = XDocument.Parse(
+                text,
+                LoadOptions.PreserveWhitespace | LoadOptions.SetLineInfo
+            );
         }
         catch (Exception ex)
         {
@@ -496,16 +521,22 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         else
         {
             var body = emitter.EmitDictionary(root);
+            emitter.RootReferencedTypes(root);
             document.Gated = true;
 
             using (w.Block($"namespace {GeneratedNamespace(compilation)}"))
             {
                 w.Line($"using __XamlResources = {GeneratedNamespace(compilation)}.XamlResources;");
                 using (w.Block($"public static class {typeName}"))
-                using (w.Block("public static global::Noesis.ResourceDictionary Build()"))
                 {
-                    foreach (var line in body)
-                        w.Line(line);
+                    foreach (var attribute in emitter.Roots.Render(compilation))
+                        w.Line(attribute);
+
+                    using (w.Block("public static global::Noesis.ResourceDictionary Build()"))
+                    {
+                        foreach (var line in body)
+                            w.Line(line);
+                    }
                 }
             }
         }
@@ -514,6 +545,11 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         document.Tally = emitter.Tally;
         document.Errors = emitter.Errors;
         document.DeadMarkup = emitter.DeadMarkup;
+        if (options.Trimmed)
+            document.Unrooted = emitter
+                .Unrooted.Distinct()
+                .Select(u => new UnrootedDiagnostic(u.Message, LocationIn(path, text, u)))
+                .ToList();
 
         if (isDictionary && emitter.Errors.Count == 0)
         {
@@ -565,6 +601,11 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         var compiled = !scan.NeedsLoader;
         var body = compiled ? emitter.EmitRoot(root, rootClass) : null;
+        if (!compiled)
+            emitter.RootLoaded(root, rootClass, scan.Events.Count > 0);
+
+        emitter.RootReferencedTypes(root);
+        var roots = emitter.Roots.Render(compilation);
 
         document.NeedsLoader = scan.NeedsLoader;
         document.Gated = compiled;
@@ -577,11 +618,14 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         var scopes = PartialTypeEmitter.Open(w, PartialTypeEmitter.DeclarationChain(rootClass));
 
-        XamlCodeBehind.Emit(w, rootClass, scan, document.Logical!, compiled);
+        XamlCodeBehind.Emit(w, rootClass, scan, document.Logical!, compiled, compiled ? [] : roots);
 
         if (body is not null)
         {
             w.Line();
+            foreach (var attribute in roots)
+                w.Line(attribute);
+
             using (w.Block("internal void BuildXamlTree()"))
             {
                 foreach (var line in body)
@@ -590,6 +634,40 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         }
 
         PartialTypeEmitter.Close(scopes);
+    }
+
+    // Line information is 1-based and counts a tab as one column, as a text span does.
+    static LocationInfo? LocationIn(string path, string text, UnrootedName unrooted)
+    {
+        if (unrooted.Line <= 0)
+            return null;
+
+        var offset = 0;
+        for (var line = 1; line < unrooted.Line && offset >= 0; line++)
+            offset = text.IndexOf('\n', offset) is var next and >= 0 ? next + 1 : -1;
+
+        if (offset < 0)
+            return null;
+
+        var start = Math.Min(offset + unrooted.Column - 1, text.Length);
+        var length = 0;
+        while (
+            start + length < text.Length
+            && (
+                System.Xml.XmlConvert.IsNCNameChar(text[start + length])
+                || text[start + length] == ':'
+            )
+        )
+            length++;
+        var position = new LinePosition(unrooted.Line - 1, unrooted.Column - 1);
+        return new LocationInfo(
+            path,
+            new TextSpan(start, length),
+            new LinePositionSpan(
+                position,
+                new LinePosition(position.Line, position.Character + length)
+            )
+        );
     }
 
     static string GeneratedNamespace(Compilation compilation) =>

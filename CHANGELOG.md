@@ -3,6 +3,49 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A trimmed or NativeAOT build keeps what XAML reaches by name.** Noesis resolves a binding left
+  native, markup handed to its parser, an `EventName` and a `DisplayMemberPath` by reflection at run
+  time, so an app that trimmed had to root whole assemblies or watch a binding, a parser-built control
+  or an event trigger fail without a word. The compiler roots each such member as a
+  `[DynamicDependency]` on the method that builds its document, so it is kept exactly as long as the
+  document is: each hop of a native binding on the type that declares it, the constructor and CLR
+  properties of what the parser builds, the item type a `DisplayMemberPath` or a
+  `GridViewColumn.DisplayMemberBinding` reads, the event an `EventName` names, the field that
+  registers an attached property met by owner name on an owner that is not a `DependencyObject`,
+  and the literals of an enum written as text.
+- **The overrides Noesis looks up by reflection are kept.** Noesis calls a control's
+  `MeasureOverride`, `ArrangeOverride`, `OnApplyTemplate`, `OnRender` and the rest, and any object's
+  own `ToString` and `Equals`, only where reflection finds them declared. A trimmed build keeps an
+  override's code but not its metadata, so the override was never called and nothing said so. The
+  compiler roots them on every managed type a document references, from any assembly — its
+  elements, the types it states, the hops and values of its bindings and the items they hold — and
+  a generator in `NoesisToolkit.Mvvm` roots them on every type of an assembly that references it, on
+  a module initializer, for a control built only from code. A record's compiler-written `ToString`
+  and `Equals` count.
+- **`NTK1004` marks a name the compiler cannot root**, because it cannot determine the type it is
+  read off: a binding under an undeclared DataContext, a path through `object`, items of unknown
+  type, an interface no class the compiler can see implements. State the type with `ntk:DataType`,
+  `ntk:AncestorDataType` or `ntk:ItemType`. It is raised at the attribute holding the markup, and
+  only where the trim analyzer runs, so a project nothing trims never sees it.
+- **`ntk:ItemType` states the type of a list's rows**, on a `GridViewColumn` for its
+  `DisplayMemberBinding` and on an items control for its `DisplayMemberPath` and
+  `SelectedValuePath`, where `ItemsSource` is bound through a converter or set somewhere the
+  compiler cannot see. It types the rows alone, so the column's own bindings, such as its `Header`,
+  keep reading the list's DataContext.
+
+### Fixed
+
+- **A `HierarchicalDataTemplate` scopes its bindings to its own `DataType`**, in the compiler and in
+  `NTK2001`, as a `DataTemplate` does. They were resolved against the type of the scope around it.
+- **A compiled `FindAncestor` binding inside a `Popup`'s content finds the control around the
+  popup**, as the native one does. The walk followed visual parents alone, and popup content hangs
+  off the popup layer, so the binding found nothing, open or closed. Where an element has no visual
+  parent that is an element, the walk now goes on from its logical parent.
+
 ## [0.3.5] - 2026-09-28
 
 ### Added

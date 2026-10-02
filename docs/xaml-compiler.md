@@ -61,6 +61,50 @@ its own content in its constructor would carry that content into every clone on 
 its own constructor loads there, so inside a template its `Content` is cleared after construction,
 which is what a parsed template holds.
 
+## Trimming
+
+What the generated code constructs and reads, the trimmer sees. What it hands Noesis to resolve by
+name, it does not, and a miss is silent: a binding reads nothing, a parser-built element is never
+created, an event trigger never fires. So the compiler roots those names itself, as
+`[DynamicDependency]` attributes on the method that builds the document — `BuildXamlTree()` for an
+`x:Class` document, `Build()` for a dictionary, `InitializeComponent()` for a document left to the
+loader. A document the trimmer drops takes its roots with it. A type the generated code cannot name,
+such as an internal type of another assembly, is rooted by its name and assembly.
+
+| Reached by name | Rooted |
+|---|---|
+| a binding left native | each hop's property, on the type that declares it — on every class implementing an interface hop, and on the derived class that declares a member its declared type lacks |
+| markup handed to the parser — a setter, a resource, an element carrying a `{TemplateBinding}`, a document left to the loader | the public parameterless constructor of each managed type it builds, and every plain CLR property it sets or binds, whether by attribute, by property element or as content |
+| a managed object inside a template | its constructor: Noesis builds each copy of the template by constructing it again |
+| a `GridViewColumn.DisplayMemberBinding` | each hop, read off the item type of the list's `ItemsSource`, or the type `ntk:ItemType` states on the column |
+| a literal `DisplayMemberPath` or `SelectedValuePath`, and a trigger's `EventName` | the property on the item type, or the type `ntk:ItemType` states on the items control; the event on the trigger's source, on every class implementing it where that is an interface |
+| an attached property the parser meets by owner name | the `XProperty` field of an owner that is not a `DependencyObject`: Noesis runs such an owner's class constructor, which registers the property, only by finding that field |
+| an enum written or read as text | its literals |
+
+A dependency property's CLR wrapper is never rooted alone: Noesis reads a dependency property
+through its own registration, and a wrapper kept without its `XProperty` field would be registered
+again as a plain property that shadows it — so where a class implements an interface hop with a
+dependency property, its wrapper is left alone too. Nothing of `Noesis.GUI` is rooted member by
+member — the engine reflects over its own types far beyond what markup shows, so an app keeps that
+assembly whole. A name the compiler cannot type is reported as `NTK1004`, and so is an interface hop
+no class the compiler can see implements — an implementer in an assembly that references the
+document's own is out of its sight.
+
+A column's own bindings, such as `Header="{Binding Title}"`, read the list's DataContext like any
+other attribute of it. So where the rows' type is what the compiler cannot see — `ItemsSource`
+bound through a converter, set in a style or from code — `ntk:ItemType` on the `GridViewColumn`, or
+on the items control a `DisplayMemberPath` reads, states the rows' type and nothing else.
+`ntk:DataType` there would retype the column's own bindings too.
+
+The overrides Noesis looks up by reflection when it first meets a type — `MeasureOverride`,
+`ArrangeOverride`, `OnApplyTemplate`, `OnRender` and the rest, and any object's own `ToString` and
+`Equals`, a record's compiler-written ones included — are rooted on every managed type a document
+references, from whatever assembly: its elements, the types it states, each hop and value of its
+bindings, the items those values hold, and every class it roots a member of. Without them a
+trimmed build keeps the override's code but not its metadata, and Noesis never calls it.
+`NoesisToolkit.Mvvm` also roots them on every type an assembly referencing it declares, on a module
+initializer, since a control built only from code has no document to carry them.
+
 ## Event handlers
 
 A document that wires handlers in markup — including an attached handler such as

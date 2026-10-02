@@ -6,6 +6,7 @@
 | `NTK1001` | Error | XAML construct the compiler does not support |
 | `NTK1002` | Warning | coverage note — markup reached that nothing consumes |
 | `NTK1003` | Error | the compiler threw; the message carries the stack |
+| `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; raised only where the trim analyzer runs |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve |
@@ -17,6 +18,33 @@
 | `NTK3101` | Error | `[DelegateCommand]` owner is not a partial class |
 | `NTK3102` | Error | `[DelegateCommand]` method returns something other than `void`/`ValueTask` |
 | `NTK3103` | Error | `[DelegateCommand]` method takes more than one parameter |
+
+## Why NTK1004 exists
+
+A trimmed or NativeAOT build keeps only what code references, and Noesis reaches some members by
+name: a binding left native reads each hop's property by reflection, the parser builds a fragment it
+is handed from type names, an `EventName` or `DisplayMemberPath` is a string looked up at run time.
+The compiler roots each of these for the trimmer (see
+[xaml-compiler.md](xaml-compiler.md#trimming)), but it can only root a member of a type it can name.
+Where it cannot — a binding under a DataContext no `ntk:DataType` states, an ancestor walk with no
+`ntk:AncestorDataType`, a path that steps through `object`, a `DisplayMemberPath` over items it
+cannot type, a name the type does not have, an interface no class it can see implements — NTK1004
+points at the attribute holding the markup, because a trimmed build may drop the member and Noesis
+then resolves nothing without a word.
+
+State the type: `ntk:DataType` on the element or an enclosing one, `ntk:AncestorDataType` for a
+`FindAncestor` binding, or `ntk:ItemType` for rows whose list's `ItemsSource` the compiler cannot
+type — on a `GridViewColumn`, or on the items control a `DisplayMemberPath` or `SelectedValuePath`
+reads. `ntk:ItemType` types the rows alone; `ntk:DataType` on a column would retype the column's own
+bindings, such as its `Header`, too. Where the source really is several unrelated types, give them
+an interface that declares what the markup reads, and state that; the compiler roots the property
+on every class implementing it. It can only see the classes of the document's own assembly and of
+what that references, so markup in a library that binds through an interface only its consumers
+implement is reported: state a class the library declares instead.
+
+It is raised only where the trim analyzer runs — a project that publishes trimmed or AOT, or
+declares itself trimmable or AOT-compatible — so a project nothing will trim never sees it. The roots
+are emitted everywhere, since a library that does not trim itself can be trimmed into one that does.
 
 ## Why NTK2101 and NTK2102 exist
 

@@ -14,12 +14,15 @@ readonly record struct XamlCompilerOptions(
     string PackPrefix,
     string ProjectDir,
     string Extensions,
-    string Namespaces
+    string Namespaces,
+    bool Trimmed
 )
 {
     public const string PackPrefixProperty = "build_property.NoesisXamlPackPrefix";
     public const string NamespacesProperty = "build_property.NoesisXamlNamespaces";
     public const string ProjectDirProperty = "build_property.ProjectDir";
+
+    public const string TrimAnalyzerProperty = "build_property.EnableTrimAnalyzer";
 
     public static XamlCompilerOptions Read(AnalyzerConfigOptionsProvider provider)
     {
@@ -28,7 +31,12 @@ readonly record struct XamlCompilerOptions(
             Value(options, PackPrefixProperty),
             Value(options, ProjectDirProperty),
             XamlFiles.Extensions(options),
-            Value(options, NamespacesProperty)
+            Value(options, NamespacesProperty),
+            string.Equals(
+                Value(options, TrimAnalyzerProperty),
+                "true",
+                StringComparison.OrdinalIgnoreCase
+            )
         );
     }
 

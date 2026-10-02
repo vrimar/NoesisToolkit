@@ -86,6 +86,7 @@ sealed partial class XamlEmitter
 
         var style = StyleProbe(declared, new XElement(setter));
         var probe = Probe(setter, style);
+        RootParsed(setter);
 
         if (scopeNamespace is not null)
             probe.Add(new XAttribute(XNamespace.Xmlns + "__probe", scopeNamespace));
@@ -101,6 +102,7 @@ sealed partial class XamlEmitter
             }
 
             probe.AddFirst(new XElement(declaration));
+            RootParsed(declaration);
         }
 
         var name = NextName("setter");
@@ -181,6 +183,8 @@ sealed partial class XamlEmitter
         var carriers = new XElement(XName.Get("Grid", XamlTypeResolver.PresentationNs));
         foreach (var element in carried)
         {
+            RootCarried(element);
+
             var shell = new XElement(
                 element.Name,
                 TemplateBindingsOf(element).Select(a => new XAttribute(a))
@@ -213,6 +217,24 @@ sealed partial class XamlEmitter
 
         for (var i = 0; i < carried.Count; i++)
             _grafts[carried[i]] = $"{parts}[{i}]";
+    }
+
+    void RootCarried(XElement element)
+    {
+        if (resolver.SymbolOf(element) is { } type)
+            Roots.Constructor(type);
+
+        foreach (var attribute in TemplateBindingsOf(element))
+        {
+            var local = attribute.Name.LocalName;
+            var dot = local.IndexOf('.');
+            if (
+                dot > 0
+                && ResolveIn(element, attribute.Name.NamespaceName, local.Substring(0, dot))
+                    is { } owner
+            )
+                RootAttachedOwner(owner, local.Substring(dot + 1));
+        }
     }
 
     readonly Dictionary<XElement, string> _grafts = new Dictionary<XElement, string>();
@@ -343,6 +365,7 @@ sealed partial class XamlEmitter
         }
 
         var cast = CastTypeOr(expected, "global::Noesis.BaseComponent");
+        RootParsed(element);
 
         var name = NextName(element.Name.LocalName);
         _lines.Add(

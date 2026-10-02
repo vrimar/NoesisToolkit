@@ -42,12 +42,15 @@ now:
 |---|---|
 | `ElementName` at the document root | the generated `x:Name` field |
 | `ElementName` inside a template | `FindName` off the clone, which answers per clone |
-| `RelativeSource AncestorType=T` | the nearest visual ancestor of type `T` |
+| `RelativeSource AncestorType=T` | the nearest ancestor of type `T`, walking the visual tree |
 
 The ancestor walk is visual rather than logical, because the logical parent chain stops at a
-template's own root and never reaches the control that hosts it. Which element it lands on is derived
-from the tree, not declared, so the first hop is type-checked at run time and reads null off anything
-else rather than throwing.
+template's own root and never reaches the control that hosts it. Popup content is the exception: it
+hangs off the view's popup layer, so where an element's visual parent is no element, as at a popup's
+root or under a closed popup, the walk goes on from its logical parent and reaches the controls
+around the popup, as the native walk does. Which element it lands on is derived from the tree, not
+declared, so the first hop is type-checked at run time and reads null off anything else rather than
+throwing.
 
 Off an element the path reads either its `DataContext` — `{Binding ElementName=Grid,
 Path=DataContext.SaveCommand}` — or one of its dependency properties, `{Binding ElementName=Box,

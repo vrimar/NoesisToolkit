@@ -1,6 +1,9 @@
 using System.Collections.Generic;
+using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
+
+readonly record struct UnrootedDiagnostic(string Message, LocationInfo? Location);
 
 /// <summary>What compiling one XAML document produced: the source to add, the diagnostics it
 /// earned, and the counts the coverage survey aggregates. The registry and the per-file output
@@ -22,6 +25,8 @@ sealed class CompiledDocument(string file)
     public IReadOnlyList<string> Errors { get; set; } = [];
 
     public IReadOnlyList<string> DeadMarkup { get; set; } = [];
+
+    public IReadOnlyList<UnrootedDiagnostic> Unrooted { get; set; } = [];
 
     public BindingTally Tally { get; set; } = new BindingTally();
 

@@ -132,6 +132,7 @@ sealed partial class XamlEmitter
             case "global::Noesis.Cursor":
                 return $"global::Noesis.Cursors.{text}";
             case "global::Noesis.PropertyPath":
+                RootPropertyPath(scope, text);
                 return $"new global::Noesis.PropertyPath({Quote(NativePath(scope, text))})";
             case "global::Noesis.FontFamily":
                 return filePath.Length == 0

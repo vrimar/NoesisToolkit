@@ -17,6 +17,25 @@ sealed partial class XamlEmitter
         XAttribute attribute
     )
     {
+        var outer = _attribute;
+        _attribute = attribute;
+        try
+        {
+            ApplyAttributeCore(element, target, type, attribute);
+        }
+        finally
+        {
+            _attribute = outer;
+        }
+    }
+
+    void ApplyAttributeCore(
+        XElement element,
+        string target,
+        INamedTypeSymbol type,
+        XAttribute attribute
+    )
+    {
         if (attribute.IsNamespaceDeclaration)
             return;
 
@@ -270,7 +289,7 @@ sealed partial class XamlEmitter
                 )
                     return;
 
-                var binding = EmitBindingLike(element, call);
+                var binding = EmitBindingLike(element, call, propertyName);
                 if (binding is not null)
                     _lines.Add(
                         $"{target}.SetBinding({ownerFqn}.{propertyName}Property, {binding});"
@@ -385,6 +404,8 @@ sealed partial class XamlEmitter
             return;
         }
 
+        RootNamedByText(element, type, name, XamlMarkupParser.Unescape(rawValue));
+
         var value = ConvertValue(element, XamlMarkupParser.Unescape(rawValue), property.Type);
         if (value is null)
             return;
@@ -416,7 +437,7 @@ sealed partial class XamlEmitter
                 return;
             case "Binding":
             {
-                var binding = EmitBindingLike(element, call);
+                var binding = EmitBindingLike(element, call, property.Name);
                 if (binding is null)
                     return;
 

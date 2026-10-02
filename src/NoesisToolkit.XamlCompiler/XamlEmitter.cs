@@ -204,8 +204,8 @@ sealed partial class XamlEmitter(
 
     /// <summary>Deciding whether a construct CAN compile is speculative: one that refuses stays
     /// native and is not a fault. Speculation is a property of the call, so the channels a refusal
-    /// would otherwise mark -- the diagnostics, the reason, the dead markup and the tally -- are
-    /// restored when the scope closes.</summary>
+    /// would otherwise mark -- the diagnostics, the reason, the dead markup, the tally and the
+    /// trimming roots -- are restored when the scope closes.</summary>
     Speculation Speculate() => new Speculation(this);
 
     readonly struct Speculation : IDisposable
@@ -215,6 +215,7 @@ sealed partial class XamlEmitter(
         readonly int _dead;
         readonly string? _refusal;
         readonly BindingTally _tally;
+        readonly RootsMark _roots;
 
         internal Speculation(XamlEmitter emitter)
         {
@@ -223,6 +224,7 @@ sealed partial class XamlEmitter(
             _dead = emitter.DeadMarkup.Count;
             _refusal = emitter._refusal;
             _tally = emitter.Tally.Snapshot();
+            _roots = emitter.MarkRoots();
         }
 
         public void Dispose()
@@ -231,6 +233,7 @@ sealed partial class XamlEmitter(
             _emitter.DeadMarkup.RemoveRange(_dead, _emitter.DeadMarkup.Count - _dead);
             _emitter._refusal = _refusal;
             _emitter.Tally.Restore(_tally);
+            _emitter.RestoreRoots(_roots);
         }
     }
 }

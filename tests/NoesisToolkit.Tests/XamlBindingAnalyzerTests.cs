@@ -66,6 +66,53 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
+    public async Task A_hierarchical_template_checks_its_bindings_against_its_own_data_type()
+    {
+        var diagnostics = await Bindings(
+            "ShellViewModel",
+            """
+            <Grid>
+              <Grid.Resources>
+                <HierarchicalDataTemplate DataType="{x:Type ui:ItemViewModel}">
+                  <StackPanel>
+                    <TextBlock Text="{Binding DefIdInt}" />
+                    <TextBlock Text="{Binding Nope}" />
+                  </StackPanel>
+                </HierarchicalDataTemplate>
+              </Grid.Resources>
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("Nope");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ItemViewModel");
+    }
+
+    [Test]
+    public async Task A_column_stating_its_row_type_keeps_the_list_context_for_its_own_bindings()
+    {
+        var diagnostics = await Bindings(
+            "ItemViewModel",
+            """
+            <ListView ItemsSource="{Binding Rows}">
+              <ListView.View>
+                <GridView>
+                  <GridViewColumn
+                    ntk:ItemType="ui:ShellViewModel"
+                    Header="{Binding DefIdInt}"
+                    DisplayMemberBinding="{Binding Items}"
+                  />
+                </GridView>
+              </ListView.View>
+            </ListView>
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
     public async Task An_untyped_binding_is_silent_without_the_marker()
     {
         var diagnostics = await Document(

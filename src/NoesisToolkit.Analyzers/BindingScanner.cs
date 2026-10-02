@@ -356,6 +356,7 @@ internal static class BindingScanner
         switch (name)
         {
             case "DataTemplate":
+            case "HierarchicalDataTemplate":
                 frame.Data = ResolveDataTemplateScope(reader, parent, prefixes);
                 break;
             case "Style":

@@ -1,0 +1,11 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:s="clr-namespace:Sample.Shapes"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+>
+  <Style x:Key="Hinted" TargetType="r:Gauge" ntk:DataType="r:RowViewModel">
+    <Setter Property="r:Hint.Text" Value="{Binding Name, Converter={s:Inline Format=x}}" />
+  </Style>
+</ResourceDictionary>

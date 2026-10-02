@@ -1,0 +1,21 @@
+<UserControl
+  x:Class="Sample.Roots.ContentHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:s="clr-namespace:Sample.Shapes"
+>
+  <StackPanel>
+    <Button Click="OnGo" />
+    <s:Plate>
+      <s:Plate.Caption>Hello</s:Plate.Caption>
+      <s:Plate.Mood>Angry</s:Plate.Mood>
+      <s:Plate.Detail>
+        <r:RowDetail Hits="3" />
+      </s:Plate.Detail>
+    </s:Plate>
+    <s:Holder>
+      <s:Item Name="a" />
+    </s:Holder>
+  </StackPanel>
+</UserControl>

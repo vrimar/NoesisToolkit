@@ -54,7 +54,7 @@ public class DependencyPropertyChangedEventArgs : System.EventArgs
     public object? NewValue;
 }
 
-public class DependencyObject
+public class DependencyObject : BaseComponent
 {
     readonly System.Collections.Generic.Dictionary<DependencyProperty, object?> _values = new();
 
@@ -132,12 +132,24 @@ public class FrameworkElement : DependencyObject
 
     protected virtual bool ConnectEvent(object source, string eventName, string handlerName) => false;
 
+    protected virtual Size MeasureOverride(Size availableSize) => availableSize;
+
+    protected virtual Size ArrangeOverride(Size finalSize) => finalSize;
+
+    protected virtual void OnRender(DrawingContext context) { }
+
+    public virtual void OnApplyTemplate() { }
+
+    protected virtual void OnPropertyChanged(DependencyPropertyChangedEventArgs args) { }
+
     protected void RaiseLoaded() => Loaded?.Invoke(this, System.EventArgs.Empty);
 }
 
 [ContentProperty("Content")]
 public class ContentControl : FrameworkElement
 {
+    public static readonly DependencyProperty ContentProperty = DependencyProperty.Register("Content", typeof(object), typeof(ContentControl), new FrameworkPropertyMetadata());
+
     public object? Content { get; set; }
 
     public DataTemplate? ContentTemplate { get; set; }
@@ -508,9 +520,49 @@ public class DataTemplate : FrameworkTemplate
 
 public class ItemsControl : Control
 {
-    public object? ItemsSource { get; set; }
+    public static readonly DependencyProperty DisplayMemberPathProperty = DependencyProperty.Register("DisplayMemberPath", typeof(string), typeof(ItemsControl), new FrameworkPropertyMetadata());
+
+    public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register("ItemsSource", typeof(object), typeof(ItemsControl), new FrameworkPropertyMetadata());
+
+    public object? ItemsSource { get => GetValue(ItemsSourceProperty); set => SetValue(ItemsSourceProperty, value); }
     public DataTemplate? ItemTemplate { get; set; }
+    public string? DisplayMemberPath { get => (string?)GetValue(DisplayMemberPathProperty); set => SetValue(DisplayMemberPathProperty, value); }
 }
+
+public class ListView : ItemsControl
+{
+    public View? View { get; set; }
+}
+
+public class View { }
+
+[ContentProperty("Columns")]
+public class GridView : View
+{
+    public GridViewColumnCollection Columns { get; } = new GridViewColumnCollection();
+}
+
+public class GridViewColumnCollection : System.Collections.Generic.List<GridViewColumn> { }
+
+public class GridViewColumn
+{
+    public BindingExpressionBase? DisplayMemberBinding { get; set; }
+    public object? Header { get; set; }
+    public DataTemplate? CellTemplate { get; set; }
+}
+
+public class HierarchicalDataTemplate : DataTemplate
+{
+    public BindingBase? ItemsSource { get; set; }
+}
+
+public struct Size
+{
+    public float Width;
+    public float Height;
+}
+
+public class DrawingContext { }
 
 [ContentProperty("Child")]
 public class Decorator : FrameworkElement

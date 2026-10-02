@@ -1,0 +1,16 @@
+<UserControl
+  x:Class="Sample.Roots.OverridesHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:s="clr-namespace:Sample.Shapes"
+  xmlns:lib="clr-namespace:Lib;assembly=LibAsm"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:DataType="s:ShapesPanel"
+>
+  <StackPanel>
+    <lib:Shelf />
+    <ItemsControl ItemsSource="{Binding Options}" />
+    <TextBlock Text="{Binding Picked.Label}" />
+    <TextBlock ntk:DataType="lib:LibRow" Text="{Binding X}" />
+  </StackPanel>
+</UserControl>

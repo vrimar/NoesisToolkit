@@ -1391,7 +1391,7 @@ sealed partial class XamlEmitter
             }
 
             if (
-                scope.Name.LocalName == "DataTemplate"
+                scope.Name.LocalName is "DataTemplate" or "HierarchicalDataTemplate"
                 && scope.Attribute("DataType") is { } declared
             )
                 return Redirected(ResolveTypeSymbol(scope, declared.Value), redirects);

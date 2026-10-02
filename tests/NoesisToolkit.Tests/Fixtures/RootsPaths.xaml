@@ -1,0 +1,33 @@
+<UserControl
+  x:Class="Sample.Roots.PathsHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:s="clr-namespace:Sample.Shapes"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:DataType="s:ShapesPanel"
+>
+  <i:Interaction.Triggers>
+    <r:Watcher EventName="Opened" />
+  </i:Interaction.Triggers>
+  <StackPanel>
+    <r:Gauge x:Name="Meter" />
+    <TextBlock x:Name="Other" />
+    <Border>
+      <i:Interaction.Triggers>
+        <r:Watcher EventName="Pinged" Source="{Binding ElementName=Meter}" />
+        <r:Watcher
+          EventName="Pinged"
+          Source="{Binding RelativeSource={RelativeSource AncestorType=r:Gauge}}"
+        />
+      </i:Interaction.Triggers>
+    </Border>
+    <TextBlock Text="{Binding Where.X}" />
+    <TextBlock Text="{Binding Rows[0].Name}" />
+    <TextBlock
+      xmlns:h="clr-namespace:Sample.Roots"
+      Text="{Binding (h:Hint.Text), ElementName=Other}"
+    />
+  </StackPanel>
+</UserControl>

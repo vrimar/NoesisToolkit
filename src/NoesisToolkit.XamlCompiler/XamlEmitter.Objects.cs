@@ -98,6 +98,10 @@ sealed partial class XamlEmitter
         if (!constructible)
             return EmitParserFallback(element, expected);
 
+        // The engine stamps a template out by constructing each managed object of it again.
+        if (_templates.Count > 0)
+            Roots.Constructor(symbol);
+
         var name = NextName(element.Name.LocalName);
         _elementVars[element] = name;
         if (_grafts.TryGetValue(element, out var grafted))

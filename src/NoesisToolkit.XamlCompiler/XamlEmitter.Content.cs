@@ -456,8 +456,8 @@ sealed partial class XamlEmitter
 
             var binding =
                 elements[0].Name.LocalName == "MultiBinding"
-                    ? EmitMultiBinding(elements[0])
-                    : EmitBindingElement(elements[0]);
+                    ? EmitMultiBinding(elements[0], propertyName)
+                    : EmitBindingElement(elements[0], propertyName);
 
             if (binding is null)
                 return;

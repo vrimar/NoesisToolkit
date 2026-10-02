@@ -215,6 +215,8 @@ sealed partial class XamlEmitter
         if (basedOnKey is not null)
             basedOn!.Remove();
 
+        RootParsed(entry);
+
         var parsed = NextName("escaped");
         _lines.Add(
             $"var {parsed} = (global::Noesis.ResourceDictionary)global::Noesis.GUI.ParseXaml({Verbatim(WrapAsDictionary(escaped))});"

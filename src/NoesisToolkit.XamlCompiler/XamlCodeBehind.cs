@@ -216,9 +216,13 @@ static class XamlCodeBehind
         INamedTypeSymbol rootClass,
         Scan scan,
         string logicalName,
-        bool compiled
+        bool compiled,
+        IReadOnlyList<string> roots
     )
     {
+        foreach (var attribute in roots)
+            w.Line(attribute);
+
         using (w.Block("public void InitializeComponent()"))
         {
             if (compiled)

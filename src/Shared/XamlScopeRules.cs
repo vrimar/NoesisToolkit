@@ -53,6 +53,7 @@ internal static class XamlScopeRules
     )
     {
         "DataTemplate",
+        "HierarchicalDataTemplate",
         "ControlTemplate",
         "ItemsPanelTemplate",
         "Style",

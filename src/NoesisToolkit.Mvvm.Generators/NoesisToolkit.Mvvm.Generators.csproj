@@ -5,6 +5,9 @@
     <NoesisSharedFile Include="PartialTypeEmitter" />
     <NoesisSharedFile Include="SymbolFormats" />
     <NoesisSharedFile Include="IsExternalInitPolyfill" />
+    <NoesisSharedFile Include="LocationInfo" />
+    <NoesisSharedFile Include="DynamicDependencies" />
+    <NoesisSharedFile Include="ProbedOverrides" />
   </ItemGroup>
 
   <Import Project="../../build/Analyzer.props" />

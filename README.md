@@ -57,7 +57,12 @@ Every compiled assembly gets a `XamlCompileSurvey.g.cs` whose header comment lis
 compiler cannot handle has two escape hatches: give it an event handler in markup, which moves it to
 the native loader wholesale, or exclude it from `AdditionalFiles`.
 
-The generated surface, resource timing and the event-handler fallback are in
+A trimmed or NativeAOT build needs no hand-kept roots for what markup reaches by name: a binding
+left native, markup left to the parser and an `EventName` are rooted on the method that builds their
+document, and `NTK1004` marks what the compiler cannot type. Keep `Noesis.GUI` itself whole
+(`<TrimmerRootAssembly Include="Noesis.GUI" />`).
+
+The generated surface, resource timing, trimming and the event-handler fallback are in
 [docs/xaml-compiler.md](https://github.com/vrimar/NoesisToolkit/blob/main/docs/xaml-compiler.md).
 
 ## NoesisToolkit.Analyzers

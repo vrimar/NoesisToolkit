@@ -1,0 +1,41 @@
+<UserControl
+  x:Class="Sample.Roots.NativeHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:other="clr-namespace:Other;assembly=OtherAsm"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:DataType="r:PanelViewModel"
+>
+  <StackPanel>
+    <TextBlock x:Name="Title" Text="{Binding Headline.Text}" />
+    <TextBlock Text="{Binding Labelled.Label}" />
+    <TextBlock Text="{Binding Shelf.Balance}" />
+    <TextBlock Text="{Binding Mood}" />
+    <Button Tag="{Binding SaveCommand}" />
+    <TextBlock Text="{Binding Text, ElementName=Title}" />
+    <r:Gauge x:Name="Meter">
+      <i:Interaction.Triggers>
+        <r:Watcher EventName="Pinged" />
+        <r:Watcher EventName="Refreshed" Source="{Binding}" />
+      </i:Interaction.Triggers>
+    </r:Gauge>
+    <TextBlock Text="{Binding Caption, ElementName=Meter}" />
+    <TextBlock Text="{Binding Level, ElementName=Meter}" />
+    <TextBlock Text="{Binding (r:Hint.Text), RelativeSource={RelativeSource Self}}" />
+    <ItemsControl ItemsSource="{Binding Rows}" DisplayMemberPath="Name" />
+    <ItemsControl ItemsSource="{Binding Rows}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <r:Gauge />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <r:Dial />
+    <Border DataContext="{Binding Inner}">
+      <TextBlock Text="{Binding Note}" />
+    </Border>
+    <TextBlock ntk:DataType="other:InternalVm" Text="{Binding Secret}" />
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,32 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+>
+  <DataTemplate x:Key="Table" ntk:DataType="r:PanelViewModel">
+    <ListView ItemsSource="{Binding Rows}">
+      <ListView.View>
+        <GridView>
+          <GridViewColumn DisplayMemberBinding="{Binding Detail.Hits}">
+            <GridViewColumn.Header>
+              <r:Dial Caption="Hits" Mood="Angry" />
+            </GridViewColumn.Header>
+          </GridViewColumn>
+        </GridView>
+      </ListView.View>
+    </ListView>
+  </DataTemplate>
+
+  <Style x:Key="Hinted" TargetType="r:Gauge" ntk:DataType="r:RowViewModel">
+    <Setter Property="r:Hint.Text" Value="{Binding Name}" />
+  </Style>
+
+  <ControlTemplate x:Key="Chrome" TargetType="r:Gauge">
+    <r:Dial Tag="{TemplateBinding Tag}" />
+  </ControlTemplate>
+
+  <HierarchicalDataTemplate DataType="{x:Type r:FolderNode}" ItemsSource="{Binding Children}">
+    <TextBlock Text="{Binding Title}" />
+  </HierarchicalDataTemplate>
+</ResourceDictionary>

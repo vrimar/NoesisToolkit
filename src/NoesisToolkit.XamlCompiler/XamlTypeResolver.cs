@@ -278,6 +278,41 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             ?.ConstructorArguments[0]
             .Value as string;
 
+    List<INamedTypeSymbol>? _applicationTypes;
+
+    public IReadOnlyList<INamedTypeSymbol> ApplicationTypes()
+    {
+        if (_applicationTypes is not null)
+            return _applicationTypes;
+
+        var types = new List<INamedTypeSymbol>();
+        Collect(compilation.Assembly.GlobalNamespace);
+        foreach (var reference in compilation.SourceModule.ReferencedAssemblySymbols)
+        {
+            if (!Framework(reference.Name))
+                Collect(reference.GlobalNamespace);
+        }
+
+        return _applicationTypes = types;
+
+        void Collect(INamespaceOrTypeSymbol container)
+        {
+            foreach (var member in container.GetMembers())
+            {
+                if (member is INamedTypeSymbol type)
+                    types.Add(type);
+
+                if (member is INamespaceOrTypeSymbol nested)
+                    Collect(nested);
+            }
+        }
+    }
+
+    public static bool Framework(string assembly) =>
+        assembly is "mscorlib" or "netstandard" or "Noesis.GUI"
+        || assembly.StartsWith("System", StringComparison.Ordinal)
+        || assembly.StartsWith("Microsoft", StringComparison.Ordinal);
+
     public static bool DerivesFrom(ITypeSymbol type, string fullName) =>
         BaseChain(type).Any(t => Fqn(t) == fullName);
 

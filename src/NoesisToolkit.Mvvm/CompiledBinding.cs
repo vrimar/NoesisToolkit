@@ -346,9 +346,11 @@ public sealed class CompiledBinding
             StringComparison.Ordinal
         );
 
-    /// <summary>The nearest visual ancestor of <paramref name="element"/> the given type accepts,
-    /// which is where a FindAncestor binding roots. The logical parent chain stops at a template's
-    /// own root, so only the visual one reaches out of template content.</summary>
+    /// <summary>The nearest ancestor of <paramref name="element"/> the given type accepts, which is
+    /// where a FindAncestor binding roots. The walk follows the visual tree, since the logical one
+    /// stops at a template's own root; where an element has no visual parent that is an element,
+    /// as a closed popup's content and an open popup's root do, it goes on from the logical parent,
+    /// so content inside a <c>Popup</c> reaches the elements around the popup.</summary>
     /// <param name="element">Where the walk starts; it is not itself a candidate.</param>
     /// <param name="type">The ancestor type to match, subclasses included.</param>
     /// <returns>The ancestor, or null when the tree holds none.</returns>
@@ -358,9 +360,9 @@ public sealed class CompiledBinding
         Guard.NotNull(type, nameof(type));
 
         for (
-            var current = VisualTreeHelper.GetParent(element);
+            var current = AncestorStep(element);
             current is not null;
-            current = VisualTreeHelper.GetParent(current)
+            current = AncestorStep(current)
         )
         {
             if (current is FrameworkElement found && type.IsInstanceOfType(found))
@@ -370,9 +372,13 @@ public sealed class CompiledBinding
         return null;
     }
 
-    /// <summary>The nearest of <paramref name="element"/> and its visual ancestors the given type
-    /// accepts, which is where a FindAncestor binding on an object attached to the element roots:
-    /// that walk counts the element the object hangs off.</summary>
+    static DependencyObject? AncestorStep(DependencyObject element) =>
+        VisualTreeHelper.GetParent(element) as UIElement ?? (element as FrameworkElement)?.Parent;
+
+    /// <summary>The nearest of <paramref name="element"/> and the ancestors
+    /// <see cref="FindAncestor"/> walks that the given type accepts, which is where a FindAncestor
+    /// binding on an object attached to the element roots: that walk counts the element the object
+    /// hangs off.</summary>
     /// <param name="element">Where the walk starts; it is itself the first candidate.</param>
     /// <param name="type">The ancestor type to match, subclasses included.</param>
     /// <returns>The element or ancestor, or null when neither matches.</returns>

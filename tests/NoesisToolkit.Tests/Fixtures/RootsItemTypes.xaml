@@ -1,0 +1,27 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+>
+  <DataTemplate x:Key="Table" ntk:DataType="r:PanelViewModel">
+    <StackPanel>
+      <ListView ItemsSource="{Binding Loose}">
+        <ListView.View>
+          <GridView>
+            <GridViewColumn
+              ntk:ItemType="r:RowViewModel"
+              Header="{Binding Headline.Text}"
+              DisplayMemberBinding="{Binding Detail.Hits}"
+            />
+          </GridView>
+        </ListView.View>
+      </ListView>
+      <ItemsControl
+        ItemsSource="{Binding Loose}"
+        ntk:ItemType="r:RowViewModel"
+        DisplayMemberPath="Name"
+      />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>
