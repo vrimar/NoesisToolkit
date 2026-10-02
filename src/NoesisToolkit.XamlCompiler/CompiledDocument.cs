@@ -3,7 +3,7 @@ using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
 
-readonly record struct UnrootedDiagnostic(string Message, LocationInfo? Location);
+readonly record struct MarkupDiagnostic(string Message, LocationInfo? Location);
 
 /// <summary>What compiling one XAML document produced: the source to add, the diagnostics it
 /// earned, and the counts the coverage survey aggregates. The registry and the per-file output
@@ -26,11 +26,15 @@ sealed class CompiledDocument(string file)
 
     public IReadOnlyList<string> DeadMarkup { get; set; } = [];
 
-    public IReadOnlyList<UnrootedDiagnostic> Unrooted { get; set; } = [];
+    public IReadOnlyList<MarkupDiagnostic> Unrooted { get; set; } = [];
 
     public BindingTally Tally { get; set; } = new BindingTally();
 
     public bool NeedsLoader { get; set; }
+
+    public MarkupDiagnostic? Loader { get; set; }
+
+    public IReadOnlyList<MarkupDiagnostic> UnresolvedTypes { get; set; } = [];
 
     /// <summary>The registry row a compiled dictionary contributes; null for every other outcome.</summary>
     public string? DictionaryRow { get; set; }

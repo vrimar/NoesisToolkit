@@ -30,6 +30,8 @@ static class XamlCodeBehind
 
         public bool UnresolvedHandlers;
 
+        public XAttribute? LoaderAttribute;
+
         public bool NeedsLoader => Events.Count > 0 || UnresolvedHandlers;
     }
 
@@ -51,11 +53,15 @@ static class XamlCodeBehind
                 if (
                     element
                         .Attributes()
-                        .Any(a =>
+                        .FirstOrDefault(a =>
                             IsHandlerShaped(a) || AttachedEvent(element, a, resolver) is not null
-                        )
+                        ) is
+                    { } suspected
                 )
+                {
                     scan.UnresolvedHandlers = true;
+                    scan.LoaderAttribute ??= suspected;
+                }
                 continue;
             }
 
@@ -81,7 +87,10 @@ static class XamlCodeBehind
                 if (local.Contains("."))
                 {
                     if (AttachedEvent(element, attribute, resolver) is { } attached)
+                    {
                         ReadAttachedEvent(scan, type, attribute.Value.Trim(), attached, resolver);
+                        scan.LoaderAttribute ??= attribute;
+                    }
                     continue;
                 }
 
@@ -89,9 +98,12 @@ static class XamlCodeBehind
                     resolver.FindProperty(type, local) is null
                     && resolver.FindEvent(type, local) is not null
                 )
+                {
                     scan.Events.Add(
                         new EventHook(local, attribute.Value.Trim(), XamlTypeResolver.Fqn(type))
                     );
+                    scan.LoaderAttribute ??= attribute;
+                }
             }
         }
 

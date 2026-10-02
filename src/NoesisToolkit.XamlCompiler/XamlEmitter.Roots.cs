@@ -16,6 +16,8 @@ sealed partial class XamlEmitter
 
     public readonly List<UnrootedName> Unrooted = new List<UnrootedName>();
 
+    public readonly List<XAttribute> UnresolvedTypes = new List<XAttribute>();
+
     XAttribute? _attribute;
 
     HashSet<ITypeSymbol>? _referenced;
@@ -1081,6 +1083,18 @@ sealed partial class XamlEmitter
 
     void ReportUnrooted(XElement element, string message)
     {
+        // NTK1006 already names the stated type every name under it depends on.
+        if (
+            element
+                .AncestorsAndSelf()
+                .Any(scope =>
+                    scope
+                        .Attributes()
+                        .Any(a => IsStatedType(a.Name) && ResolveTypeSymbol(scope, a.Value) is null)
+                )
+        )
+            return;
+
         IXmlLineInfo at =
             _attribute is { } attribute && attribute.Parent == element ? attribute : element;
 
@@ -1129,13 +1143,14 @@ sealed partial class XamlEmitter
 
             var name = attribute.Name;
             if (
-                name.NamespaceName == XamlTypeResolver.ToolkitNs
-                    ? name.LocalName is "DataType" or "AncestorDataType" or ItemTypeAttribute
-                    : name.NamespaceName.Length == 0 && name.LocalName is "DataType" or "TargetType"
+                IsStatedType(name)
+                || name.NamespaceName.Length == 0 && name.LocalName is "DataType" or "TargetType"
             )
             {
                 if (ResolveTypeSymbol(element, attribute.Value) is { } stated)
                     _referenced!.Add(stated);
+                else if (IsStatedType(name))
+                    UnresolvedTypes.Add(attribute);
             }
             else if (XamlMarkupParser.Parse(attribute.Value) is { Name: "Binding" } binding)
             {
@@ -1147,6 +1162,10 @@ sealed partial class XamlEmitter
             }
         }
     }
+
+    static bool IsStatedType(XName name) =>
+        name.NamespaceName == XamlTypeResolver.ToolkitNs
+        && name.LocalName is "DataType" or "AncestorDataType" or ItemTypeAttribute;
 
     void ReferenceThrough(XElement element, MarkupCall call, string? slot)
     {

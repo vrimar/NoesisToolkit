@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
@@ -43,6 +44,27 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         description: "The engine resolves a binding it was left, and a name the document hands it as "
             + "text, by reflection at run time. A trimmed build keeps only what the compiler can "
             + "name, and it cannot name a member of a type it cannot determine."
+    );
+
+    static readonly DiagnosticDescriptor LeftToLoader = new(
+        "NTK1005",
+        "A document is parsed at run time",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "Every other document is built in code, so an app can ship without its XAML. "
+            + "This one stays on GUI.LoadComponent, which parses the document's source at run time, "
+            + "so that source has to ship with the app."
+    );
+
+    static readonly DiagnosticDescriptor UnresolvedType = new(
+        "NTK1006",
+        "A type the document states does not resolve",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true
     );
 
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
@@ -173,6 +195,24 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     Unrootable,
                     unrooted.Location?.ToLocation(),
                     $"{document.File} :: {unrooted.Message}"
+                )
+            );
+
+        foreach (var unresolved in document.UnresolvedTypes)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    UnresolvedType,
+                    unresolved.Location?.ToLocation(),
+                    $"{document.File} :: {unresolved.Message}"
+                )
+            );
+
+        if (document.Loader is { } loader)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    LeftToLoader,
+                    loader.Location?.ToLocation(),
+                    $"{document.File} :: {loader.Message}"
                 )
             );
 
@@ -516,7 +556,22 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         if (rootClass is not null)
         {
-            EmitRootClass(w, root, rootClass, resolver, emitter, compilation, document);
+            var handler = EmitRootClass(
+                w,
+                root,
+                rootClass,
+                resolver,
+                emitter,
+                compilation,
+                document
+            );
+            if (handler is not null)
+                document.Loader = new MarkupDiagnostic(
+                    $"{handler.Name.LocalName}=\"{handler.Value}\" wires a handler in markup, so "
+                        + "GUI.LoadComponent parses this document at run time and its source has to "
+                        + "ship; subscribe the handler in code to build the document in code",
+                    LocationIn(path, text, handler)
+                );
         }
         else
         {
@@ -545,10 +600,21 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         document.Tally = emitter.Tally;
         document.Errors = emitter.Errors;
         document.DeadMarkup = emitter.DeadMarkup;
+        document.UnresolvedTypes = emitter
+            .UnresolvedTypes.Distinct()
+            .Select(a => new MarkupDiagnostic(
+                $"ntk:{a.Name.LocalName}=\"{a.Value}\" names no type the compiler can find; check "
+                    + "the prefix's clr-namespace and assembly",
+                LocationIn(path, text, a)
+            ))
+            .ToList();
         if (options.Trimmed)
             document.Unrooted = emitter
                 .Unrooted.Distinct()
-                .Select(u => new UnrootedDiagnostic(u.Message, LocationIn(path, text, u)))
+                .Select(u => new MarkupDiagnostic(
+                    u.Message,
+                    LocationIn(path, text, u.Line, u.Column)
+                ))
                 .ToList();
 
         if (isDictionary && emitter.Errors.Count == 0)
@@ -581,7 +647,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
     }
 
     // A managed handler pins the root through the child element; only the loader owns that lifetime.
-    static void EmitRootClass(
+    static XAttribute? EmitRootClass(
         CodeWriter w,
         XElement root,
         INamedTypeSymbol rootClass,
@@ -596,7 +662,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         {
             emitter.Errors.Add(conflict);
             document.Gated = true;
-            return;
+            return null;
         }
 
         var compiled = !scan.NeedsLoader;
@@ -634,22 +700,26 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         }
 
         PartialTypeEmitter.Close(scopes);
+        return scan.LoaderAttribute;
     }
 
+    static LocationInfo? LocationIn(string path, string text, IXmlLineInfo at) =>
+        at.HasLineInfo() ? LocationIn(path, text, at.LineNumber, at.LinePosition) : null;
+
     // Line information is 1-based and counts a tab as one column, as a text span does.
-    static LocationInfo? LocationIn(string path, string text, UnrootedName unrooted)
+    static LocationInfo? LocationIn(string path, string text, int lineNumber, int column)
     {
-        if (unrooted.Line <= 0)
+        if (lineNumber <= 0)
             return null;
 
         var offset = 0;
-        for (var line = 1; line < unrooted.Line && offset >= 0; line++)
+        for (var line = 1; line < lineNumber && offset >= 0; line++)
             offset = text.IndexOf('\n', offset) is var next and >= 0 ? next + 1 : -1;
 
         if (offset < 0)
             return null;
 
-        var start = Math.Min(offset + unrooted.Column - 1, text.Length);
+        var start = Math.Min(offset + column - 1, text.Length);
         var length = 0;
         while (
             start + length < text.Length
@@ -659,7 +729,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             )
         )
             length++;
-        var position = new LinePosition(unrooted.Line - 1, unrooted.Column - 1);
+        var position = new LinePosition(lineNumber - 1, column - 1);
         return new LocationInfo(
             path,
             new TextSpan(start, length),

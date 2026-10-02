@@ -491,6 +491,56 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task Document_on_the_loader_names_the_handler_that_keeps_it_there()
+    {
+        var run = Run(["Handlers.xaml"], [HandlersPartial]);
+
+        var loaded = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1005").ToList();
+        await Assert.That(loaded.Count).IsEqualTo(1);
+        await Assert.That(loaded[0].Severity).IsEqualTo(DiagnosticSeverity.Info);
+        await Assert.That(loaded[0].GetMessage()).Contains("Click=\"OnGo\"");
+        await Assert.That(loaded[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task Compiled_document_is_not_reported_as_parsed_at_run_time()
+    {
+        var run = Shell();
+
+        await Assert.That(run.GeneratorDiagnostics.Where(d => d.Id == "NTK1005")).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_stated_type_that_does_not_resolve_is_reported_where_it_is_stated()
+    {
+        var run = Run(["UnresolvedDataType.xaml"], [UnresolvedTypesPartial]);
+
+        var unresolved = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1006").ToList();
+        await Assert.That(unresolved.Count).IsEqualTo(1);
+        await Assert.That(unresolved[0].Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        await Assert.That(unresolved[0].GetMessage()).Contains("ntk:DataType=\"moved:Row\"");
+        await Assert.That(unresolved[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(9);
+    }
+
+    [Test]
+    public async Task A_name_under_an_unresolved_stated_type_is_left_to_that_diagnostic()
+    {
+        var run = Run(
+            ["UnresolvedDataType.xaml"],
+            [UnresolvedTypesPartial],
+            new Dictionary<string, string>
+            {
+                ["build_property.ProjectDir"] = "/repo/App",
+                ["build_property.EnableTrimAnalyzer"] = "true",
+            }
+        );
+
+        var unrooted = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1004").ToList();
+        await Assert.That(unrooted.Count).IsEqualTo(1);
+        await Assert.That(unrooted[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(11);
+    }
+
+    [Test]
     public async Task Document_with_event_handlers_stays_on_the_native_loader()
     {
         var run = Run(["Handlers.xaml"], [HandlersPartial]);
@@ -858,6 +908,20 @@ public partial class XamlCompilerTests
             public WithHandlers() => InitializeComponent();
 
             void OnGo(object sender, System.EventArgs e) { }
+        }
+        """;
+
+    const string UnresolvedTypesPartial = """
+        namespace Sample;
+
+        public partial class UnresolvedTypes : global::Noesis.UserControl
+        {
+            public UnresolvedTypes() => InitializeComponent();
+        }
+
+        public class Row
+        {
+            public string Label { get; set; } = "";
         }
         """;
 }

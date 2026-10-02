@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`NTK1005` names a document parsed at run time.** The compiler builds every other document in
+  code, so an app can stop shipping its XAML; a document that wires a handler in markup still loads
+  through `GUI.LoadComponent`, which reads its source. The diagnostic is information by default and
+  sits on the handler attribute. An app that ships no XAML raises it to an error in a global analyzer
+  config, so a handler added in markup fails the build rather than the screen.
+- **`NTK1006` reports an `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` that names no
+  type**, at the attribute. A type moved to another namespace left its annotation resolving to
+  nothing, and every binding under it was reported as `NTK1004`, undeclared, with no word about the
+  annotation that was there. Those bindings are now left to the one report on the annotation.
+- **`AttachedObjects.AssociatedObjectOf` reads a behavior's element during a teardown without an
+  error.** Noesis detaches a behavior or trigger after it has let the element go, and
+  `AssociatedObject` read in `OnDetaching` then logs "Extend already removed" and returns null. This
+  returns null without the error, and the element itself everywhere else.
+
 ## [0.3.6] - 2026-10-02
 
 ### Added

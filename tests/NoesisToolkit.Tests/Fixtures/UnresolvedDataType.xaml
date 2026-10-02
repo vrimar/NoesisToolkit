@@ -1,0 +1,14 @@
+<UserControl
+  x:Class="Sample.UnresolvedTypes"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:app="clr-namespace:Sample"
+  xmlns:moved="clr-namespace:Sample.Moved"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+>
+  <StackPanel>
+    <TextBlock ntk:DataType="moved:Row" Text="{Binding Label}" />
+    <TextBlock ntk:DataType="app:Row" Text="{Binding Label}" />
+    <TextBlock Text="{Binding Label}" />
+  </StackPanel>
+</UserControl>

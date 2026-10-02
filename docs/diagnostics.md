@@ -7,6 +7,8 @@
 | `NTK1002` | Warning | coverage note — markup reached that nothing consumes |
 | `NTK1003` | Error | the compiler threw; the message carries the stack |
 | `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; raised only where the trim analyzer runs |
+| `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute that keeps it on the loader |
+| `NTK1006` | Warning | `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` names a type the compiler cannot find |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve |
@@ -45,6 +47,18 @@ implement is reported: state a class the library declares instead.
 It is raised only where the trim analyzer runs — a project that publishes trimmed or AOT, or
 declares itself trimmable or AOT-compatible — so a project nothing will trim never sees it. The roots
 are emitted everywhere, since a library that does not trim itself can be trimmed into one that does.
+
+## Why NTK1005 exists
+
+A compiled document builds its tree in code and never reads its own XAML, so an app can stop
+shipping the source of everything the compiler builds — the full layout, every binding path and
+every comment. A document that wires a handler in markup is the exception: it keeps loading through
+`GUI.LoadComponent` (see [xaml-compiler.md](xaml-compiler.md#event-handlers)), which parses that
+source at run time. Left as information it costs nothing to an app that ships its XAML anyway. An
+app that does not raises it to an error, so a handler added in markup fails the build instead of a
+screen failing to load. The diagnostic sits in a XAML file, which no `.editorconfig` section
+reaches, so the severity goes in a global analyzer config — a file holding `is_global = true` and
+`dotnet_diagnostic.NTK1005.severity = error`, listed as an `EditorConfigFiles` item.
 
 ## Why NTK2101 and NTK2102 exist
 

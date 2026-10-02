@@ -111,7 +111,8 @@ A document that wires handlers in markup — including an attached handler such 
 `ButtonBase.Click="OnClick"`, which subscribes the owner's routed event — keeps loading through
 `GUI.LoadComponent`, and gets a generated `ConnectEvent` instead of a compiled tree. A handler
 subscribed from managed code pins the root through the child element; the native loader owns that
-lifetime and the compiled path cannot.
+lifetime and the compiled path cannot. Such a document is reported as `NTK1005`, since its source
+is the one the app still has to ship.
 
 ## A compiled control inside a template the parser reads
 
