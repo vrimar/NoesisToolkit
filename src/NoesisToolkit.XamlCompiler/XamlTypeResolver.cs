@@ -17,6 +17,8 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
     public const string DirectiveNs = "http://schemas.microsoft.com/winfx/2006/xaml";
     public const string BehaviorsNs = "http://schemas.microsoft.com/xaml/behaviors";
+    public const string CompatibilityNs =
+        "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
     public const string ToolkitNs = XamlScopeRules.ToolkitNamespace;
 

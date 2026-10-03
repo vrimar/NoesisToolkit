@@ -788,6 +788,56 @@ public partial class XamlCompilerTests
         public class MyControl : global::Noesis.Button { }
         """;
 
+    static readonly Lazy<GeneratorRun> FragmentRun = new(() =>
+        Run(["FragmentNamespaces.xaml"], [ManagedControl])
+    );
+
+    [Test]
+    [Arguments("<ControlTemplate")]
+    [Arguments("Property=\"Tag\"")]
+    public async Task A_parsed_fragment_declares_each_namespace_it_names_once_and_no_other(
+        string marker
+    )
+    {
+        await Assert.That(FragmentRun.Value.Errors).IsEmpty();
+        var fragment = ParsedFragment(marker);
+
+        await Assert.That(fragment).Contains("{x:Type app:MyControl}");
+        await Assert.That(Occurrences(fragment, "xmlns:app=")).IsEqualTo(1);
+        await Assert.That(Occurrences(fragment, "xmlns:x=")).IsEqualTo(1);
+        await Assert.That(Occurrences(fragment, "xmlns=")).IsEqualTo(1);
+        await Assert.That(fragment).DoesNotContain("xmlns:unused");
+        await Assert.That(fragment).DoesNotContain("xmlns:d=");
+        await Assert.That(fragment).DoesNotContain("xmlns:mc=");
+        await Assert.That(fragment).DoesNotContain("\n");
+    }
+
+    [Test]
+    public async Task A_parsed_fragment_keeps_the_namespaces_its_ignorable_list_names()
+    {
+        await Assert.That(FragmentRun.Value.Errors).IsEmpty();
+        var fragment = ParsedFragment("<GridViewColumn");
+
+        await Assert.That(fragment).Contains("mc:Ignorable=\"d\"");
+        await Assert.That(Occurrences(fragment, "xmlns:mc=")).IsEqualTo(1);
+        await Assert.That(Occurrences(fragment, "xmlns:d=")).IsEqualTo(1);
+        await Assert.That(fragment).DoesNotContain("xmlns:app=");
+        await Assert.That(fragment).DoesNotContain("xmlns:unused");
+    }
+
+    static string ParsedFragment(string marker) =>
+        System
+            .Text.RegularExpressions.Regex.Matches(
+                FragmentRun.Value.Source("FragmentNamespaces"),
+                "ParseXaml\\(@\"((?:[^\"]|\"\")*)\""
+            )
+            .Cast<System.Text.RegularExpressions.Match>()
+            .Select(m => m.Groups[1].Value.Replace("\"\"", "\""))
+            .Single(fragment => fragment.Contains(marker));
+
+    static int Occurrences(string text, string value) =>
+        (text.Length - text.Replace(value, "").Length) / value.Length;
+
     // Lazy, not a field: tests run in parallel and a shared run must be built exactly once.
     [Test]
     public async Task A_template_binding_is_built_by_the_parser_once_per_template()

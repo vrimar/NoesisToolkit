@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Markup handed to the parser carries only the namespaces it names, each once, and no
+  indentation.** Every fragment declared every namespace in scope where it sat, and each element a
+  template rebuilt from its `{TemplateBinding}` attributes declared them again, so declarations were
+  half of all fragment text, and the generated code pretty-printed what it embedded. A prefix listed
+  in `mc:Ignorable` or `mc:MustUnderstand` counts as named. A whitespace run is written as the single
+  space the parser reduces it to.
+
 ## [0.3.7] - 2026-10-02
 
 ### Added

@@ -211,7 +211,7 @@ sealed partial class XamlEmitter
 
         var parts = NextName("templated");
         _lines.Add(
-            $"var {parts} = __templated(global::Noesis.GUI.ParseXaml({Verbatim(probe.ToString())}), {carried.Count});"
+            $"var {parts} = __templated(global::Noesis.GUI.ParseXaml({Verbatim(Serialize(probe))}), {carried.Count});"
         );
         _usesTemplated = true;
 
@@ -369,7 +369,7 @@ sealed partial class XamlEmitter
 
         var name = NextName(element.Name.LocalName);
         _lines.Add(
-            $"var {name} = ({cast})global::Noesis.GUI.ParseXaml({Verbatim(clone.ToString())});"
+            $"var {name} = ({cast})global::Noesis.GUI.ParseXaml({Verbatim(Serialize(clone))});"
         );
 
         RegisterParsedNames(element, name);
@@ -482,11 +482,115 @@ sealed partial class XamlEmitter
 
     static string ParsedStyle(XElement probe) =>
         $"((global::Noesis.Style)((global::Noesis.ResourceDictionary)"
-        + $"global::Noesis.GUI.ParseXaml({Verbatim(probe.ToString())}))[\"__p\"])";
+        + $"global::Noesis.GUI.ParseXaml({Verbatim(Serialize(probe))}))[\"__p\"])";
 
-    static string WrapAsDictionary(XElement entry) => Probe(entry, new XElement(entry)).ToString();
+    static string WrapAsDictionary(XElement entry) => Serialize(Probe(entry, new XElement(entry)));
 
     static string Verbatim(string value) => "@\"" + value.Replace("\"", "\"\"") + "\"";
+
+    static string Serialize(XElement fragment)
+    {
+        var copy = new XElement(fragment);
+
+        // One space, not none: the parser keeps a single space between adjacent inlines.
+        foreach (var text in copy.DescendantNodes().OfType<XText>().ToList())
+        {
+            if (
+                text is not XCData
+                && CollapseSpace(text.Value) == " "
+                && !PreservesSpace(text.Parent!)
+            )
+                text.Value = " ";
+        }
+
+        foreach (var element in copy.DescendantsAndSelf().ToList())
+        {
+            foreach (
+                var declaration in element
+                    .Attributes()
+                    .Where(a => a.IsNamespaceDeclaration)
+                    .ToList()
+            )
+            {
+                if (InheritedUnchanged(element.Parent, declaration) || !Named(element, declaration))
+                    declaration.Remove();
+            }
+        }
+
+        return copy.ToString(SaveOptions.DisableFormatting);
+    }
+
+    static bool InheritedUnchanged(XElement? parent, XAttribute declaration)
+    {
+        for (var e = parent; e is not null; e = e.Parent)
+        {
+            if (e.Attribute(declaration.Name) is { } outer)
+                return outer.Value == declaration.Value;
+        }
+
+        return false;
+    }
+
+    // Unprefixed type names in values resolve against the default namespace, so it always stays.
+    static bool Named(XElement scope, XAttribute declaration)
+    {
+        if (declaration.Name.Namespace != XNamespace.Xmlns)
+            return true;
+
+        var uri = declaration.Value;
+        var token = declaration.Name.LocalName + ":";
+        foreach (var element in scope.DescendantsAndSelf())
+        {
+            if (element.Name.NamespaceName == uri)
+                return true;
+
+            foreach (var attribute in element.Attributes())
+            {
+                if (attribute.IsNamespaceDeclaration)
+                    continue;
+
+                if (
+                    attribute.Name.NamespaceName == uri
+                    || NamesPrefix(attribute.Value, token)
+                    || ListsPrefix(attribute, declaration.Name.LocalName)
+                )
+                    return true;
+            }
+
+            foreach (var text in element.Nodes().OfType<XText>())
+            {
+                if (NamesPrefix(text.Value, token))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool NamesPrefix(string value, string token)
+    {
+        for (
+            var at = value.IndexOf(token, StringComparison.Ordinal);
+            at >= 0;
+            at = value.IndexOf(token, at + 1, StringComparison.Ordinal)
+        )
+        {
+            if (
+                at == 0
+                || !(char.IsLetterOrDigit(value[at - 1]) || value[at - 1] is '_' or '.' or '-')
+            )
+                return true;
+        }
+
+        return false;
+    }
+
+    static bool ListsPrefix(XAttribute attribute, string prefix) =>
+        attribute.Name.NamespaceName == XamlTypeResolver.CompatibilityNs
+        && attribute.Name.LocalName is "Ignorable" or "MustUnderstand"
+        && attribute
+            .Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Contains(prefix);
 
     /// <summary>Re-parses just this Style's BasedOn reference, so a theme style still resolves.</summary>
     string BasedOnProbe(XElement style)
