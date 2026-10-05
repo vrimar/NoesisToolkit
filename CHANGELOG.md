@@ -35,6 +35,9 @@ All notable changes to this project are documented here. The format follows
   or `Source` has a reason of its own in the survey**, `binding-in-a-` and the knob's name, such as
   `binding-in-a-fallbackvalue`. It was counted as `unclassified`, or under the reason of the
   multi-binding around it.
+- **Markup handed to the parser keeps the `xml:space="preserve"` it inherits.** The parser reads a
+  fragment alone, so an `xml:space` set on an element around it was lost, and the parser collapsed
+  the whitespace that element preserves.
 
 ## [0.3.7] - 2026-10-02
 

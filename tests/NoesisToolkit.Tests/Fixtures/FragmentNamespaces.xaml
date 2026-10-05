@@ -23,5 +23,9 @@
     <Setter Property="Tag" Value="{Binding Name}" />
   </Style>
 
+  <Style x:Key="Spaced" TargetType="{x:Type app:MyControl}" xml:space="preserve">
+    <Setter Property="ToolTip" Value="{Binding Spaced}" />
+  </Style>
+
   <GridViewColumn x:Key="Column" mc:Ignorable="d" DisplayMemberBinding="{Binding Name}" />
 </ResourceDictionary>

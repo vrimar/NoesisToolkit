@@ -968,6 +968,20 @@ public partial class XamlCompilerTests
         await Assert.That(fragment).DoesNotContain("xmlns:unused");
     }
 
+    [Test]
+    public async Task A_parsed_fragment_keeps_the_xml_space_it_inherits()
+    {
+        await Assert.That(FragmentRun.Value.Errors).IsEmpty();
+
+        await Assert
+            .That(ParsedFragment("{Binding Spaced}"))
+            .Contains("xml:space=\"preserve\"")
+            .Because(
+                "parsed alone, the fragment would otherwise collapse the text its scope preserves."
+            );
+        await Assert.That(ParsedFragment("Value=\"{Binding Name}\"")).DoesNotContain("xml:space");
+    }
+
     static string ParsedFragment(string marker) =>
         Regex
             .Matches(

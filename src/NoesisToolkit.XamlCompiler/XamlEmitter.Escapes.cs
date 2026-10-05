@@ -194,7 +194,7 @@ sealed partial class XamlEmitter
             if (TextConstructorOf(element, resolver.SymbolOf(element)!) != TextConstructor.None)
                 shell.Add(TextOf(element));
 
-            CopyNamespaces(shell, element);
+            CopyScope(shell, element);
             carriers.Add(
                 new XElement(
                     XName.Get("ContentControl", XamlTypeResolver.PresentationNs),
@@ -209,7 +209,7 @@ sealed partial class XamlEmitter
         var probe = template is null
             ? carriers
             : new XElement(template.Name, TargetTypeOf(template), carriers);
-        CopyNamespaces(probe, scope);
+        CopyScope(probe, scope);
 
         var parts = NextName("templated");
         _lines.Add(
@@ -328,7 +328,7 @@ sealed partial class XamlEmitter
 
         clone.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs))?.Remove();
 
-        CopyNamespaces(clone, element);
+        CopyScope(clone, element);
 
         var parsedType = resolver.SymbolOf(element);
         var deferred = new List<XAttribute>();
@@ -465,14 +465,17 @@ sealed partial class XamlEmitter
         }
     }
 
-    // A fragment the parser sees alone carries no enclosing scope, so every xmlns it names travels.
-    static void CopyNamespaces(XElement into, XElement from)
+    // A fragment the parser sees alone carries no enclosing scope, so every xmlns it names and the xml:space it inherits travel.
+    static void CopyScope(XElement into, XElement from)
     {
         foreach (var declaration in Namespaces(from))
         {
             if (into.Attribute(declaration.Name) is null)
                 into.Add(new XAttribute(declaration.Name, declaration.Value));
         }
+
+        if (into.Attribute(XNamespace.Xml + "space") is null && PreservesSpace(from))
+            into.Add(new XAttribute(XNamespace.Xml + "space", "preserve"));
     }
 
     /// <summary>A fragment the parser resolves alone: wrapped in a dictionary that carries its
@@ -483,7 +486,7 @@ sealed partial class XamlEmitter
             XName.Get("ResourceDictionary", XamlTypeResolver.PresentationNs),
             content
         );
-        CopyNamespaces(probe, scope);
+        CopyScope(probe, scope);
         return probe;
     }
 
