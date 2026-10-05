@@ -67,6 +67,18 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    static readonly DiagnosticDescriptor LeftNative = new(
+        "NTK1007",
+        "A binding stays native",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Hidden,
+        isEnabledByDefault: true,
+        description: "The engine resolves a binding or trigger it is left by reflection at run "
+            + "time, so every name the markup reads has to ship. Raised where the compiler leaves "
+            + "one to the engine, with the reason, for an audit of what is left."
+    );
+
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
     static readonly DiagnosticDescriptor Crashed = new(
         "NTK1003",
@@ -204,6 +216,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     UnresolvedType,
                     unresolved.Location?.ToLocation(),
                     $"{document.File} :: {unresolved.Message}"
+                )
+            );
+
+        foreach (var native in document.LeftNative)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    LeftNative,
+                    native.Location?.ToLocation(),
+                    $"{document.File} :: {native.Message}"
                 )
             );
 
@@ -606,6 +627,12 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 $"ntk:{a.Name.LocalName}=\"{a.Value}\" names no type the compiler can find; check "
                     + "the prefix's clr-namespace and assembly",
                 LocationIn(path, text, a)
+            ))
+            .ToList();
+        document.LeftNative = emitter
+            .LeftNative.Select(n => new MarkupDiagnostic(
+                n.Message,
+                LocationIn(path, text, n.Line, n.Column)
             ))
             .ToList();
         if (options.Trimmed)

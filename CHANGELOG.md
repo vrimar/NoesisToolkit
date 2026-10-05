@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`NTK1007` names each binding and trigger that falls back to the engine, and why**, at the
+  attribute or element that holds it, along with every binding in markup handed to the parser
+  whole. The survey counted fallbacks per file, so finding one meant reading the generated code,
+  and it did not count parsed markup at all. It is hidden by default, since a binding native on
+  purpose leaves nothing to fix; an audit raises it in a global analyzer config.
+
 ### Changed
 
 - **Markup handed to the parser carries only the namespaces it names, each once, and no
@@ -13,6 +21,20 @@ All notable changes to this project are documented here. The format follows
   half of all fragment text, and the generated code pretty-printed what it embedded. A prefix listed
   in `mc:Ignorable` or `mc:MustUnderstand` counts as named. A whitespace run is written as the single
   space the parser reduces it to.
+
+### Fixed
+
+- **A binding on an element whose type the compiler cannot resolve is rooted.** The parser builds
+  such an element whole, and its markup was skipped along with its type, so a trimmed build could
+  drop what the binding reads without a word. It is now rooted, or reported as `NTK1004`, like any
+  other binding the parser builds.
+- **`NTK1004` is raised once for a binding held back from an element the parser builds**, at its
+  attribute. A binding that names a resource is applied in code after the parse, and was reported
+  there a second time, at the element.
+- **A binding written in another binding's `FallbackValue`, `TargetNullValue`, `ConverterParameter`
+  or `Source` has a reason of its own in the survey**, `binding-in-a-` and the knob's name, such as
+  `binding-in-a-fallbackvalue`. It was counted as `unclassified`, or under the reason of the
+  multi-binding around it.
 
 ## [0.3.7] - 2026-10-02
 

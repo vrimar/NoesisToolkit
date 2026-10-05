@@ -203,7 +203,7 @@ sealed partial class XamlEmitter
     string? EmitBinding(XElement element, MarkupCall call, string? slot)
     {
         var name = NextName("binding");
-        ClassifyFallback();
+        ClassifyFallback(element);
         RootBinding(element, call, slot);
         var path = call.Positional.FirstOrDefault() ?? NamedValue(call, "Path") as string;
 
@@ -312,7 +312,10 @@ sealed partial class XamlEmitter
             }
             case MarkupCall nested:
             {
-                var expression = MarkupValue(element, nested, null);
+                var expression =
+                    nested.Name == "Binding"
+                        ? EmitKnobBinding(element, nested, knob)
+                        : MarkupValue(element, nested, null);
                 if (expression is null)
                     return false;
 
@@ -322,6 +325,24 @@ sealed partial class XamlEmitter
             default:
                 _lines.Add($"{binding}.{knob} = {Quote(Text(value))};");
                 return true;
+        }
+    }
+
+    string? EmitKnobBinding(XElement element, MarkupCall call, string knob)
+    {
+        var refusal = _refusal;
+        var inMultiBinding = _inMultiBinding;
+        _refusal = "binding-in-a-" + knob.ToLowerInvariant();
+        _inMultiBinding = 0;
+        try
+        {
+            return EmitBinding(element, call, null);
+        }
+        finally
+        {
+            // A multi-binding's refusal still has to explain the children after this knob.
+            _refusal = refusal;
+            _inMultiBinding = inMultiBinding;
         }
     }
 

@@ -210,7 +210,7 @@ sealed partial class XamlEmitter
     void BeginAttempt() => _refusal = null;
 
     /// <summary>Tallies the fallback the caller just emitted, under the reason that explains it.</summary>
-    void ClassifyFallback()
+    void ClassifyFallback(XElement element)
     {
         if (_nativeByDesign)
         {
@@ -224,7 +224,8 @@ sealed partial class XamlEmitter
         // Read without being consumed: one refusal has to explain every remaining child.
         if (_inMultiBinding > 0)
         {
-            Tally.Fell(
+            Fell(
+                element,
                 reason.StartsWith(MultiBindingReason, StringComparison.Ordinal)
                     ? reason
                     : MultiBindingReason + reason
@@ -233,7 +234,13 @@ sealed partial class XamlEmitter
         }
 
         _refusal = null;
+        Fell(element, reason);
+    }
+
+    void Fell(XElement element, string reason)
+    {
         Tally.Fell(reason);
+        LeftNative.Add(SiteOf(element, $"binding stays native: {reason}"));
     }
 
     const string MultiBindingReason = "multi-binding-";

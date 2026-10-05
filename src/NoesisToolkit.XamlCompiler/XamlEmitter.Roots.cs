@@ -8,17 +8,23 @@ using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
 
-readonly record struct UnrootedName(string Message, int Line, int Column);
+readonly record struct MarkupSite(string Message, int Line, int Column);
 
 sealed partial class XamlEmitter
 {
     public readonly TrimRoots Roots = new TrimRoots();
 
-    public readonly List<UnrootedName> Unrooted = new List<UnrootedName>();
+    public readonly List<MarkupSite> Unrooted = new List<MarkupSite>();
+
+    public readonly List<MarkupSite> LeftNative = new List<MarkupSite>();
 
     public readonly List<XAttribute> UnresolvedTypes = new List<XAttribute>();
 
     XAttribute? _attribute;
+
+    string? _parsedBy;
+
+    readonly JournaledSet<(XElement, string)> _walked = new JournaledSet<(XElement, string)>();
 
     HashSet<ITypeSymbol>? _referenced;
 
@@ -800,14 +806,32 @@ sealed partial class XamlEmitter
             );
     }
 
-    void RootParsed(XElement element, bool constructs = true)
+    void RootParsed(XElement element, string parsedBy, bool constructs = true)
+    {
+        var outer = _parsedBy;
+        // A declaration copied into several probes is walked once per probe but reported once.
+        _parsedBy = _walked.Add((element, parsedBy)) ? parsedBy : null;
+        try
+        {
+            RootParsedTree(element, constructs);
+        }
+        finally
+        {
+            _parsedBy = outer;
+        }
+    }
+
+    void RootParsedTree(XElement element, bool constructs = true)
     {
         var local = element.Name.LocalName;
 
         if (local == "Binding")
         {
             if (BindingElementCall(element) is { } call)
+            {
                 RootBinding(element, call, SlotAround(element));
+                ReportParsedBinding(element);
+            }
             return;
         }
 
@@ -830,7 +854,7 @@ sealed partial class XamlEmitter
             }
 
             foreach (var child in element.Elements())
-                RootParsed(child);
+                RootParsedTree(child);
             return;
         }
 
@@ -853,7 +877,7 @@ sealed partial class XamlEmitter
             RootSetProperty(type, content);
 
         foreach (var child in element.Elements())
-            RootParsed(child);
+            RootParsedTree(child);
 
         if (scoped)
             _nameScopes.RemoveAt(_nameScopes.Count - 1);
@@ -912,20 +936,27 @@ sealed partial class XamlEmitter
         var dot = local.IndexOf('.');
         if (dot > 0)
         {
-            if (ResolveIn(element, ns, local.Substring(0, dot)) is not { } owner)
-                return;
-
             var name = local.Substring(dot + 1);
-            RootAttachedOwner(owner, name);
+            var owner = ResolveIn(element, ns, local.Substring(0, dot));
+            if (owner is not null)
+                RootAttachedOwner(owner, name);
+
             if (call is not null)
                 RootParsedMarkup(element, call, name);
-            else if (resolver.FindAttachedValueType(owner, name) is { } attachedType)
+            else if (
+                owner is not null
+                && resolver.FindAttachedValueType(owner, name) is { } attachedType
+            )
                 Roots.EnumLiterals(attachedType);
             return;
         }
 
         if (type is null)
+        {
+            if (call is not null)
+                RootParsedMarkup(element, call, local);
             return;
+        }
 
         if (IsSetterLike(type) && local is "Property" or "Value")
         {
@@ -971,6 +1002,7 @@ sealed partial class XamlEmitter
         {
             case "Binding":
                 RootBinding(element, call, slot);
+                ReportParsedBinding(element);
                 RootNestedMarkup(element, call);
                 return;
             case "x:Type" or "Type":
@@ -1078,7 +1110,7 @@ sealed partial class XamlEmitter
         if (connectsEvents)
             Roots.Member(rootClass, "ConnectEvent(System.Object,System.String,System.String)");
 
-        RootParsed(root, constructs: false);
+        RootParsed(root, "document-left-to-the-loader", constructs: false);
     }
 
     void ReportUnrooted(XElement element, string message)
@@ -1095,14 +1127,25 @@ sealed partial class XamlEmitter
         )
             return;
 
+        Unrooted.Add(SiteOf(element, message));
+    }
+
+    void ReportParsedBinding(XElement element)
+    {
+        if (_parsedBy is null || (_attribute is { } attribute && _heldBack.Contains(attribute)))
+            return;
+
+        LeftNative.Add(SiteOf(element, $"binding stays native: {_parsedBy}"));
+    }
+
+    MarkupSite SiteOf(XElement element, string message)
+    {
         IXmlLineInfo at =
             _attribute is { } attribute && attribute.Parent == element ? attribute : element;
 
-        Unrooted.Add(
-            at.HasLineInfo()
-                ? new UnrootedName(message, at.LineNumber, at.LinePosition)
-                : new UnrootedName(message, 0, 0)
-        );
+        return at.HasLineInfo()
+            ? new MarkupSite(message, at.LineNumber, at.LinePosition)
+            : new MarkupSite(message, 0, 0);
     }
 
     public void RootReferencedTypes(XElement root)

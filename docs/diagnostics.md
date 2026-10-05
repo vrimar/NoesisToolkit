@@ -9,6 +9,7 @@
 | `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; raised only where the trim analyzer runs |
 | `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute that keeps it on the loader |
 | `NTK1006` | Warning | `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` names a type the compiler cannot find |
+| `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve |
@@ -59,6 +60,20 @@ app that does not raises it to an error, so a handler added in markup fails the 
 screen failing to load. The diagnostic sits in a XAML file, which no `.editorconfig` section
 reaches, so the severity goes in a global analyzer config — a file holding `is_global = true` and
 `dotnet_diagnostic.NTK1005.severity = error`, listed as an `EditorConfigFiles` item.
+
+## Why NTK1007 exists
+
+A binding left to the engine is read by reflection, so every name it reads ships: in a trimmed or
+NativeAOT build the compiler roots each one, and the binary carries it. `XamlCompileSurvey.g.cs`
+counts, per file, each binding and trigger that fell back and why. NTK1007 puts each of those at
+the attribute or element that holds it, with the same reason, and adds every binding in markup
+handed to the parser whole, which the survey does not count: `setter-left-to-the-parser`,
+`element-left-to-the-parser`, `resource-left-to-the-parser` or `document-left-to-the-loader`. A
+binding the survey calls native by design has no managed name in its path and is not reported.
+
+It is hidden, because a binding that stays native on purpose leaves nothing to fix. To audit a
+project, raise it the way NTK1005 is raised, with `dotnet_diagnostic.NTK1007.severity = warning` in
+a global analyzer config.
 
 ## Why NTK2101 and NTK2102 exist
 

@@ -28,6 +28,8 @@ sealed class CompiledDocument(string file)
 
     public IReadOnlyList<MarkupDiagnostic> Unrooted { get; set; } = [];
 
+    public IReadOnlyList<MarkupDiagnostic> LeftNative { get; set; } = [];
+
     public BindingTally Tally { get; set; } = new BindingTally();
 
     public bool NeedsLoader { get; set; }

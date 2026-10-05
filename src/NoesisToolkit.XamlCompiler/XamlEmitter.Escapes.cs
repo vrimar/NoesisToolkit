@@ -43,6 +43,8 @@ sealed partial class XamlEmitter
         return call is not null && LiveValueExtensions.Contains(call.Name);
     }
 
+    const string SetterLeftToParser = "setter-left-to-the-parser";
+
     /// <summary>Re-parses one Setter inside a probe Style, so its Property resolves and its
     /// value becomes the expression the parser would have produced.</summary>
     string? EmitSetterProbe(XElement setter)
@@ -86,7 +88,7 @@ sealed partial class XamlEmitter
 
         var style = StyleProbe(declared, new XElement(setter));
         var probe = Probe(setter, style);
-        RootParsed(setter);
+        RootParsed(setter, SetterLeftToParser);
 
         if (scopeNamespace is not null)
             probe.Add(new XAttribute(XNamespace.Xmlns + "__probe", scopeNamespace));
@@ -102,7 +104,7 @@ sealed partial class XamlEmitter
             }
 
             probe.AddFirst(new XElement(declaration));
-            RootParsed(declaration);
+            RootParsed(declaration, SetterLeftToParser);
         }
 
         var name = NextName("setter");
@@ -241,6 +243,8 @@ sealed partial class XamlEmitter
 
     readonly HashSet<XElement> _grafted = new HashSet<XElement>();
 
+    readonly JournaledSet<XAttribute> _heldBack = new JournaledSet<XAttribute>();
+
     bool _usesTemplated;
 
     const string TemplatedHelper =
@@ -341,7 +345,10 @@ sealed partial class XamlEmitter
                 );
             }
 
-            deferred.Add(attribute);
+            // The clone's copy has no line info; applying it would report at the element.
+            var held = element.Attribute(attribute.Name)!;
+            deferred.Add(held);
+            _heldBack.Add(held);
             attribute.Remove();
         }
 
@@ -365,7 +372,7 @@ sealed partial class XamlEmitter
         }
 
         var cast = CastTypeOr(expected, "global::Noesis.BaseComponent");
-        RootParsed(element);
+        RootParsed(element, "element-left-to-the-parser");
 
         var name = NextName(element.Name.LocalName);
         _lines.Add(

@@ -85,7 +85,7 @@ sealed partial class XamlEmitter
     {
         var triggers = wrapper.Elements().ToList();
         var compiled = new List<(XElement Element, string Spec, HashSet<string> Properties)>();
-        var refused = new List<string>();
+        var refused = new List<(XElement Trigger, string Reason)>();
 
         using (Speculate())
         {
@@ -95,11 +95,11 @@ sealed partial class XamlEmitter
                 if (CompileTrigger(owner, type, trigger, templateScoped) is { } plan)
                     compiled.Add((trigger, plan.Spec, plan.Properties));
                 else
-                    refused.Add(_refusal ?? "trigger-unclassified");
+                    refused.Add((trigger, _refusal ?? "trigger-unclassified"));
             }
         }
 
-        var claimed = compiled.Count;
+        var claimed = compiled.Select(c => c.Element).ToList();
         var demoted = true;
         while (demoted && compiled.Count > 0)
         {
@@ -138,11 +138,14 @@ sealed partial class XamlEmitter
         }
 
         // Outside the speculative scope, which would roll these back.
-        foreach (var reason in refused)
-            Tally.TriggerFell(reason);
+        foreach (var (trigger, reason) in refused)
+            TriggerFell(trigger, reason);
 
-        for (var i = compiled.Count; i < claimed; i++)
-            Tally.TriggerFell("trigger-property-contested");
+        foreach (var trigger in claimed)
+        {
+            if (!compiled.Any(c => ReferenceEquals(c.Element, trigger)))
+                TriggerFell(trigger, "trigger-property-contested");
+        }
 
         Tally.TriggersCompiled += compiled.Count;
 
@@ -153,6 +156,12 @@ sealed partial class XamlEmitter
             _suppressed.Add(plan.Element);
 
         return string.Join(", ", compiled.Select(c => c.Spec).ToArray());
+    }
+
+    void TriggerFell(XElement trigger, string reason)
+    {
+        Tally.TriggerFell(reason);
+        LeftNative.Add(SiteOf(trigger, $"trigger stays native: {reason}"));
     }
 
     (string Spec, HashSet<string> Properties)? CompileTrigger(

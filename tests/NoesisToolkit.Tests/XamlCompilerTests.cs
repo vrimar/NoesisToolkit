@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using NoesisToolkit.Mvvm.Generators;
 using NoesisToolkit.Xaml;
@@ -540,6 +541,148 @@ public partial class XamlCompilerTests
         await Assert.That(unrooted[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(11);
     }
 
+    static List<string> LeftNativeAt(int line) =>
+        NativeSitesRun
+            .Value.GeneratorDiagnostics.Where(d =>
+                d.Id == "NTK1007" && d.Location.GetLineSpan().StartLinePosition.Line == line
+            )
+            .Select(d => d.GetMessage())
+            .ToList();
+
+    [Test]
+    public async Task A_binding_left_native_is_reported_where_it_is_written_with_its_reason()
+    {
+        var native = NativeSitesRun.Value.GeneratorDiagnostics.Where(d => d.Id == "NTK1007");
+
+        await Assert
+            .That(native.Select(d => d.Severity).Distinct())
+            .IsEquivalentTo([DiagnosticSeverity.Hidden]);
+        await Assert
+            .That(LeftNativeAt(18))
+            .IsEquivalentTo(["NativeSites.xaml :: binding stays native: hop-missing"]);
+    }
+
+    [Test]
+    public async Task A_compiled_binding_is_not_reported_as_native()
+    {
+        await Assert.That(LeftNativeAt(17)).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_trigger_left_native_is_reported_with_its_reason()
+    {
+        await Assert
+            .That(LeftNativeAt(23))
+            .Contains("NativeSites.xaml :: trigger stays native: hop-missing");
+    }
+
+    [Test]
+    public async Task A_binding_handed_to_the_parser_is_reported_with_what_took_it_there()
+    {
+        await Assert
+            .That(LeftNativeAt(12))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: setter-left-to-the-parser",
+            ]);
+        await Assert
+            .That(LeftNativeAt(34))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
+            ]);
+    }
+
+    [Test]
+    public async Task A_binding_held_back_from_a_parsed_element_is_reported_once_by_the_code_that_applies_it()
+    {
+        await Assert.That(LeftNativeAt(33)).IsEmpty();
+        await Assert
+            .That(LeftNativeAt(35))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: target-is-not-a-dependency-property",
+            ]);
+    }
+
+    [Test]
+    public async Task Bindings_that_share_a_site_are_each_reported()
+    {
+        await Assert
+            .That(LeftNativeAt(55))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
+                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
+            ]);
+    }
+
+    [Test]
+    public async Task A_declaration_copied_into_several_parsed_setters_is_reported_once()
+    {
+        await Assert
+            .That(LeftNativeAt(62))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: target-not-an-element",
+                "NativeSites.xaml :: binding stays native: setter-left-to-the-parser",
+            ]);
+    }
+
+    [Test]
+    public async Task A_binding_in_a_knob_stays_native_for_being_there()
+    {
+        await Assert
+            .That(LeftNativeAt(40))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: binding-knob-fallbackvalue",
+                "NativeSites.xaml :: binding stays native: binding-in-a-fallbackvalue",
+                "NativeSites.xaml :: binding stays native: binding-in-a-targetnullvalue",
+            ]);
+        await Assert
+            .That(LeftNativeAt(47))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: multi-binding-binding-knob-fallbackvalue",
+                "NativeSites.xaml :: binding stays native: binding-in-a-fallbackvalue",
+            ]);
+        await Assert
+            .That(LeftNativeAt(48))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: multi-binding-binding-knob-fallbackvalue",
+            ]);
+    }
+
+    [Test]
+    public async Task A_binding_on_an_element_whose_type_does_not_resolve_is_reported()
+    {
+        await Assert
+            .That(LeftNativeAt(59))
+            .IsEquivalentTo([
+                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
+            ]);
+    }
+
+    [Test]
+    public async Task Every_fallback_the_survey_counts_is_reported_as_native()
+    {
+        var run = CompiledBindings();
+        var survey = run.Source("XamlCompileSurvey");
+        var messages = run
+            .GeneratorDiagnostics.Where(d => d.Id == "NTK1007")
+            .Select(d => d.GetMessage())
+            .ToList();
+
+        var bindings = Counted(survey, @"// bindings: compiled \d+   fallback (\d+)");
+        await Assert.That(bindings).IsGreaterThan(0);
+        await Assert
+            .That(messages.Count(m => m.Contains(":: binding stays native: ")))
+            .IsEqualTo(bindings);
+        await Assert
+            .That(messages.Count(m => m.Contains(":: trigger stays native: ")))
+            .IsEqualTo(Counted(survey, @"// triggers: compiled \d+   fallback (\d+)"));
+    }
+
+    static int Counted(string survey, string pattern) =>
+        int.Parse(
+            Regex.Match(survey, pattern).Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+
     [Test]
     public async Task Document_with_event_handlers_stays_on_the_native_loader()
     {
@@ -826,12 +969,11 @@ public partial class XamlCompilerTests
     }
 
     static string ParsedFragment(string marker) =>
-        System
-            .Text.RegularExpressions.Regex.Matches(
+        Regex
+            .Matches(
                 FragmentRun.Value.Source("FragmentNamespaces"),
                 "ParseXaml\\(@\"((?:[^\"]|\"\")*)\""
             )
-            .Cast<System.Text.RegularExpressions.Match>()
             .Select(m => m.Groups[1].Value.Replace("\"\"", "\""))
             .Single(fragment => fragment.Contains(marker));
 
@@ -863,6 +1005,10 @@ public partial class XamlCompilerTests
 
     static readonly Lazy<GeneratorRun> CompiledBindingsRun = new(() =>
         Run(["CompiledBindings.xaml"], [Host("CompiledHost"), SampleUi, Stubs.Mvvm])
+    );
+
+    static readonly Lazy<GeneratorRun> NativeSitesRun = new(() =>
+        Run(["NativeSites.xaml"], [Host("NativeSitesHost"), SampleUi, Stubs.Mvvm])
     );
 
     static readonly Lazy<GeneratorRun> ThemeRun = new(() => Run(["Theme.xaml"]));

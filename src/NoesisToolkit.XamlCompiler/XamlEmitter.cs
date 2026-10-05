@@ -213,6 +213,9 @@ sealed partial class XamlEmitter(
         readonly XamlEmitter _emitter;
         readonly int _errors;
         readonly int _dead;
+        readonly int _native;
+        readonly int _walked;
+        readonly int _heldBack;
         readonly string? _refusal;
         readonly BindingTally _tally;
         readonly RootsMark _roots;
@@ -222,6 +225,9 @@ sealed partial class XamlEmitter(
             _emitter = emitter;
             _errors = emitter.Errors.Count;
             _dead = emitter.DeadMarkup.Count;
+            _native = emitter.LeftNative.Count;
+            _walked = emitter._walked.Count;
+            _heldBack = emitter._heldBack.Count;
             _refusal = emitter._refusal;
             _tally = emitter.Tally.Snapshot();
             _roots = emitter.MarkRoots();
@@ -231,6 +237,9 @@ sealed partial class XamlEmitter(
         {
             _emitter.Errors.RemoveRange(_errors, _emitter.Errors.Count - _errors);
             _emitter.DeadMarkup.RemoveRange(_dead, _emitter.DeadMarkup.Count - _dead);
+            _emitter.LeftNative.RemoveRange(_native, _emitter.LeftNative.Count - _native);
+            _emitter._walked.Truncate(_walked);
+            _emitter._heldBack.Truncate(_heldBack);
             _emitter._refusal = _refusal;
             _emitter.Tally.Restore(_tally);
             _emitter.RestoreRoots(_roots);

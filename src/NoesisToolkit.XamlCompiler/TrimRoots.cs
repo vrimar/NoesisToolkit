@@ -33,9 +33,7 @@ sealed class TrimRoots
             + (int)Kind;
     }
 
-    readonly List<Root> _roots = new List<Root>();
-
-    readonly HashSet<Root> _seen = new HashSet<Root>();
+    readonly JournaledSet<Root> _roots = new JournaledSet<Root>();
 
     public int Count => _roots.Count;
 
@@ -85,19 +83,9 @@ sealed class TrimRoots
         }
     }
 
-    public void Truncate(int count)
-    {
-        for (var i = _roots.Count - 1; i >= count; i--)
-            _seen.Remove(_roots[i]);
+    public void Truncate(int count) => _roots.Truncate(count);
 
-        _roots.RemoveRange(count, _roots.Count - count);
-    }
-
-    void Add(Root root)
-    {
-        if (_seen.Add(root))
-            _roots.Add(root);
-    }
+    void Add(Root root) => _roots.Add(root);
 
     static bool Rootable(INamedTypeSymbol type) =>
         type.TypeKind is TypeKind.Class or TypeKind.Struct or TypeKind.Enum

@@ -215,7 +215,7 @@ sealed partial class XamlEmitter
         if (basedOnKey is not null)
             basedOn!.Remove();
 
-        RootParsed(entry);
+        RootParsed(entry, "resource-left-to-the-parser");
 
         var parsed = NextName("escaped");
         _lines.Add(

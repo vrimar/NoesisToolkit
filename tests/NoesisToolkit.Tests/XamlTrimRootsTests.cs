@@ -269,6 +269,51 @@ public class XamlTrimRootsTests
     }
 
     [Test]
+    public async Task A_binding_in_a_document_left_to_the_loader_is_reported_as_native()
+    {
+        var run = Run("RootsLoaded.xaml", trimmed: false, LoadedHost);
+
+        var native = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1007").ToList();
+        await Assert.That(native.Count).IsEqualTo(1);
+        await Assert
+            .That(native[0].GetMessage())
+            .IsEqualTo("RootsLoaded.xaml :: binding stays native: document-left-to-the-loader");
+        await Assert.That(native[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(10);
+    }
+
+    static readonly Lazy<GeneratorRun> ParsedElementsRun = new(() =>
+        Run("RootsParsedElements.xaml", ParsedElementsHost)
+    );
+
+    static List<int> UnrootedLines(GeneratorRun run, string name) =>
+        Unrooted(run)
+            .Where(d => d.GetMessage().Contains($"'{name}'", StringComparison.Ordinal))
+            .Select(d => d.Location.GetLineSpan().StartLinePosition.Line + 1)
+            .ToList();
+
+    [Test]
+    public async Task A_binding_on_an_element_whose_type_does_not_resolve_is_rooted()
+    {
+        var run = ParsedElementsRun.Value;
+
+        await Assert.That(Text(run.Errors)).IsEmpty();
+        var source = run.Source("RootsParsedElements");
+        await Assert.That(source).Contains(Member("Inner", "global::Sample.Roots.PanelViewModel"));
+        await Assert.That(source).Contains(Member("Note", "global::Sample.Roots.InnerViewModel"));
+        await Assert
+            .That(source)
+            .Contains(Member("Headline", "global::Sample.Roots.PanelViewModel"));
+        await Assert.That(source).Contains(Member("Text", "global::Sample.Roots.Headline"));
+        await Assert.That(UnrootedLines(run, "Missing")).IsEquivalentTo([14]);
+    }
+
+    [Test]
+    public async Task A_binding_held_back_from_a_parsed_element_is_reported_once_where_it_is_written()
+    {
+        await Assert.That(UnrootedLines(ParsedElementsRun.Value, "Lacking")).IsEquivalentTo([20]);
+    }
+
+    [Test]
     public async Task A_name_the_compiler_cannot_type_is_reported_where_it_was_written()
     {
         var run = Run("RootsUnrooted.xaml", Host("UnrootedHost"));
@@ -760,6 +805,22 @@ public class XamlTrimRootsTests
             public LoadedHost() => InitializeComponent();
 
             void OnGo(object sender, System.EventArgs e) { }
+        }
+        """;
+
+    const string ParsedElementsHost = """
+        namespace Sample.Roots;
+
+        public partial class ParsedElementsHost : global::Noesis.UserControl
+        {
+            public ParsedElementsHost() => InitializeComponent();
+        }
+
+        public class Upper : global::Noesis.IValueConverter
+        {
+            public object? Convert(object? v, System.Type t, object? p, System.Globalization.CultureInfo c) => v;
+
+            public object? ConvertBack(object? v, System.Type t, object? p, System.Globalization.CultureInfo c) => v;
         }
         """;
 
