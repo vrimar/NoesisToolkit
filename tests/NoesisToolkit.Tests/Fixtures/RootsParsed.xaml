@@ -22,6 +22,22 @@
     <Setter Property="r:Hint.Text" Value="{Binding Name}" />
   </Style>
 
+  <Style x:Key="Ramped" TargetType="r:Gauge">
+    <Setter Property="Level">
+      <Setter.Value>
+        <Binding Path="Caption" RelativeSource="{RelativeSource Self}">
+          <Binding.Converter>
+            <r:RampConverter Ramp="High" />
+          </Binding.Converter>
+        </Binding>
+      </Setter.Value>
+    </Setter>
+    <Setter
+      Property="Tag"
+      Value="{Binding Reading, RelativeSource={RelativeSource AncestorType=r:Meter}}"
+    />
+  </Style>
+
   <ControlTemplate x:Key="Chrome" TargetType="r:Gauge">
     <r:Dial Tag="{TemplateBinding Tag}" />
   </ControlTemplate>

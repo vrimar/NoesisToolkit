@@ -78,7 +78,7 @@ such as an internal type of another assembly, is rooted by its name and assembly
 | a managed object inside a template | its constructor: Noesis builds each copy of the template by constructing it again |
 | a `GridViewColumn.DisplayMemberBinding` | each hop, read off the item type of the list's `ItemsSource`, or the type `ntk:ItemType` states on the column |
 | a literal `DisplayMemberPath` or `SelectedValuePath`, and a trigger's `EventName` | the property on the item type, or the type `ntk:ItemType` states on the items control; the event on the trigger's source, on every class implementing it where that is an interface |
-| an attached property the parser meets by owner name | the `XProperty` field of an owner that is not a `DependencyObject`: Noesis runs such an owner's class constructor, which registers the property, only by finding that field |
+| a dependency property Noesis resolves by name — a setter's `Property`, an attribute the parser sets, a hop of a binding left native, an attached property met by owner name | the `XProperty` field on the type that declares it: Noesis registers the property by running that type's class constructor, which a trimmed build keeps only while the field is reachable |
 | an enum written or read as text | its literals |
 
 A dependency property's CLR wrapper is never rooted alone: Noesis reads a dependency property

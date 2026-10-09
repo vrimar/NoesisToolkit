@@ -38,6 +38,15 @@ All notable changes to this project are documented here. The format follows
 - **Markup handed to the parser keeps the `xml:space="preserve"` it inherits.** The parser reads a
   fragment alone, so an `xml:space` set on an element around it was lost, and the parser collapsed
   the whitespace that element preserves.
+- **What a parsed `<Binding>` element holds is rooted.** The walk rooted the binding's path and
+  stopped, so a converter written as `<Binding.Converter>` in a setter left to the parser lost its
+  constructor and the properties set on it in a trimmed build. Noesis then found no converter, and
+  every such binding failed with "No converter available".
+- **A dependency property Noesis resolves by name keeps its field.** A setter's `Property`, an
+  attribute the parser sets and a hop of a binding left native name the property, and Noesis
+  registers it by running its owner's class constructor. A trimmed build drops that constructor
+  once no code reads the `XProperty` field, so the property was unknown and its setters and bindings
+  failed. Only an attached owner that is not a `DependencyObject` kept the field.
 
 ## [0.3.7] - 2026-10-02
 

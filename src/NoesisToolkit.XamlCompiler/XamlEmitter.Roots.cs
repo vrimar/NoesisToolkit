@@ -382,7 +382,7 @@ sealed partial class XamlEmitter
                         null
                     );
 
-                RootAttachedOwner(owner, segment.Name);
+                RootDependencyProperty(owner, segment.Name);
                 if (resolver.FindAttachedValueType(owner, segment.Name) is not { } value)
                     return (
                         $"reads '{segment.Owner}.{segment.Name}', which is not an attached property",
@@ -474,7 +474,10 @@ sealed partial class XamlEmitter
         if (resolver.FindProperty(owner, name) is { } property)
         {
             if (IsDependencyProperty(owner, name))
+            {
+                RootDependencyProperty(owner, name);
                 return (property.Type, null);
+            }
 
             return RootProperty(property, owner) ? (property.Type, null) : (property.Type, owner);
         }
@@ -647,13 +650,10 @@ sealed partial class XamlEmitter
         }
     }
 
-    // Noesis runs a non-DependencyObject owner's class constructor only if it finds a DP field on it.
-    void RootAttachedOwner(INamedTypeSymbol owner, string name)
+    // Noesis registers a DP through its owner's class constructor, which trimming keeps only while the field is reachable.
+    void RootDependencyProperty(INamedTypeSymbol owner, string name)
     {
-        if (
-            resolver.FindDependencyPropertyOwner(owner, name) is { } declaring
-            && !XamlTypeResolver.DerivesFrom(declaring, "global::Noesis.DependencyObject")
-        )
+        if (resolver.FindDependencyPropertyOwner(owner, name) is { } declaring)
             Roots.Member(declaring, name + "Property");
     }
 
@@ -669,7 +669,7 @@ sealed partial class XamlEmitter
         )
         {
             if (ResolveTypeSymbol(scope, match.Groups[1].Value) is { } owner)
-                RootAttachedOwner(owner, match.Groups[2].Value);
+                RootDependencyProperty(owner, match.Groups[2].Value);
         }
     }
 
@@ -832,6 +832,9 @@ sealed partial class XamlEmitter
                 RootBinding(element, call, SlotAround(element));
                 ReportParsedBinding(element);
             }
+
+            foreach (var child in element.Elements())
+                RootParsedTree(child);
             return;
         }
 
@@ -850,7 +853,7 @@ sealed partial class XamlEmitter
                 )
                     RootSetProperty(owner, name);
                 else
-                    RootAttachedOwner(owner, name);
+                    RootDependencyProperty(owner, name);
             }
 
             foreach (var child in element.Elements())
@@ -899,6 +902,8 @@ sealed partial class XamlEmitter
 
         if (resolver.FindDependencyPropertyOwner(owner, name) is null)
             RootProperty(property);
+        else
+            RootDependencyProperty(owner, name);
 
         Roots.EnumLiterals(property.Type);
         return property;
@@ -939,7 +944,7 @@ sealed partial class XamlEmitter
             var name = local.Substring(dot + 1);
             var owner = ResolveIn(element, ns, local.Substring(0, dot));
             if (owner is not null)
-                RootAttachedOwner(owner, name);
+                RootDependencyProperty(owner, name);
 
             if (call is not null)
                 RootParsedMarkup(element, call, name);
@@ -1068,12 +1073,13 @@ sealed partial class XamlEmitter
                 return;
 
             var property = name.Substring(dot + 1);
-            RootAttachedOwner(owner, property);
+            RootDependencyProperty(owner, property);
             valueType = resolver.FindAttachedValueType(owner, property);
         }
         else if (SetterTarget(setter) is { } styled)
         {
             valueType = resolver.FindProperty(styled, name)?.Type;
+            RootDependencyProperty(styled, name);
         }
 
         if (

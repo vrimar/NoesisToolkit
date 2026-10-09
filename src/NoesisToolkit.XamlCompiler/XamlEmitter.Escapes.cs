@@ -235,7 +235,7 @@ sealed partial class XamlEmitter
                 && ResolveIn(element, attribute.Name.NamespaceName, local.Substring(0, dot))
                     is { } owner
             )
-                RootAttachedOwner(owner, local.Substring(dot + 1));
+                RootDependencyProperty(owner, local.Substring(dot + 1));
         }
     }
 

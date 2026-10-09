@@ -219,6 +219,37 @@ public class XamlTrimRootsTests
     }
 
     [Test]
+    public async Task A_converter_inside_a_parsed_binding_element_is_rooted_with_what_it_sets()
+    {
+        var source = ParsedRun.Value.Source("RootsParsed");
+
+        await Assert.That(source).Contains(Ctor("global::Sample.Roots.RampConverter"));
+        await Assert.That(source).Contains(Member("Ramp", "global::Sample.Roots.RampConverter"));
+        await Assert
+            .That(source)
+            .Contains(
+                $"{Attribute}global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields, typeof(global::Sample.Roots.Ramp))]"
+            );
+        await Assert.That(source).Contains(Member("Caption", "global::Sample.Roots.Gauge"));
+    }
+
+    [Test]
+    public async Task A_dependency_property_the_parser_resolves_by_name_keeps_its_field()
+    {
+        var source = ParsedRun.Value.Source("RootsParsed");
+
+        await Assert
+            .That(source)
+            .Contains(Member("LevelProperty", "global::Sample.Roots.Gauge"))
+            .Because("a setter's Property is looked up on the target's registration.");
+        await Assert
+            .That(source)
+            .Contains(Member("ReadingProperty", "global::Sample.Roots.Meter"))
+            .Because("a native binding reads a dependency property through its registration.");
+        await Assert.That(source).DoesNotContain(Member("Reading", "global::Sample.Roots.Meter"));
+    }
+
+    [Test]
     public async Task A_dictionary_carries_its_roots_on_its_build_method()
     {
         var source = ParsedRun.Value.Source("RootsParsed");
@@ -911,6 +942,25 @@ public class XamlTrimRootsTests
                 public event System.EventHandler? Pinged;
 
                 public void Ping() => Pinged?.Invoke(this, System.EventArgs.Empty);
+            }
+
+            public enum Ramp { Low, High }
+
+            public class Meter : Noesis.Control
+            {
+                public static readonly Noesis.DependencyProperty ReadingProperty =
+                    Noesis.DependencyProperty.Register("Reading", typeof(float), typeof(Meter), new Noesis.PropertyMetadata());
+
+                public float Reading { get => (float)(GetValue(ReadingProperty) ?? 0f); set => SetValue(ReadingProperty, value); }
+            }
+
+            public class RampConverter : Noesis.IValueConverter
+            {
+                public Ramp Ramp { get; set; }
+
+                public object? Convert(object? v, System.Type t, object? p, System.Globalization.CultureInfo c) => v;
+
+                public object? ConvertBack(object? v, System.Type t, object? p, System.Globalization.CultureInfo c) => v;
             }
 
             public class Dial : Noesis.Control
