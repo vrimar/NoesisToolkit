@@ -151,6 +151,9 @@ public sealed class CompiledBinding
     SourceChain _chain = null!;
     ElementState? _receiver;
     object? _writable;
+
+    // A context change reaches the target before this binding rebuilds; a write then would land on the context left behind.
+    object? _writableRoot;
     object? _unset;
     bool _clearWhenUnset;
     object? _brokeFor = NotBroke;
@@ -498,6 +501,7 @@ public sealed class CompiledBinding
         if (_chain.Source is null)
         {
             _writable = null;
+            _writableRoot = null;
             _brokeFor = NotBroke;
             _pushing = true;
             try
@@ -535,6 +539,8 @@ public sealed class CompiledBinding
             current = _chain.Evaluate(out root, out var owner, out broke);
             _writable = owner;
         }
+
+        _writableRoot = root;
 
         if (_receiver is not { Alive: true } receiver)
             return;
@@ -663,7 +669,12 @@ public sealed class CompiledBinding
 
     void Push()
     {
-        if (_pushing || _writable is null || !_target.Alive)
+        if (
+            _pushing
+            || _writable is null
+            || !_target.Alive
+            || !ReferenceEquals(_chain.Root, _writableRoot)
+        )
             return;
 
         if (_spec.Lane is { } lane)

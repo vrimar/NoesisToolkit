@@ -202,6 +202,18 @@ public sealed class SpikeOwner : INotifyPropertyChanged
 
     public System.Collections.ObjectModel.ObservableCollection<SpikeItem> Items { get; } = new();
 
+    SpikeItem? _picked;
+
+    public SpikeItem? Picked
+    {
+        get => _picked;
+        set
+        {
+            _picked = value;
+            Raise();
+        }
+    }
+
     public SpikeCommand Poke { get; } = new();
 
     bool _flag;

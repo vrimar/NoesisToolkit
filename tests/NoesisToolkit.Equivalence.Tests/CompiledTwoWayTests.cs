@@ -4,9 +4,39 @@ namespace NoesisToolkit.Equivalence.Tests;
 
 // Judged on rendered value, not graph shape: a compiled binding leaves a local value where the
 // parser leaves a BindingExpression, so shape diverges by construction.
+public partial class SelectionSwapFixture : UserControl { }
+
 [NotInParallel("Noesis")]
 public sealed class CompiledTwoWayTests
 {
+    [Test]
+    public async Task A_context_swap_never_writes_back_into_the_context_it_left()
+    {
+        NoesisRuntime.Start();
+
+        var first = new SpikeOwner();
+        first.Items.Add(new SpikeItem { Label = "first" });
+        first.Picked = first.Items[0];
+        var second = new SpikeOwner();
+        second.Items.Add(new SpikeItem { Label = "second" });
+        second.Picked = second.Items[0];
+
+        var compiled = new SelectionSwapFixture { DataContext = first };
+        compiled.InitializeComponent();
+        NoesisRuntime.Show(new Grid { Width = 400, Height = 300 }, compiled);
+        await Assert.That(compiled.Picker.SelectedItem).IsSameReferenceAs(first.Items[0]);
+
+        compiled.DataContext = second;
+
+        await Assert
+            .That(first.Picked)
+            .IsSameReferenceAs(first.Items[0])
+            .Because(
+                "the list clears its selection as its items change, before the selection rebinds."
+            );
+        await Assert.That(compiled.Picker.SelectedItem).IsSameReferenceAs(second.Items[0]);
+    }
+
     [Test]
     public async Task A_two_way_path_carries_a_write_back_to_the_source()
     {

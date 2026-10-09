@@ -47,6 +47,10 @@ All notable changes to this project are documented here. The format follows
   registers it by running its owner's class constructor. A trimmed build drops that constructor
   once no code reads the `XProperty` field, so the property was unknown and its setters and bindings
   failed. Only an attached owner that is not a `DependencyObject` kept the field.
+- **A two-way binding never writes into the context it is leaving.** A context change reaches the
+  target before the binding rebuilds, so a list that cleared its selection as its `ItemsSource`
+  changed pushed `null` into the previous context's `SelectedItem` — a settings object that outlived
+  the view lost its value. The write back now waits for the binding to catch up.
 
 ## [0.3.7] - 2026-10-02
 

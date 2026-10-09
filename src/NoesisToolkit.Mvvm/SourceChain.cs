@@ -98,15 +98,20 @@ sealed class SourceChain : IChangeListener
             ? DependencyRead.TextEquals(source.Handle, _sourceProperty, text)
             : null;
 
+    /// <summary>What the first hop reads off now, without watching it.</summary>
+    internal object? Root => RootOf(Source);
+
+    object? RootOf(ElementState? source) =>
+        source is null ? null
+        : _sourceProperty is null ? NoesisInternals.DataContext(source.Handle)
+        : DependencyRead.Value(source.Handle, _sourceProperty);
+
     object? Walk(int hops, out object? root, out object? owner, out bool broke)
     {
         owner = null;
 
         var source = Source;
-        var current =
-            source is null ? null
-            : _sourceProperty is null ? NoesisInternals.DataContext(source.Handle)
-            : DependencyRead.Value(source.Handle, _sourceProperty);
+        var current = RootOf(source);
 
         root = current;
 
