@@ -28,5 +28,10 @@
     <Setter Property="ToolTip" Value="{Binding Spaced}" />
   </Style>
 
-  <GridViewColumn x:Key="Column" mc:Ignorable="d" ntk:ItemType="app:MyControl" DisplayMemberBinding="{Binding Name}" />
+  <GridViewColumn
+    x:Key="Column"
+    mc:Ignorable="d"
+    ntk:ItemType="app:MyControl"
+    DisplayMemberBinding="{Binding Name}"
+  />
 </ResourceDictionary>
