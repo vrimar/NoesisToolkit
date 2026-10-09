@@ -51,6 +51,9 @@ All notable changes to this project are documented here. The format follows
   target before the binding rebuilds, so a list that cleared its selection as its `ItemsSource`
   changed pushed `null` into the previous context's `SelectedItem` — a settings object that outlived
   the view lost its value. The write back now waits for the binding to catch up.
+- **Markup handed to the parser carries no toolkit attribute.** A fragment kept every `ntk:`
+  attribute, so a `GridViewColumn` stating `ntk:ItemType` failed to parse with an unknown member,
+  and an `ntk:DataType` inside one was applied as the template's real `DataType`.
 
 ## [0.3.7] - 2026-10-02
 

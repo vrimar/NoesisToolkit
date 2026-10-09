@@ -956,6 +956,16 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_parsed_fragment_carries_no_toolkit_attribute()
+    {
+        await Assert.That(FragmentRun.Value.Errors).IsEmpty();
+        var fragment = ParsedFragment("<GridViewColumn");
+
+        await Assert.That(fragment).DoesNotContain("ntk:");
+        await Assert.That(fragment).DoesNotContain("vrimar/NoesisToolkit");
+    }
+
+    [Test]
     public async Task A_parsed_fragment_keeps_the_namespaces_its_ignorable_list_names()
     {
         await Assert.That(FragmentRun.Value.Errors).IsEmpty();

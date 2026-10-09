@@ -5,6 +5,7 @@
   xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
   xmlns:unused="clr-namespace:Sample.Unused"
   xmlns:app="clr-namespace:Sample"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
 >
   <Style x:Key="Templated" TargetType="{x:Type app:MyControl}">
     <Setter Property="Template">
@@ -27,5 +28,5 @@
     <Setter Property="ToolTip" Value="{Binding Spaced}" />
   </Style>
 
-  <GridViewColumn x:Key="Column" mc:Ignorable="d" DisplayMemberBinding="{Binding Name}" />
+  <GridViewColumn x:Key="Column" mc:Ignorable="d" ntk:ItemType="app:MyControl" DisplayMemberBinding="{Binding Name}" />
 </ResourceDictionary>

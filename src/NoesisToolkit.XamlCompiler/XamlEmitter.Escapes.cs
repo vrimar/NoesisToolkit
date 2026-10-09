@@ -513,6 +513,13 @@ sealed partial class XamlEmitter
                 text.Value = " ";
         }
 
+        // Build-time only: the parser reads ntk:ItemType as an unknown member and ntk:DataType as the real one.
+        foreach (var element in copy.DescendantsAndSelf())
+            element
+                .Attributes()
+                .Where(a => a.Name.NamespaceName == XamlTypeResolver.ToolkitNs)
+                .Remove();
+
         foreach (var element in copy.DescendantsAndSelf().ToList())
         {
             foreach (
