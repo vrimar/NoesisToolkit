@@ -28,3 +28,11 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1005 | NoesisToolkit | Info | A document is parsed at run time
 NTK1006 | NoesisToolkit | Warning | A type the document states does not resolve
+
+## Release 0.4.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1007 | NoesisToolkit | Hidden | A binding stays native
