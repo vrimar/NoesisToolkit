@@ -410,17 +410,9 @@ sealed partial class XamlEmitter
 
         var fields = SourceFields(source, resolved);
         var lane = converter is null
-            ? TextLane(resolved, slot, call, formatted, source.Resolver)
+            ? TextLane(resolved, slot, call, formatted)
                 ?? (
-                    formatted
-                        ? null
-                        : Lane(
-                            resolved,
-                            slot,
-                            coercion is not null,
-                            write is not null,
-                            source.Resolver
-                        )
+                    formatted ? null : Lane(resolved, slot, coercion is not null, write is not null)
                 )
             : null;
 
@@ -469,13 +461,7 @@ sealed partial class XamlEmitter
     }
 
     // An enum slot keeps the boxed route: it is written through its own accessor.
-    string? Lane(
-        ResolvedPath resolved,
-        BindingSlot slot,
-        bool converted,
-        bool writes,
-        string? resolver
-    )
+    string? Lane(ResolvedPath resolved, BindingSlot slot, bool converted, bool writes)
     {
         if (resolved.Hops.Count == 0 || slot.Assign is not null || slot.Registered is not null)
             return null;
@@ -505,7 +491,7 @@ sealed partial class XamlEmitter
         var writeBack = writes
             ? $"static (__o, __w) => __o.{last.Name} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
             : "null";
-        var guarded = resolver is not null && resolved.Hops.Count == 1 ? "true" : "false";
+        var guarded = resolved.Hops.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Of<{owner}, {fromFqn}, {slotFqn}>("
             + $"static __o => __o.{last.Name}, static __t => {convert}, {writeBack}, {guarded})";
@@ -517,13 +503,7 @@ sealed partial class XamlEmitter
 
     // A number shown as text is formatted into a buffer and handed to Noesis without a string; a
     // format with an aligned hole keeps the string route, whose padding the writer does not do.
-    string? TextLane(
-        ResolvedPath resolved,
-        BindingSlot slot,
-        MarkupCall call,
-        bool formatted,
-        string? resolverName
-    )
+    string? TextLane(ResolvedPath resolved, BindingSlot slot, MarkupCall call, bool formatted)
     {
         if (
             slot.Type.SpecialType != SpecialType.System_String
@@ -594,7 +574,7 @@ sealed partial class XamlEmitter
 
         var owner = XamlTypeResolver.Fqn(last.Owner);
         var fromFqn = XamlTypeResolver.Fqn(from);
-        var guarded = resolverName is not null && resolved.Hops.Count == 1 ? "true" : "false";
+        var guarded = resolved.Hops.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Text<{owner}, {fromFqn}>("
             + $"static __o => __o.{last.Name}, "
@@ -802,7 +782,15 @@ sealed partial class XamlEmitter
         var chain = string.Join(
             ", ",
             resolved
-                .Hops.Select((h, i) => HopExpression(h, source.Resolver is not null && i == 0))
+                .Hops.Select(
+                    (h, i) =>
+                        HopExpression(
+                            h,
+                            i > 0 ? null
+                                : source.Resolver is null ? "Checked"
+                                : "Guarded"
+                        )
+                )
                 .ToArray()
         );
 
@@ -1093,7 +1081,7 @@ sealed partial class XamlEmitter
         };
     }
 
-    // A null resolver is the binding's own target, which needs no lookup and no guarded hop.
+    // A null resolver is the binding's own target, which needs no lookup.
     readonly struct BindingSource(
         string? resolver,
         XElement scope,
@@ -1281,26 +1269,27 @@ sealed partial class XamlEmitter
         return tail.Length > 0;
     }
 
-    string HopExpression(Hop hop, bool guarded)
+    // Only a first hop's owner can be wrong at run time, and off a picked element that is by design.
+    string HopExpression(Hop hop, string? check)
     {
         var owner = XamlTypeResolver.Fqn(hop.Owner);
         var name = Quote(hop.Name);
 
         if (hop.Type.SpecialType == SpecialType.System_Boolean)
-            return guarded
-                ? $"{BindingHopFqn}.GuardedBool<{owner}>({name}, __c => __c.{hop.Name})"
+            return check is not null
+                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{hop.Name})"
                 : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{hop.Name})";
 
         if (BoxesOnRead(hop.Type))
         {
             var value = XamlTypeResolver.Fqn(hop.Type);
-            return guarded
-                ? $"{BindingHopFqn}.GuardedValue<{owner}, {value}>({name}, __c => __c.{hop.Name})"
+            return check is not null
+                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{hop.Name})"
                 : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{hop.Name})";
         }
 
-        return guarded
-            ? $"{BindingHopFqn}.Guarded<{owner}>({name}, __c => __c.{hop.Name})"
+        return check is not null
+            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{hop.Name})"
             : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{hop.Name})";
     }
 

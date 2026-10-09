@@ -63,6 +63,12 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static BindingHop Value<TValue>(string name, System.Func<object, TValue> read) where TValue : struct => default;
 
         public static BindingHop GuardedValue<TOwner, TValue>(string name, System.Func<TOwner, TValue> read) where TValue : struct => default;
+
+        public static BindingHop Checked<TOwner>(string name, System.Func<TOwner, object?> read) => default;
+
+        public static BindingHop CheckedBool<TOwner>(string name, System.Func<TOwner, bool> read) => default;
+
+        public static BindingHop CheckedValue<TOwner, TValue>(string name, System.Func<TOwner, TValue> read) where TValue : struct => default;
     }
 
     public static class DependencyRead

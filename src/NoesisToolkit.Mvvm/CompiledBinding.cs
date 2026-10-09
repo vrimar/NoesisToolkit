@@ -15,9 +15,13 @@ public readonly struct BindingHop
     /// <param name="name">The property name a change notification carries.</param>
     /// <param name="read">Reads this hop off the object the previous hop produced.</param>
     public BindingHop(string name, Func<object, object?> read)
+        : this(name, read, reports: false) { }
+
+    BindingHop(string name, Func<object, object?> read, bool reports)
     {
         Name = name;
         Read = read;
+        Reports = reports;
     }
 
     /// <summary>The property name a change notification carries for this hop.</summary>
@@ -26,6 +30,8 @@ public readonly struct BindingHop
     /// <summary>Reads this hop off the object the previous hop produced.</summary>
     public Func<object, object?> Read { get; }
 
+    internal bool Reports { get; }
+
     /// <summary>A hop that reads only when the object really is <typeparamref name="TOwner"/>. The
     /// path off an element the compiler picked out of the tree, rather than one the document
     /// declared a type for, has to survive landing somewhere else.</summary>
@@ -33,10 +39,24 @@ public readonly struct BindingHop
     /// <param name="name">The property name a change notification carries.</param>
     /// <param name="read">Reads this hop off a source of the expected type.</param>
     /// <returns>The hop, which fails the path off anything else.</returns>
-    public static BindingHop Guarded<TOwner>(string name, Func<TOwner, object?> read)
+    public static BindingHop Guarded<TOwner>(string name, Func<TOwner, object?> read) =>
+        Typed(name, read, reports: false);
+
+    /// <summary>A hop off a source the document declared a type for, which only a wrong source can
+    /// break: it reads only a <typeparamref name="TOwner"/>, and anything else fails the path as a miss
+    /// reported to <see cref="CompiledBindingDiagnostics.Missed"/>, where the native engine would log,
+    /// rather than throwing.</summary>
+    /// <typeparam name="TOwner">The type the previous hop is expected to have produced.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off a source of the expected type.</param>
+    /// <returns>The hop, which fails the path off anything else and reports it.</returns>
+    public static BindingHop Checked<TOwner>(string name, Func<TOwner, object?> read) =>
+        Typed(name, read, reports: true);
+
+    static BindingHop Typed<TOwner>(string name, Func<TOwner, object?> read, bool reports)
     {
         Guard.NotNull(read, nameof(read));
-        return new BindingHop(name, o => o is TOwner typed ? read(typed) : Missed);
+        return new BindingHop(name, o => o is TOwner typed ? read(typed) : Missed, reports);
     }
 
     /// <summary>A hop reading a bool, boxed once per value rather than on every read.</summary>
@@ -54,10 +74,25 @@ public readonly struct BindingHop
     /// <param name="name">The property name a change notification carries.</param>
     /// <param name="read">Reads this hop off a source of the expected type.</param>
     /// <returns>The hop, which fails the path off anything else.</returns>
-    public static BindingHop GuardedBool<TOwner>(string name, Func<TOwner, bool> read)
+    public static BindingHop GuardedBool<TOwner>(string name, Func<TOwner, bool> read) =>
+        TypedBool(name, read, reports: false);
+
+    /// <summary>The checked form of <see cref="Bool"/>.</summary>
+    /// <typeparam name="TOwner">The type the previous hop is expected to have produced.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off a source of the expected type.</param>
+    /// <returns>The hop, which fails the path off anything else and reports it.</returns>
+    public static BindingHop CheckedBool<TOwner>(string name, Func<TOwner, bool> read) =>
+        TypedBool(name, read, reports: true);
+
+    static BindingHop TypedBool<TOwner>(string name, Func<TOwner, bool> read, bool reports)
     {
         Guard.NotNull(read, nameof(read));
-        return new BindingHop(name, o => o is TOwner typed ? (read(typed) ? True : False) : Missed);
+        return new BindingHop(
+            name,
+            o => o is TOwner typed ? (read(typed) ? True : False) : Missed,
+            reports
+        );
     }
 
     /// <summary>A hop reading a value type, boxed again only when the value it reads has
@@ -81,11 +116,27 @@ public readonly struct BindingHop
     /// <param name="read">Reads this hop off a source of the expected type.</param>
     /// <returns>The hop, which fails the path off anything else.</returns>
     public static BindingHop GuardedValue<TOwner, TValue>(string name, Func<TOwner, TValue> read)
+        where TValue : struct => TypedValue(name, read, reports: false);
+
+    /// <summary>The checked form of <see cref="Value{TValue}"/>.</summary>
+    /// <typeparam name="TOwner">The type the previous hop is expected to have produced.</typeparam>
+    /// <typeparam name="TValue">The property's type.</typeparam>
+    /// <param name="name">The property name a change notification carries.</param>
+    /// <param name="read">Reads this hop off a source of the expected type.</param>
+    /// <returns>The hop, which fails the path off anything else and reports it.</returns>
+    public static BindingHop CheckedValue<TOwner, TValue>(string name, Func<TOwner, TValue> read)
+        where TValue : struct => TypedValue(name, read, reports: true);
+
+    static BindingHop TypedValue<TOwner, TValue>(
+        string name,
+        Func<TOwner, TValue> read,
+        bool reports
+    )
         where TValue : struct
     {
         Guard.NotNull(read, nameof(read));
         var box = new ValueBox<TValue>();
-        return new BindingHop(name, o => o is TOwner typed ? box.Of(read(typed)) : Missed);
+        return new BindingHop(name, o => o is TOwner typed ? box.Of(read(typed)) : Missed, reports);
     }
 
     static readonly object True = true;
@@ -528,6 +579,9 @@ public sealed class CompiledBinding
             var owner = _chain.EvaluateOwner(out root, out broke);
             if (!broke && !lane.TryRead(owner!, out slot))
             {
+                if (_spec.Hops is [{ Reports: true } first, ..])
+                    CompiledBindingDiagnostics.Miss(first.Name, owner!, _target.Object);
+
                 owner = null;
                 broke = true;
             }

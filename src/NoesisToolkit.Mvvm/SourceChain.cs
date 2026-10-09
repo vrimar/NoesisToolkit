@@ -133,6 +133,9 @@ sealed class SourceChain : IChangeListener
 
             if (ReferenceEquals(current, BindingHop.Missed))
             {
+                if (_hops[i].Reports)
+                    CompiledBindingDiagnostics.Miss(_hops[i].Name, owner!, _target.Object);
+
                 owner = null;
                 current = null;
                 broke = true;

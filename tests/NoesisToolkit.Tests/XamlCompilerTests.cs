@@ -125,7 +125,11 @@ public partial class XamlCompilerTests
         var source = run.AllSources;
 
         await Assert.That(source).Contains("CompiledBinding.Bind(");
-        await Assert.That(source).Contains("__o => ((global::Sample.Ui.ItemViewModel)__o).Def");
+        await Assert
+            .That(source)
+            .Contains(
+                "BindingHop.Checked<global::Sample.Ui.ItemViewModel>(\"Def\", __c => __c.Def)"
+            );
         await Assert.That(source).Contains("__o => ((global::Sample.Ui.ItemDef)__o).Family");
         await Assert.That(source).Contains("Converter = (global::Noesis.IValueConverter)");
     }
@@ -161,14 +165,14 @@ public partial class XamlCompilerTests
                     + "static __o => __o.DefIdInt, "
                     + "static (int __t, global::System.Span<char> __d, out int __w) => "
                     + "{ var __s = new global::NoesisToolkit.Mvvm.CodeGen.SlotText(__d); __s.Integer(__t); "
-                    + "return __s.Done(out __w); }, false)"
+                    + "return __s.Done(out __w); }, true)"
             );
         await Assert
             .That(source)
             .Contains(
                 "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, double, float>("
                     + "static __o => __o.Ratio, static __t => (float)__t, "
-                    + "static (__o, __w) => __o.Ratio = (double)__w, false)"
+                    + "static (__o, __w) => __o.Ratio = (double)__w, true)"
             );
     }
 
@@ -185,7 +189,7 @@ public partial class XamlCompilerTests
                     + "static (double __t, global::System.Span<char> __d, out int __w) => "
                     + "{ var __s = new global::NoesisToolkit.Mvvm.CodeGen.SlotText(__d); "
                     + "__s.Literal(\"x \"); __s.Fixed(__t, \"F1\"); __s.Literal(\" m\"); "
-                    + "return __s.Done(out __w); }, false)"
+                    + "return __s.Done(out __w); }, true)"
             );
     }
 
@@ -200,7 +204,7 @@ public partial class XamlCompilerTests
             .Contains(
                 "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, global::Sample.Ui.Coins, float>("
                     + "static __o => __o.Purse, static __t => (float)(long)__t, "
-                    + "static (__o, __w) => __o.Purse = (global::Sample.Ui.Coins)(long)__w, false)"
+                    + "static (__o, __w) => __o.Purse = (global::Sample.Ui.Coins)(long)__w, true)"
             );
     }
 
@@ -257,7 +261,7 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "global::NoesisToolkit.Mvvm.CodeGen.BindingHop.Bool(\"Ticked\", __o => ((global::Sample.Ui.ItemViewModel)__o).Ticked)"
+                "global::NoesisToolkit.Mvvm.CodeGen.BindingHop.CheckedBool<global::Sample.Ui.ItemViewModel>(\"Ticked\", __c => __c.Ticked)"
             );
         await Assert.That(source).Contains("Value = true");
         await Assert.That(source).Contains("Value = 3");
@@ -430,7 +434,7 @@ public partial class XamlCompilerTests
             .That(source)
             .Contains(
                 "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, bool, bool>("
-                    + "static __o => __o.Ticked, static __t => __t, static (__o, __w) => __o.Ticked = __w, false)"
+                    + "static __o => __o.Ticked, static __t => __t, static (__o, __w) => __o.Ticked = __w, true)"
             );
     }
 

@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`CompiledBindingDiagnostics.Missed` reports a compiled binding whose source is not the type its
+  path was compiled against**, where the native engine would log. Route it into the same sink as
+  Noesis's own binding warnings so a miss stays visible.
+- **`BindingHop.Checked`, `CheckedBool` and `CheckedValue`**: a hop that reads only its owner type
+  and fails the path off anything else as a reported miss. `Guarded` and its forms still miss
+  quietly, for a path that may land on another type by design.
+
+### Fixed
+
+- **A compiled binding off a data context or templated parent of the wrong type fails as a native
+  one does instead of throwing.** Its first hop cast the source unchecked, so a `ContentControl`
+  whose content went null handed its template the parent's view model and the cast threw out of the
+  Noesis callback, aborting that element's other bindings. The first hop is now checked: the path
+  breaks, writes the default and reports the miss. A path off an element the compiler picked from
+  the tree keeps its quiet guard.
+
 ## [0.4.0] - 2026-10-08
 
 ### Added
