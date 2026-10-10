@@ -420,6 +420,12 @@ sealed partial class XamlEmitter
                 return null;
             }
 
+            if (inner.HasElements)
+            {
+                Note("trigger-binding-has-a-property-element");
+                return null;
+            }
+
             call = BindingElementCall(inner);
         }
 

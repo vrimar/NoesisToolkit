@@ -1,0 +1,24 @@
+<UserControl
+  x:Class="Sample.BindingChildInMultiHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="ui:ItemViewModel"
+>
+  <TextBlock>
+    <TextBlock.Text>
+      <MultiBinding>
+        <MultiBinding.Converter>
+          <ui:JoinConverter />
+        </MultiBinding.Converter>
+        <Binding Path="Def.Family">
+          <Binding.Converter>
+            <ui:UpConverter />
+          </Binding.Converter>
+        </Binding>
+      </MultiBinding>
+    </TextBlock.Text>
+  </TextBlock>
+</UserControl>

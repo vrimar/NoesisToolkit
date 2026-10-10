@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A property element inside a `<Binding>` element is an `NTK1001` error instead of being
+  dropped.** The compiler read only a `<Binding>` element's attributes, so a child such as
+  `<Binding.Converter>` was lost without a word: the binding ran without its converter, and a
+  compiled `DataTrigger` compared the unconverted value. Set it as an attribute instead,
+  `Converter="{StaticResource …}"`. A `Setter` value is unaffected; the parser still builds it whole.
+
 ## [0.4.1] - 2026-10-09
 
 ### Added

@@ -533,6 +533,13 @@ sealed partial class XamlEmitter
 
     string? EmitBindingElement(XElement element, string slot)
     {
+        if (element.Elements().FirstOrDefault() is { } child)
+        {
+            return Fail(
+                $"<{child.Name.LocalName}> inside a Binding is not supported; set it as an attribute"
+            );
+        }
+
         var call = BindingElementCall(element);
         if (call is null)
         {

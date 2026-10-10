@@ -2220,7 +2220,8 @@ sealed partial class XamlEmitter
         IPropertySymbol property,
         XElement binding
     ) =>
-        BindingElementCall(binding) is { } call
+        !binding.HasElements
+        && BindingElementCall(binding) is { } call
         && PlainSlot(property) is { } slot
         && TryEmitCompiledBinding(element, target, type, slot, call);
 
@@ -2317,6 +2318,9 @@ sealed partial class XamlEmitter
 
             if (child.Name.LocalName != "Binding")
                 return No("multi-binding-child-is-not-a-binding");
+
+            if (child.HasElements)
+                return No("child-has-a-property-element");
 
             if (BindingElementCall(child) is not { } call)
                 return No("child-attribute-unparsed");

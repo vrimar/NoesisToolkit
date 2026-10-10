@@ -348,6 +348,30 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    [Arguments("BindingChildElement")]
+    [Arguments("BindingChildInMulti")]
+    [Arguments("BindingChildInTrigger")]
+    public async Task A_property_element_inside_a_binding_is_refused_rather_than_dropped(
+        string fixture
+    )
+    {
+        var run = Run([$"{fixture}.xaml"], [Host($"{fixture}Host"), SampleUi, Stubs.Mvvm]);
+
+        var messages = run
+            .GeneratorDiagnostics.Where(d => d.Id == "NTK1001")
+            .Select(d => d.GetMessage())
+            .ToList();
+        await Assert
+            .That(
+                messages.Any(m =>
+                    m.Contains("<Binding.Converter> inside a Binding is not supported")
+                )
+            )
+            .IsTrue()
+            .Because(string.Join("\n", messages));
+    }
+
+    [Test]
     public async Task A_binding_it_cannot_resolve_stays_a_native_binding()
     {
         var run = CompiledBindings();
