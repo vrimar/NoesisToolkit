@@ -1,4 +1,3 @@
-using System.Runtime;
 using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Testing.Tests;
@@ -51,13 +50,30 @@ public class AllocationCostTests
     }
 
     [Test]
-    public async Task The_runs_share_a_region_no_collection_interrupts()
+    public async Task A_window_charged_what_steady_state_is_not_is_measured_again()
     {
-        var modes = new List<GCLatencyMode>();
+        var runs = 0;
 
-        AllocationCost.Of(() => modes.Add(GCSettings.LatencyMode), warmup: 2, iterations: 2);
+        var cost = AllocationCost.Of(
+            () =>
+            {
+                if (++runs == 2)
+                    GC.KeepAlive(new object());
+            },
+            warmup: 1,
+            iterations: 1
+        );
 
-        await Assert.That(modes).All().Satisfy(mode => mode.IsEqualTo(GCLatencyMode.NoGCRegion));
-        await Assert.That(GCSettings.LatencyMode).IsNotEqualTo(GCLatencyMode.NoGCRegion);
+        await Assert.That(cost).IsEqualTo(0L);
+    }
+
+    [Test]
+    public async Task A_single_cold_run_is_charged_its_first_sight_cost()
+    {
+        List<int>? cache = null;
+
+        var cost = AllocationCost.Once(() => cache ??= []);
+
+        await Assert.That(cost).IsGreaterThan(0L);
     }
 }

@@ -3,6 +3,25 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`AllocationCost.Once` measures a single cold run**, first-sight costs included: what the first
+  run after a collection pays. `Of` with `warmup: 0` no longer does, since it now retries a window.
+
+### Changed
+
+- **`AllocationCost.Of` repeats its window until one is clean or two agree, and returns the least**,
+  a millisecond apart for up to 100 ms. A collection between the warmup and the window, or another
+  thread holding shared state the body reads, charged that one window what steady state does not
+  pay, and a comparison against a floor failed on it; a real cost recurs in every window. The body
+  can run more than `warmup + iterations` times.
+- **`AllocationCost` opens no no-GC region.** The region was process-wide: a second caller on
+  another thread could be refused with `InvalidOperationException`, end the first caller's region,
+  or force a blocking collection on every running test, and other threads' garbage spent its budget
+  anyway. Repeating the window absorbs the collection it guarded against.
+
 ## [0.4.2] - 2026-10-10
 
 ### Fixed
