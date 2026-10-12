@@ -66,6 +66,18 @@ public static class ElementGeometry
         return position == 0 ? default : Unsafe.Read<Point>((void*)position);
     }
 
+    /// <summary>The same as <see cref="DragEventArgs.GetPosition"/>, without the allocation.</summary>
+    /// <param name="args">The drag event, read while its handler runs.</param>
+    /// <param name="relativeTo">The element to state the position in, or null for the view's root.</param>
+    /// <returns>The pointer's position in <paramref name="relativeTo"/>'s space.</returns>
+    public static unsafe Point GetPosition(DragEventArgs args, UIElement? relativeTo)
+    {
+        Guard.NotNull(args, nameof(args));
+
+        var position = DragPosition(null, DragHandle(args), BaseComponent.getCPtr(relativeTo));
+        return position == 0 ? default : Unsafe.Read<Point>((void*)position);
+    }
+
     /// <summary>The same as <see cref="UIElement.DesiredSize"/>, without the allocation.</summary>
     /// <param name="element">The element to measure.</param>
     /// <returns>What the element asked for in the last measure pass.</returns>
@@ -115,6 +127,16 @@ public static class ElementGeometry
 
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "MouseEventArgs_GetPosition")]
     static extern nint Position(
+        [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
+        HandleRef args,
+        HandleRef relativeTo
+    );
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
+    static extern ref HandleRef DragHandle(DragEventArgs args);
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "DragEventArgs_GetPosition")]
+    static extern nint DragPosition(
         [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
         HandleRef args,
         HandleRef relativeTo

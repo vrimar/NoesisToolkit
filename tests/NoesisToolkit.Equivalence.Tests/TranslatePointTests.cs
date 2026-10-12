@@ -182,6 +182,79 @@ public sealed class TranslatePointTests
         await Assert.That(typed).IsEqualTo(0);
     }
 
+    static (Point Native, Point Typed, long NativeCost, long TypedCost) DraggedOver()
+    {
+        var target = new Border
+        {
+            Width = 200,
+            Height = 100,
+            Margin = new Thickness(11, 7, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Background = new SolidColorBrush(Colors.Transparent),
+            AllowDrop = true,
+        };
+        var root = new Grid
+        {
+            Width = 400,
+            Height = 300,
+            Background = new SolidColorBrush(Colors.Transparent),
+        };
+        var view = NoesisRuntime.Show(root, target);
+
+        var dragging = false;
+        root.PreviewMouseMove += (_, e) =>
+        {
+            if (dragging || e.LeftButton != MouseButtonState.Pressed)
+                return;
+
+            dragging = true;
+            DragDrop.DoDragDrop(root, "payload", DragDropEffects.Move);
+        };
+
+        var read = (default(Point), default(Point), -1L, -1L);
+        target.DragOver += (_, e) =>
+            read = (
+                e.GetPosition(target),
+                ElementGeometry.GetPosition(e, target),
+                AllocationCost.Of(() => e.GetPosition(target)),
+                AllocationCost.Of(() => ElementGeometry.GetPosition(e, target))
+            );
+
+        view.MouseMove(20, 30);
+        view.MouseButtonDown(20, 30, MouseButton.Left);
+        view.MouseMove(24, 30);
+        view.MouseMove(28, 30);
+        view.MouseButtonUp(28, 30, MouseButton.Left);
+        view.Update(0.1);
+        return read;
+    }
+
+    [Test]
+    public async Task ADragPosition_IsWhatNoesisReturns()
+    {
+        var (native, typed, _, _) = DraggedOver();
+
+        await Assert.That(typed.X).IsEqualTo(native.X);
+        await Assert.That(typed.Y).IsEqualTo(native.Y);
+        await Assert
+            .That(typed.X)
+            .IsEqualTo(17f)
+            .Because("the margin puts the target at 11, and the pointer is at 28");
+    }
+
+    [Test]
+    public async Task ADragPosition_CostsNothing()
+    {
+        var (_, _, native, typed) = DraggedOver();
+
+        await Assert
+            .That(native)
+            .IsGreaterThan(0)
+            .Because("Noesis' own read is what this exists to replace");
+        await Assert.That(typed).IsEqualTo(0);
+    }
+
     [Test]
     public async Task ATranslatedPoint_CostsNothing()
     {

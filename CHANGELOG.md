@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`ElementGeometry.GetPosition` reads a drag event's position without the allocation**, as it
+  already does a mouse event's. `DragEventArgs.GetPosition` boxes the `Point` it returns, and a
+  drop target pays it on every drag-over.
+
 ## [0.5.5] - 2026-10-12
 
 ### Fixed
