@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`AllocationCost.Beyond` measures work against its floor in alternating windows.** Two separate
+  `Of` calls had to land on the same bytes, so a disturbance in either failed the comparison. Work
+  and floor now alternate windows and each keeps its own least, since a disturbance only adds bytes,
+  and they agree only on a floor window no collection reached: that one re-mints the very proxies a
+  regressed work would.
+- **`AllocationCost.BeyondAfterCollection` compares first runs after a full collection the same
+  way**, for what rebuilding the proxies and weakly held objects a collection dropped costs the work.
+
 ## [0.5.1] - 2026-10-11
 
 ### Fixed

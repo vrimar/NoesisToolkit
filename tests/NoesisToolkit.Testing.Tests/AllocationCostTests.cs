@@ -89,6 +89,52 @@ public class AllocationCostTests
     }
 
     [Test]
+    public async Task Work_is_charged_what_it_allocates_beyond_a_floor_a_collection_disturbed()
+    {
+        var floorRuns = 0;
+        var single = AllocationCost.Of(static () => GC.KeepAlive(new object()), iterations: 1);
+
+        var beyond = AllocationCost.Beyond(
+            static () =>
+            {
+                GC.KeepAlive(new object());
+                GC.KeepAlive(new object());
+            },
+            () =>
+            {
+                GC.KeepAlive(new object());
+                if (++floorRuns is 2 or 3)
+                {
+                    GC.Collect();
+                    GC.KeepAlive(new object());
+                }
+            },
+            warmup: 1,
+            iterations: 1
+        );
+
+        await Assert.That(beyond).IsEqualTo(single);
+    }
+
+    [Test]
+    public async Task Work_after_a_collection_is_charged_rebuilding_what_the_collection_dropped()
+    {
+        var cache = new WeakReference<object>(null!);
+        var single = AllocationCost.Of(static () => GC.KeepAlive(new object()), iterations: 1);
+
+        var beyond = AllocationCost.BeyondAfterCollection(
+            () =>
+            {
+                if (!cache.TryGetTarget(out _))
+                    cache.SetTarget(new object());
+            },
+            static () => { }
+        );
+
+        await Assert.That(beyond).IsEqualTo(single);
+    }
+
+    [Test]
     public async Task A_single_cold_run_is_charged_its_first_sight_cost()
     {
         List<int>? cache = null;

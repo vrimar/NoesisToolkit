@@ -9,9 +9,9 @@ namespace NoesisToolkit.Testing;
 /// <para>
 /// First sight costs what steady state does not — a JIT'd path, a proxy Noesis mints for an object it
 /// has not met, a cache filling — so the body runs <c>warmup</c> times unmeasured before a window of
-/// <c>iterations</c> measured runs. Compare against the same measurement of a floor that does
-/// everything but the work under test (an idle <c>View.Update</c>, say): the difference is the work's
-/// own cost, and anything a layout pass allocates on its own cancels out.
+/// <c>iterations</c> measured runs. <see cref="Beyond"/> measures work against a floor that does
+/// everything but the work under test (an idle <c>View.Update</c>, say), so anything a layout pass
+/// allocates on its own cancels out.
 /// </para>
 /// <para>
 /// A collection lets Noesis drop the proxies and weakly held objects the warmup paid for, and another
@@ -21,10 +21,17 @@ namespace NoesisToolkit.Testing;
 /// re-mints the proxies its collection dropped, so two of them can agree on bytes steady state never
 /// pays. <see cref="Once"/> measures a single cold run instead.
 /// </para>
+/// <para>
+/// Work and floor alternate windows, so a disturbance that lasts reaches both, and each keeps its own
+/// least: a disturbance only ever adds bytes. They agree only on a floor window no collection reached,
+/// since that one re-mints the very proxies a regressed work would.
+/// </para>
 /// </summary>
 public static class AllocationCost
 {
     static readonly long Patience = Stopwatch.Frequency / 10;
+
+    const int MinPairs = 4;
 
     /// <summary>Bytes a window of <paramref name="iterations"/> runs of <paramref name="body"/> allocates, after <paramref name="warmup"/> unmeasured runs; the least of the windows measured.</summary>
     /// <param name="body">The work to measure; capture state outside it so the delegate is built once.</param>
@@ -61,6 +68,92 @@ public static class AllocationCost
         }
 
         return least;
+    }
+
+    /// <summary>Bytes a window of <paramref name="work"/> allocates beyond a window of <paramref name="floor"/>, each measured as <see cref="Of"/> measures it, in alternating windows until their least agree.</summary>
+    /// <param name="work">The work to measure; capture state outside it so the delegate is built once.</param>
+    /// <param name="floor">Everything <paramref name="work"/> does but the work under test.</param>
+    /// <param name="warmup">Unmeasured runs of each that pay first-sight costs.</param>
+    /// <param name="iterations">Measured runs per window.</param>
+    public static long Beyond(Action work, Action floor, int warmup = 8, int iterations = 64)
+    {
+        if (work is null)
+            throw new ArgumentNullException(nameof(work));
+
+        if (floor is null)
+            throw new ArgumentNullException(nameof(floor));
+
+        if (warmup < 0)
+            throw new ArgumentOutOfRangeException(nameof(warmup));
+
+        if (iterations < 1)
+            throw new ArgumentOutOfRangeException(nameof(iterations));
+
+        for (var i = 0; i < warmup; i++)
+        {
+            floor();
+            work();
+        }
+
+        var collections = GC.CollectionCount(0);
+        return Paired(work, floor, body => (Window(body, iterations), Quiet(ref collections)));
+    }
+
+    /// <summary>Bytes the first run of <paramref name="work"/> after a full collection allocates beyond the first run of <paramref name="floor"/> after one: what rebuilding the proxies and weakly held objects a collection dropped costs the work.</summary>
+    /// <param name="work">The work to measure; capture state outside it so the delegate is built once.</param>
+    /// <param name="floor">Everything <paramref name="work"/> does but the work under test.</param>
+    /// <param name="warmup">Runs of each before its collection, so the collection drops a warm state.</param>
+    public static long BeyondAfterCollection(Action work, Action floor, int warmup = 2)
+    {
+        if (work is null)
+            throw new ArgumentNullException(nameof(work));
+
+        if (floor is null)
+            throw new ArgumentNullException(nameof(floor));
+
+        if (warmup < 0)
+            throw new ArgumentOutOfRangeException(nameof(warmup));
+
+        return Paired(
+            work,
+            floor,
+            body =>
+            {
+                for (var i = 0; i < warmup; i++)
+                    body();
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                var collections = GC.CollectionCount(0);
+                return (Window(body, 1), Quiet(ref collections));
+            }
+        );
+    }
+
+    static long Paired(Action work, Action floor, Func<Action, (long Bytes, bool Quiet)> measure)
+    {
+        var leastWork = long.MaxValue;
+        var leastFloor = long.MaxValue;
+        var floorQuiet = false;
+        var giveUpAt = Stopwatch.GetTimestamp() + Patience;
+        for (var pair = 1; ; pair++)
+        {
+            var (floorBytes, quiet) = measure(floor);
+            if (floorBytes < leastFloor)
+                (leastFloor, floorQuiet) = (floorBytes, quiet);
+            else if (floorBytes == leastFloor)
+                floorQuiet |= quiet;
+
+            leastWork = Math.Min(leastWork, measure(work).Bytes);
+            if (leastWork == leastFloor && floorQuiet)
+                return 0;
+
+            if (pair >= MinPairs && Stopwatch.GetTimestamp() >= giveUpAt)
+                return leastWork - leastFloor;
+
+            Thread.Sleep(1);
+        }
     }
 
     static bool Quiet(ref int collections)
