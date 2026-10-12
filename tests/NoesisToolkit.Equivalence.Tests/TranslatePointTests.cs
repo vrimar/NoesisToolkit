@@ -116,6 +116,61 @@ public sealed class TranslatePointTests
         await Assert.That(fromScreen).IsEqualTo(0);
     }
 
+    static (Point Native, Point Typed, long NativeCost, long TypedCost) MovedOver()
+    {
+        var child = new Border
+        {
+            Width = 40,
+            Height = 20,
+            Margin = new Thickness(11, 7, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        var root = new Grid
+        {
+            Width = 400,
+            Height = 300,
+            Background = new SolidColorBrush(Colors.Transparent),
+        };
+        var view = NoesisRuntime.Show(root, child);
+
+        var read = (default(Point), default(Point), -1L, -1L);
+        root.PreviewMouseMove += (_, e) =>
+            read = (
+                e.GetPosition(child),
+                ElementGeometry.GetPosition(e, child),
+                AllocationCost.Of(() => e.GetPosition(child)),
+                AllocationCost.Of(() => ElementGeometry.GetPosition(e, child))
+            );
+        view.MouseMove(20, 30);
+        return read;
+    }
+
+    [Test]
+    public async Task APointerPosition_IsWhatNoesisReturns()
+    {
+        var (native, typed, _, _) = MovedOver();
+
+        await Assert.That(typed.X).IsEqualTo(native.X);
+        await Assert.That(typed.Y).IsEqualTo(native.Y);
+        await Assert
+            .That(typed.X)
+            .IsEqualTo(9f)
+            .Because("the margin puts the child at 11, and the pointer is at 20");
+    }
+
+    [Test]
+    public async Task APointerPosition_CostsNothing()
+    {
+        var (_, _, native, typed) = MovedOver();
+
+        await Assert
+            .That(native)
+            .IsGreaterThan(0)
+            .Because("Noesis' own read is what this exists to replace");
+        await Assert.That(typed).IsEqualTo(0);
+    }
+
     [Test]
     public async Task ATranslatedPoint_CostsNothing()
     {

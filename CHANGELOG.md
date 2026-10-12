@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`ElementGeometry.GetPosition` reads a mouse event's position without the allocation.**
+  `MouseEventArgs.GetPosition` boxes the `Point` it returns, as the transforms do, and a pointer
+  handler pays it on every move.
+
 ## [0.5.3] - 2026-10-12
 
 ### Added
