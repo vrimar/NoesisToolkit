@@ -79,6 +79,44 @@ public sealed class TranslatePointTests
     }
 
     [Test]
+    public async Task AScreenPoint_IsWhatNoesisReturns()
+    {
+        var (child, _) = Laid();
+
+        var toScreen = ElementGeometry.PointToScreen(child, new Point(3, 5));
+        var fromScreen = ElementGeometry.PointFromScreen(child, new Point(20, 30));
+
+        await Assert.That(toScreen.X).IsEqualTo(child.PointToScreen(new Point(3, 5)).X);
+        await Assert.That(toScreen.Y).IsEqualTo(child.PointToScreen(new Point(3, 5)).Y);
+        await Assert.That(fromScreen.X).IsEqualTo(child.PointFromScreen(new Point(20, 30)).X);
+        await Assert.That(fromScreen.Y).IsEqualTo(child.PointFromScreen(new Point(20, 30)).Y);
+        await Assert
+            .That(toScreen.X)
+            .IsEqualTo(14f)
+            .Because("the margin puts the child at 11, and the point is 3 into it");
+        await Assert.That(fromScreen.X).IsEqualTo(9f);
+    }
+
+    [Test]
+    public async Task AScreenPoint_CostsNothing()
+    {
+        var (child, _) = Laid();
+
+        var native = AllocationCost.Of(() => child.PointToScreen(new Point()));
+        var toScreen = AllocationCost.Of(() => ElementGeometry.PointToScreen(child, new Point()));
+        var fromScreen = AllocationCost.Of(() =>
+            ElementGeometry.PointFromScreen(child, new Point())
+        );
+
+        await Assert
+            .That(native)
+            .IsGreaterThan(0)
+            .Because("Noesis' own read is what this exists to replace");
+        await Assert.That(toScreen).IsEqualTo(0);
+        await Assert.That(fromScreen).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task ATranslatedPoint_CostsNothing()
     {
         var (child, root) = Laid();

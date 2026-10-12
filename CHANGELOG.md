@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`ElementGeometry.PointToScreen` and `PointFromScreen` convert a point without the allocation**
+  `Visual.PointToScreen` and `PointFromScreen` pay: Noesis' marshaller boxes the `Point` each
+  returns, which a drag pays several times on every pointer move.
+
 ## [0.5.2] - 2026-10-11
 
 ### Added

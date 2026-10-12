@@ -30,6 +30,30 @@ public static class ElementGeometry
         return translated == 0 ? default : Unsafe.Read<Point>((void*)translated);
     }
 
+    /// <summary>The same as <see cref="Visual.PointToScreen"/>, without the allocation.</summary>
+    /// <param name="visual">The visual the point is stated in.</param>
+    /// <param name="point">The point, in <paramref name="visual"/>'s own space.</param>
+    /// <returns>The point in screen space.</returns>
+    public static unsafe Point PointToScreen(Visual visual, Point point)
+    {
+        Guard.NotNull(visual, nameof(visual));
+
+        var screen = ToScreen(null, BaseComponent.getCPtr(visual), ref point);
+        return screen == 0 ? default : Unsafe.Read<Point>((void*)screen);
+    }
+
+    /// <summary>The same as <see cref="Visual.PointFromScreen"/>, without the allocation.</summary>
+    /// <param name="visual">The visual to state the result in.</param>
+    /// <param name="point">The point, in screen space.</param>
+    /// <returns>The point in <paramref name="visual"/>'s own space.</returns>
+    public static unsafe Point PointFromScreen(Visual visual, Point point)
+    {
+        Guard.NotNull(visual, nameof(visual));
+
+        var local = FromScreen(null, BaseComponent.getCPtr(visual), ref point);
+        return local == 0 ? default : Unsafe.Read<Point>((void*)local);
+    }
+
     /// <summary>The same as <see cref="UIElement.DesiredSize"/>, without the allocation.</summary>
     /// <param name="element">The element to measure.</param>
     /// <returns>What the element asked for in the last measure pass.</returns>
@@ -58,6 +82,20 @@ public static class ElementGeometry
         HandleRef element,
         ref Point point,
         HandleRef relativeTo
+    );
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Visual_PointToScreen")]
+    static extern nint ToScreen(
+        [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
+        HandleRef visual,
+        ref Point point
+    );
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Visual_PointFromScreen")]
+    static extern nint FromScreen(
+        [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
+        HandleRef visual,
+        ref Point point
     );
 
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "UIElement_DesiredSize_get")]
