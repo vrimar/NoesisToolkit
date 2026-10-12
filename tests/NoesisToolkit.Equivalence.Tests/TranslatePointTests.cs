@@ -116,7 +116,14 @@ public sealed class TranslatePointTests
         await Assert.That(fromScreen).IsEqualTo(0);
     }
 
-    static (Point Native, Point Typed, long NativeCost, long TypedCost) MovedOver()
+    static (
+        Point Native,
+        Point Typed,
+        long NativeCost,
+        long TypedCost,
+        Point RootNative,
+        Point RootTyped
+    ) MovedOver()
     {
         var child = new Border
         {
@@ -134,13 +141,15 @@ public sealed class TranslatePointTests
         };
         var view = NoesisRuntime.Show(root, child);
 
-        var read = (default(Point), default(Point), -1L, -1L);
+        var read = (default(Point), default(Point), -1L, -1L, default(Point), default(Point));
         root.PreviewMouseMove += (_, e) =>
             read = (
                 e.GetPosition(child),
                 ElementGeometry.GetPosition(e, child),
                 AllocationCost.Of(() => e.GetPosition(child)),
-                AllocationCost.Of(() => ElementGeometry.GetPosition(e, child))
+                AllocationCost.Of(() => ElementGeometry.GetPosition(e, child)),
+                e.GetPosition(null),
+                ElementGeometry.GetPosition(e, null)
             );
         view.MouseMove(20, 30);
         return read;
@@ -149,10 +158,12 @@ public sealed class TranslatePointTests
     [Test]
     public async Task APointerPosition_IsWhatNoesisReturns()
     {
-        var (native, typed, _, _) = MovedOver();
+        var (native, typed, _, _, rootNative, rootTyped) = MovedOver();
 
         await Assert.That(typed.X).IsEqualTo(native.X);
         await Assert.That(typed.Y).IsEqualTo(native.Y);
+        await Assert.That(rootTyped.X).IsEqualTo(rootNative.X);
+        await Assert.That(rootTyped.Y).IsEqualTo(rootNative.Y);
         await Assert
             .That(typed.X)
             .IsEqualTo(9f)
@@ -162,7 +173,7 @@ public sealed class TranslatePointTests
     [Test]
     public async Task APointerPosition_CostsNothing()
     {
-        var (_, _, native, typed) = MovedOver();
+        var (_, _, native, typed, _, _) = MovedOver();
 
         await Assert
             .That(native)

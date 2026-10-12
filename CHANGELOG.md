@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`ElementGeometry.GetPosition` takes a null element**, as `MouseEventArgs.GetPosition` does, and
+  answers in the view's root. It threw instead, so a handler reading root coordinates had no
+  allocation-free way to.
+
 ## [0.5.4] - 2026-10-12
 
 ### Added

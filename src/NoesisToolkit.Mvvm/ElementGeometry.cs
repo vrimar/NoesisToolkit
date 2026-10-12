@@ -56,12 +56,11 @@ public static class ElementGeometry
 
     /// <summary>The same as <see cref="MouseEventArgs.GetPosition"/>, without the allocation.</summary>
     /// <param name="args">The mouse event, read while its handler runs.</param>
-    /// <param name="relativeTo">The element to state the position in.</param>
+    /// <param name="relativeTo">The element to state the position in, or null for the view's root.</param>
     /// <returns>The pointer's position in <paramref name="relativeTo"/>'s space.</returns>
-    public static unsafe Point GetPosition(MouseEventArgs args, UIElement relativeTo)
+    public static unsafe Point GetPosition(MouseEventArgs args, UIElement? relativeTo)
     {
         Guard.NotNull(args, nameof(args));
-        Guard.NotNull(relativeTo, nameof(relativeTo));
 
         var position = Position(null, ArgsHandle(args), BaseComponent.getCPtr(relativeTo));
         return position == 0 ? default : Unsafe.Read<Point>((void*)position);
