@@ -68,6 +68,27 @@ public class AllocationCostTests
     }
 
     [Test]
+    public async Task Two_windows_a_collection_reached_do_not_settle_the_cost()
+    {
+        var runs = 0;
+
+        var cost = AllocationCost.Of(
+            () =>
+            {
+                if (++runs is 2 or 3)
+                {
+                    GC.Collect();
+                    GC.KeepAlive(new object());
+                }
+            },
+            warmup: 1,
+            iterations: 1
+        );
+
+        await Assert.That(cost).IsEqualTo(0L);
+    }
+
+    [Test]
     public async Task A_single_cold_run_is_charged_its_first_sight_cost()
     {
         List<int>? cache = null;

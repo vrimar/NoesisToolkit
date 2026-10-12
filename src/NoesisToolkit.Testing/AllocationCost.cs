@@ -17,7 +17,9 @@ namespace NoesisToolkit.Testing;
 /// A collection lets Noesis drop the proxies and weakly held objects the warmup paid for, and another
 /// thread can hold shared state the body reads, so a single window can be charged what steady state is
 /// not. Windows repeat a millisecond apart until one is clean or two agree, and the least is the cost:
-/// a real one recurs in every window. <see cref="Once"/> measures a single cold run instead.
+/// a real one recurs in every window. A window a collection reached never counts toward agreement: each
+/// re-mints the proxies its collection dropped, so two of them can agree on bytes steady state never
+/// pays. <see cref="Once"/> measures a single cold run instead.
 /// </para>
 /// </summary>
 public static class AllocationCost
@@ -42,19 +44,31 @@ public static class AllocationCost
         for (var i = 0; i < warmup; i++)
             body();
 
+        var collections = GC.CollectionCount(0);
         var least = Window(body, iterations);
+        var leastQuiet = Quiet(ref collections);
         var giveUpAt = Stopwatch.GetTimestamp() + Patience;
         while (least != 0 && Stopwatch.GetTimestamp() < giveUpAt)
         {
             Thread.Sleep(1);
             var next = Window(body, iterations);
-            if (next == least)
+            var quiet = Quiet(ref collections);
+            if (next == least && quiet && leastQuiet)
                 break;
 
-            least = Math.Min(least, next);
+            if (next < least || (next == least && quiet))
+                (least, leastQuiet) = (next, quiet);
         }
 
         return least;
+    }
+
+    static bool Quiet(ref int collections)
+    {
+        var now = GC.CollectionCount(0);
+        var quiet = now == collections;
+        collections = now;
+        return quiet;
     }
 
     /// <summary>Bytes one cold run of <paramref name="body"/> allocates, first-sight costs included: what the first run after a collection pays, say.</summary>

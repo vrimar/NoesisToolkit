@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`AllocationCost.Of` no longer settles on two windows a collection reached.** A collection drops
+  the proxies and weakly held objects the warmup paid for, and the window after it re-mints them; two
+  such windows can measure the same bytes, so "two agree" returned a cost steady state never pays, and
+  a zero assertion failed under parallel load. Those windows can still lower the result, but agreement
+  needs two windows no collection reached.
+
 ## [0.5.0] - 2026-10-11
 
 ### Added
