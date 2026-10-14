@@ -53,6 +53,17 @@ sealed partial class XamlEmitter
                     return Fail($"{{x:Static {reference}}} names no member");
                 }
 
+                // Noesis' parser reads only enum members and its own types' statics; the rest load as null.
+                if (
+                    owner.TypeKind != TypeKind.Enum
+                    && owner.ContainingAssembly?.Name != "Noesis.GUI"
+                )
+                {
+                    return Fail(
+                        $"{{x:Static {reference}}} names a managed static, which Noesis' parser cannot read; bind it instead"
+                    );
+                }
+
                 return $"{XamlTypeResolver.Fqn(owner)}.{member}";
             }
 

@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **An `x:Static` naming a managed static is an `NTK1001` error instead of compiling.** Noesis'
+  parser reads only enum members and its own types' statics and loads any other member as null, so
+  the compiled graph held a value the parsed one never had: the same document loaded natively, or
+  hot-reloaded, came up blank. Bind the value instead.
+
 ## [0.5.6] - 2026-10-12
 
 ### Added

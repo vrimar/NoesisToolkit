@@ -889,6 +889,31 @@ public partial class XamlCompilerTests
         }
         """;
 
+    const string StaticOwners = """
+        namespace Sample.Ui;
+
+        public enum Mode { On, Off }
+
+        public static class Hints
+        {
+            public static string Hint => "hint";
+        }
+        """;
+
+    [Test]
+    public async Task An_x_Static_naming_a_managed_static_is_refused_and_an_enum_member_is_not()
+    {
+        var run = Run(["StaticManaged.xaml"], [Host("StaticManagedHost"), StaticOwners]);
+
+        var refused = run
+            .GeneratorDiagnostics.Where(d => d.Id == "NTK1001")
+            .Select(d => d.GetMessage())
+            .Where(m => m.Contains("x:Static"))
+            .ToList();
+        await Assert.That(refused).HasSingleItem();
+        await Assert.That(refused[0]).Contains("ui:Hints.Hint");
+    }
+
     [Test]
     public async Task An_unsupported_document_names_its_file_in_the_diagnostic()
     {
