@@ -196,6 +196,7 @@ public sealed class CompiledBinding
     readonly bool _onLostFocus;
 
     static readonly object NotBroke = new object();
+    static readonly object NoSource = new object();
 
     static readonly nint LostFocus = BaseComponent.getCPtr(UIElement.LostFocusEvent).Handle;
 
@@ -547,18 +548,22 @@ public sealed class CompiledBinding
 
         _watched.Clear();
 
-        // A source the resolver could not find is not a failed read: a native binding with nowhere
-        // to look writes nothing at all, so the slot stays the style's to fill.
+        // A native binding with nowhere to look still holds the slot over the style, showing the default.
         if (_chain.Source is null)
         {
             _writable = null;
             _writableRoot = null;
-            _brokeFor = NotBroke;
             _pushing = true;
             try
             {
-                if (_receiver is { Alive: true } cleared)
-                    DependencyWrite.Clear(cleared.Handle, _property);
+                if (
+                    _receiver is { Alive: true } unresolved
+                    && !ReferenceEquals(_brokeFor, NoSource)
+                )
+                {
+                    WriteDefault(unresolved);
+                    _brokeFor = NoSource;
+                }
 
                 Settle();
             }

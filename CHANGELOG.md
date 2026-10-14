@@ -11,6 +11,10 @@ All notable changes to this project are documented here. The format follows
   parser reads only enum members and its own types' statics and loads any other member as null, so
   the compiled graph held a value the parsed one never had: the same document loaded natively, or
   hot-reloaded, came up blank. Bind the value instead.
+- **A compiled binding whose source is missing shows the property's default, not the style's
+  value.** A native binding with no ancestor or element to read still holds the slot at local
+  precedence and shows the default; the compiled one cleared the slot, so a style setter showed
+  through until the source turned up.
 
 ## [0.5.6] - 2026-10-12
 

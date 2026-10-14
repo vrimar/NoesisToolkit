@@ -171,11 +171,14 @@ public sealed class CompiledLateAncestorTests
     }
 
     [Test]
-    public async Task An_ancestor_that_never_arrives_leaves_the_slot_alone()
+    public async Task An_ancestor_that_never_arrives_shows_the_default_over_the_style()
     {
         NoesisRuntime.Start();
 
-        var nativeText = new TextBlock();
+        var style = new Style { TargetType = typeof(TextBlock) };
+        style.Setters.Add(new Setter { Property = TextBlock.TextProperty, Value = "styled" });
+
+        var nativeText = new TextBlock { Style = style };
         nativeText.SetBinding(
             TextBlock.TextProperty,
             new Binding("Label")
@@ -188,7 +191,7 @@ public sealed class CompiledLateAncestorTests
             }
         );
 
-        var compiledText = new TextBlock();
+        var compiledText = new TextBlock { Style = style };
         CompiledBinding.Bind(
             compiledText,
             TextBlock.TextProperty,
@@ -203,9 +206,7 @@ public sealed class CompiledLateAncestorTests
 
         NoesisRuntime.Show(nativeText, compiledText);
 
-        // Both sides land on TextBlock.Text's default, so the absolute is what says the slot is
-        // untouched rather than merely equal to another untouched slot.
+        await Assert.That(nativeText.Text).IsEqualTo("");
         await Assert.That(compiledText.Text).IsEqualTo(nativeText.Text);
-        await Assert.That(compiledText.Text).IsEqualTo("");
     }
 }
