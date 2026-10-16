@@ -56,6 +56,12 @@ All notable changes to this project are documented here. The format follows
   markup never shows. Without it the binding stays native and, in a trimmed build, raises `NTK1004`.
 - **A template's DataContext is typed only from its own host's source**, except a `CellTemplate` and
   a group header, which read the nearest list above.
+- **`NTK1004` is a warning wherever the assembly may be trimmed, not only where the trim analyzer
+  runs:** in every library, since the app consuming it decides, and in every app that declares
+  `PublishAot`, `PublishTrimmed`, `IsTrimmable` or `IsAotCompatible`, even with `EnableTrimAnalyzer`
+  switched off for speed. An app that declares none hears of it as information. A library that is
+  never trimmed and treats warnings as errors states the types, or lowers the severity in a global
+  analyzer config.
 
 ## [0.5.7] - 2026-10-14
 

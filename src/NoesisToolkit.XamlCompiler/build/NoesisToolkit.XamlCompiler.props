@@ -10,5 +10,10 @@
     <CompilerVisibleProperty Include="NoesisXamlExtensions" />
     <CompilerVisibleProperty Include="NoesisXamlNamespaces" />
     <CompilerVisibleProperty Include="ProjectDir" />
+    <CompilerVisibleProperty Include="PublishAot" />
+    <CompilerVisibleProperty Include="PublishTrimmed" />
+    <CompilerVisibleProperty Include="IsTrimmable" />
+    <CompilerVisibleProperty Include="IsAotCompatible" />
+    <CompilerVisibleProperty Include="EnableTrimAnalyzer" />
   </ItemGroup>
 </Project>

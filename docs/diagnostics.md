@@ -6,7 +6,7 @@
 | `NTK1001` | Error | XAML construct the compiler does not support |
 | `NTK1002` | Warning | coverage note — markup reached that nothing consumes |
 | `NTK1003` | Error | the compiler threw; the message carries the stack |
-| `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; raised only where the trim analyzer runs |
+| `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; Info in an app that declares no trimming |
 | `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute that keeps it on the loader |
 | `NTK1006` | Warning | `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` names a type the compiler cannot find |
 | `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
@@ -45,9 +45,12 @@ on every class implementing it. It can only see the classes of the document's ow
 what that references, so markup in a library that binds through an interface only its consumers
 implement is reported: state a class the library declares instead.
 
-It is raised only where the trim analyzer runs — a project that publishes trimmed or AOT, or
-declares itself trimmable or AOT-compatible — so a project nothing will trim never sees it. The roots
-are emitted everywhere, since a library that does not trim itself can be trimmed into one that does.
+It is a warning wherever the assembly may be trimmed. That is any library, because the app that
+consumes it decides and nothing checks these names there, and any app that declares it is trimmed —
+`PublishAot`, `PublishTrimmed`, `IsTrimmable` or `IsAotCompatible` set, or the trim analyzer turned
+on — whether or not this build runs the analyzer. Only an app that declares none of these, which
+nothing will trim, hears of it as information. A library that is never trimmed lowers it in a global
+analyzer config (`dotnet_diagnostic.NTK1004.severity = suggestion`). The roots are emitted everywhere.
 
 ## Why NTK1005 exists
 

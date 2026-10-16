@@ -87,7 +87,8 @@ static class GeneratorHarness
         string assemblyName,
         IEnumerable<SyntaxTree> trees,
         bool referenceNoesis = true,
-        IEnumerable<MetadataReference>? extraReferences = null
+        IEnumerable<MetadataReference>? extraReferences = null,
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
     )
     {
         List<MetadataReference> references = [.. Basic.Reference.Assemblies.Net80.References.All];
@@ -101,7 +102,7 @@ static class GeneratorHarness
             trees,
             references,
             new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
+                outputKind,
                 nullableContextOptions: NullableContextOptions.Enable
             )
         );
@@ -132,7 +133,8 @@ static class GeneratorHarness
         IDictionary<string, string>? buildProperties = null,
         string assemblyName = "SampleApp",
         bool referenceNoesis = true,
-        IEnumerable<MetadataReference>? extraReferences = null
+        IEnumerable<MetadataReference>? extraReferences = null,
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
     ) =>
         Run(
             [generator],
@@ -141,7 +143,8 @@ static class GeneratorHarness
             buildProperties,
             assemblyName,
             referenceNoesis,
-            extraReferences
+            extraReferences,
+            outputKind
         );
 
     /// <summary>
@@ -155,12 +158,19 @@ static class GeneratorHarness
         IDictionary<string, string>? buildProperties = null,
         string assemblyName = "SampleApp",
         bool referenceNoesis = true,
-        IEnumerable<MetadataReference>? extraReferences = null
+        IEnumerable<MetadataReference>? extraReferences = null,
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
     )
     {
         var parse = Parse;
         var trees = Trees(extraSources);
-        var compilation = Compile(assemblyName, trees, referenceNoesis, extraReferences);
+        var compilation = Compile(
+            assemblyName,
+            trees,
+            referenceNoesis,
+            extraReferences,
+            outputKind
+        );
         var additional = Additional(fixtures);
 
         var driver = CSharpGeneratorDriver

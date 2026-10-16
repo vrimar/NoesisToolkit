@@ -14,21 +14,52 @@ public class XamlTrimRootsTests
 
     static string Ctor(string type) => $"{Attribute}{Constructor}, typeof({type}))]";
 
-    static GeneratorRun Run(string fixture, params string[] sources) =>
-        Run(fixture, trimmed: true, sources);
+    static readonly IReadOnlyDictionary<string, string> TrimAnalyzerOn = new Dictionary<
+        string,
+        string
+    >
+    {
+        ["EnableTrimAnalyzer"] = "true",
+    };
 
-    static GeneratorRun Run(string fixture, bool trimmed, params string[] sources) =>
-        GeneratorHarness.Run(
+    static readonly IReadOnlyDictionary<string, string> NoTrimming =
+        new Dictionary<string, string>();
+
+    const string EntryPoint = "static class Program { static void Main() { } }";
+
+    static GeneratorRun Run(string fixture, params string[] sources) =>
+        Run(fixture, TrimAnalyzerOn, sources);
+
+    static GeneratorRun Run(
+        string fixture,
+        IReadOnlyDictionary<string, string> trimming,
+        params string[] sources
+    ) => Generate(fixture, trimming, OutputKind.DynamicallyLinkedLibrary, sources);
+
+    static GeneratorRun RunApp(
+        string fixture,
+        IReadOnlyDictionary<string, string> trimming,
+        params string[] sources
+    ) => Generate(fixture, trimming, OutputKind.ConsoleApplication, [EntryPoint, .. sources]);
+
+    static GeneratorRun Generate(
+        string fixture,
+        IReadOnlyDictionary<string, string> trimming,
+        OutputKind outputKind,
+        string[] sources
+    )
+    {
+        var properties = trimming.ToDictionary(p => $"build_property.{p.Key}", p => p.Value);
+        properties["build_property.ProjectDir"] = "/repo/App";
+        return GeneratorHarness.Run(
             new XamlCompileGenerator(),
             [fixture],
             [Model, Stubs.Mvvm, .. sources],
-            new Dictionary<string, string>
-            {
-                ["build_property.ProjectDir"] = "/repo/App",
-                ["build_property.EnableTrimAnalyzer"] = trimmed ? "true" : "",
-            },
-            extraReferences: [Other.Value]
+            properties,
+            extraReferences: [Other.Value],
+            outputKind: outputKind
         );
+    }
 
     static readonly Lazy<GeneratorRun> NativeRun = new(() =>
         Run("RootsNative.xaml", Host("NativeHost"))
@@ -302,7 +333,7 @@ public class XamlTrimRootsTests
     [Test]
     public async Task A_binding_in_a_document_left_to_the_loader_is_reported_as_native()
     {
-        var run = Run("RootsLoaded.xaml", trimmed: false, LoadedHost);
+        var run = Run("RootsLoaded.xaml", NoTrimming, LoadedHost);
 
         var native = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1007").ToList();
         await Assert.That(native.Count).IsEqualTo(1);
@@ -382,17 +413,50 @@ public class XamlTrimRootsTests
     }
 
     [Test]
-    public async Task A_project_that_does_not_trim_keeps_its_roots_and_hears_nothing_of_them()
+    public async Task An_app_that_declares_no_trimming_keeps_its_roots_and_hears_of_them_as_information()
     {
-        var unrooted = Run("RootsUnrooted.xaml", trimmed: false, Host("UnrootedHost"));
+        var unrooted = RunApp("RootsUnrooted.xaml", NoTrimming, Host("UnrootedHost"));
 
         await Assert.That(Text(unrooted.Errors)).IsEmpty();
-        await Assert.That(Unrooted(unrooted)).IsEmpty();
+        await Assert.That(Unrooted(unrooted)).IsNotEmpty();
+        await Assert
+            .That(Unrooted(unrooted).All(d => d.Severity == DiagnosticSeverity.Info))
+            .IsTrue();
 
-        var native = Run("RootsNative.xaml", trimmed: false, Host("NativeHost"));
+        var native = RunApp("RootsNative.xaml", NoTrimming, Host("NativeHost"));
         await Assert
             .That(native.Source("RootsNative"))
             .Contains(Member("Headline", "global::Sample.Roots.PanelViewModel"));
+    }
+
+    [Test]
+    public async Task An_app_that_publishes_AOT_hears_of_them_as_warnings_with_the_trim_analyzer_off()
+    {
+        var run = RunApp(
+            "RootsUnrooted.xaml",
+            new Dictionary<string, string>
+            {
+                ["PublishAot"] = "true",
+                ["EnableTrimAnalyzer"] = "false",
+            },
+            Host("UnrootedHost")
+        );
+
+        await Assert.That(Unrooted(run)).IsNotEmpty();
+        await Assert
+            .That(Unrooted(run).All(d => d.Severity == DiagnosticSeverity.Warning))
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task A_library_that_declares_no_trimming_hears_of_them_as_warnings()
+    {
+        var run = Run("RootsUnrooted.xaml", NoTrimming, Host("UnrootedHost"));
+
+        await Assert.That(Unrooted(run)).IsNotEmpty();
+        await Assert
+            .That(Unrooted(run).All(d => d.Severity == DiagnosticSeverity.Warning))
+            .IsTrue();
     }
 
     static readonly Lazy<GeneratorRun> InterfaceRun = new(() =>

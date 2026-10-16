@@ -206,6 +206,9 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 Diagnostic.Create(
                     Unrootable,
                     unrooted.Location?.ToLocation(),
+                    document.UnrootedSeverity,
+                    additionalLocations: null,
+                    properties: null,
                     $"{document.File} :: {unrooted.Message}"
                 )
             );
@@ -654,14 +657,21 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 LocationIn(path, text, n.Line, n.Column)
             ))
             .ToList();
-        if (options.Trimmed)
-            document.Unrooted = emitter
-                .Unrooted.Distinct()
-                .Select(u => new MarkupDiagnostic(
-                    u.Message,
-                    LocationIn(path, text, u.Line, u.Column)
-                ))
-                .ToList();
+        document.Unrooted = emitter
+            .Unrooted.Distinct()
+            .Select(u => new MarkupDiagnostic(u.Message, LocationIn(path, text, u.Line, u.Column)))
+            .ToList();
+        // A library is trimmed by whichever app consumes it, and no step there checks these names.
+        document.UnrootedSeverity =
+            options.Trimmed
+            || compilation.Options.OutputKind
+                is not (
+                    OutputKind.ConsoleApplication
+                    or OutputKind.WindowsApplication
+                    or OutputKind.WindowsRuntimeApplication
+                )
+                ? DiagnosticSeverity.Warning
+                : DiagnosticSeverity.Info;
 
         if (isDictionary && emitter.Errors.Count == 0)
         {

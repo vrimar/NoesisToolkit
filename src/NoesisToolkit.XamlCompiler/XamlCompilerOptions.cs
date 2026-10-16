@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using NoesisToolkit.CodeGen;
@@ -24,7 +25,15 @@ readonly record struct XamlCompilerOptions(
     public const string ProjectDirProperty = "build_property.ProjectDir";
     public const string EncodedProjectDirProperty = "build_property._NoesisXamlProjectDirEncoded";
 
-    public const string TrimAnalyzerProperty = "build_property.EnableTrimAnalyzer";
+    // EnableTrimAnalyzer=false is a speed switch; the project still trims if anything else says so.
+    static readonly string[] TrimProperties =
+    [
+        "build_property.PublishAot",
+        "build_property.PublishTrimmed",
+        "build_property.IsTrimmable",
+        "build_property.IsAotCompatible",
+        "build_property.EnableTrimAnalyzer",
+    ];
 
     public static XamlCompilerOptions Read(AnalyzerConfigOptionsProvider provider)
     {
@@ -34,10 +43,8 @@ readonly record struct XamlCompilerOptions(
             XamlFiles.Property(options, EncodedProjectDirProperty, ProjectDirProperty).Trim(),
             XamlFiles.Extensions(options),
             XamlFiles.Property(options, EncodedNamespacesProperty, NamespacesProperty).Trim(),
-            string.Equals(
-                Value(options, TrimAnalyzerProperty),
-                "true",
-                StringComparison.OrdinalIgnoreCase
+            TrimProperties.Any(key =>
+                string.Equals(Value(options, key), "true", StringComparison.OrdinalIgnoreCase)
             )
         );
     }

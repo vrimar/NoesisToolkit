@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Microsoft.CodeAnalysis;
 using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
@@ -27,6 +28,8 @@ sealed class CompiledDocument(string file)
     public IReadOnlyList<string> DeadMarkup { get; set; } = [];
 
     public IReadOnlyList<MarkupDiagnostic> Unrooted { get; set; } = [];
+
+    public DiagnosticSeverity UnrootedSeverity { get; set; }
 
     public IReadOnlyList<MarkupDiagnostic> LeftNative { get; set; } = [];
 
