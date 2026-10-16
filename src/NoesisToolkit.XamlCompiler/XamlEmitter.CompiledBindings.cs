@@ -172,9 +172,10 @@ sealed partial class XamlEmitter
                 SlotReference(owner, name),
                 value,
                 name,
-                TwoWayByDefault.Any(t =>
-                    t.Property == name && XamlTypeResolver.DerivesFrom(owner, t.Owner)
-                ),
+                resolver.DeclaredTwoWayByDefault(owner, name)
+                    ?? TwoWayByDefault.Any(t =>
+                        t.Property == name && XamlTypeResolver.DerivesFrom(owner, t.Owner)
+                    ),
                 NeedsAccessor(value)
                     ? $"(__t, __v) => {XamlTypeResolver.Fqn(owner)}.Set{name}"
                         + $"(__t, {NarrowTo(value, "__v", "__a")})"
@@ -1792,7 +1793,9 @@ sealed partial class XamlEmitter
         ("global::Noesis.TickBar", "SelectionEnd"),
     };
 
-    static bool BindsTwoWayByDefault(IPropertySymbol property) => Listed(property, TwoWayByDefault);
+    bool BindsTwoWayByDefault(IPropertySymbol property) =>
+        resolver.DeclaredTwoWayByDefault(property.ContainingType, property.Name)
+        ?? Listed(property, TwoWayByDefault);
 
     const string UnsetValueFqn = "global::Noesis.DependencyProperty.UnsetValue";
 

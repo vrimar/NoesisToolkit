@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
 using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
@@ -245,6 +247,122 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         property
             .GetAttributes()
             .Any(a => a.AttributeClass?.ToDisplayString() == DependencyPropertyAttribute);
+
+    readonly Dictionary<string, bool> _twoWayByDefault = new Dictionary<string, bool>(
+        StringComparer.Ordinal
+    );
+
+    public bool? DeclaredTwoWayByDefault(ITypeSymbol type, string name)
+    {
+        if (
+            FindDependencyPropertyOwner(type, name) is not { } declaring
+            || Framework(declaring.ContainingAssembly.Name)
+        )
+            return null;
+
+        var key = Fqn(declaring) + "." + name;
+        if (!_twoWayByDefault.TryGetValue(key, out var twoWay))
+            _twoWayByDefault[key] = twoWay = ReadTwoWayByDefault(declaring, name);
+
+        return twoWay;
+    }
+
+    bool ReadTwoWayByDefault(INamedTypeSymbol declaring, string name)
+    {
+        if (
+            compilation
+                .GetTypeByMetadataName(MetadataOptions)
+                ?.GetMembers("BindsTwoWayByDefault")
+                .OfType<IFieldSymbol>()
+                .FirstOrDefault()
+                ?.ConstantValue
+            is not { } twoWay
+        )
+            return false;
+
+        var attribute = declaring
+            .GetMembers(name)
+            .OfType<IPropertySymbol>()
+            .SelectMany(p => p.GetAttributes())
+            .FirstOrDefault(a =>
+                a.AttributeClass?.ToDisplayString() == DependencyPropertyAttribute
+            );
+
+        var options = attribute?.AttributeConstructor is { } constructor
+            ? AttributeOptions(attribute, constructor)
+            : RegisteredOptions(declaring, name);
+
+        // Metadata this compilation cannot read is only known at run time, so it may bind two-way.
+        return options is not { } flags || (flags & Convert.ToInt64(twoWay)) != 0;
+    }
+
+    const string MetadataOptions = "Noesis.FrameworkPropertyMetadataOptions";
+
+    static long? AttributeOptions(AttributeData attribute, IMethodSymbol constructor)
+    {
+        for (var i = 0; i < constructor.Parameters.Length; i++)
+        {
+            if (
+                constructor.Parameters[i].Name == "metadataOptions"
+                && i < attribute.ConstructorArguments.Length
+            )
+                return attribute.ConstructorArguments[i].Value is { } value
+                    ? Convert.ToInt64(value)
+                    : null;
+        }
+
+        return 0;
+    }
+
+    long? RegisteredOptions(INamedTypeSymbol declaring, string name)
+    {
+        if (
+            declaring
+                .GetMembers(name + "Property")
+                .OfType<IFieldSymbol>()
+                .FirstOrDefault()
+                ?.DeclaringSyntaxReferences.FirstOrDefault()
+                ?.GetSyntax()
+            is not VariableDeclaratorSyntax { Initializer.Value: { } registration }
+        )
+            return null;
+
+        if (
+            compilation.GetSemanticModel(registration.SyntaxTree).GetOperation(registration)
+            is not IInvocationOperation invocation
+        )
+            return null;
+
+        var metadata = invocation
+            .Arguments.Select(a => Unconverted(a.Value))
+            .OfType<IObjectCreationOperation>()
+            .FirstOrDefault(c =>
+                c.Type is { } type && DerivesFrom(type, "global::Noesis.PropertyMetadata")
+            );
+        if (metadata?.Type is not { } metadataType)
+            return 0;
+
+        if (!DerivesFrom(metadataType, "global::Noesis.FrameworkPropertyMetadata"))
+            return 0;
+
+        var argument = metadata.Arguments.FirstOrDefault(a =>
+            a.Parameter?.Type.ToDisplayString() == MetadataOptions
+        );
+        if (argument is null)
+            return 0;
+
+        return argument.Value.ConstantValue is { HasValue: true, Value: { } value }
+            ? Convert.ToInt64(value)
+            : null;
+    }
+
+    static IOperation Unconverted(IOperation operation)
+    {
+        while (operation is IConversionOperation conversion)
+            operation = conversion.Operand;
+
+        return operation;
+    }
 
     /// <summary>The type an attached property takes. <c>[DependencyProperty]</c> on a static property
     /// generates the <c>Set{name}</c> in this same pass, so the property it is on answers where the

@@ -117,6 +117,38 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_generated_property_that_binds_two_way_by_default_keeps_a_writerless_binding_native()
+    {
+        var run = GeneratorHarness.Run(
+            [new XamlCompileGenerator(), new DependencyPropertyGenerator()],
+            ["CbTwoWayDefault.xaml"],
+            [
+                Stubs.Mvvm,
+                Host("KnobHost"),
+                """
+                namespace Sample.Ui;
+
+                public partial class Knob : global::Noesis.Control
+                {
+                    [NoesisToolkit.Mvvm.DependencyProperty(0.0, null, global::Noesis.FrameworkPropertyMetadataOptions.BindsTwoWayByDefault)]
+                    public partial double Angle { get; set; }
+
+                    [NoesisToolkit.Mvvm.DependencyProperty(0.0)]
+                    public partial double Tilt { get; set; }
+                }
+                """,
+            ],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.Source("CbTwoWayDefault");
+        await Assert.That(source).Contains("new global::Noesis.Binding(\"Angle\")");
+        await Assert.That(source).DoesNotContain("new global::Noesis.Binding(\"Tilt\")");
+        await Assert.That(source).Contains("CompiledBinding.Bind(");
+    }
+
+    [Test]
     public async Task An_opted_in_root_compiles_the_bindings_it_can_resolve()
     {
         var run = CompiledBindings();
