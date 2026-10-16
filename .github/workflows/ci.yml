@@ -53,6 +53,12 @@ jobs:
       - name: Collectability tests
         run: dotnet run --project tests/NoesisToolkit.Testing.Tests -c Release --no-build
 
+      # Only the trimmed binary proves the roots; under the JIT every member these tests read survives.
+      - name: Trimming tests
+        run: |
+          dotnet publish tests/NoesisToolkit.Trimming.Tests -c Release -r linux-x64
+          tests/NoesisToolkit.Trimming.Tests/bin/Release/net10.0/linux-x64/publish/NoesisToolkit.Trimming.Tests
+
       - name: Pack
         run: dotnet pack NoesisToolkit.slnx -c Release --no-build -o artifacts
 

@@ -10,5 +10,6 @@
     <Project Path="tests/NoesisToolkit.Tests/NoesisToolkit.Tests.csproj" />
     <Project Path="tests/NoesisToolkit.Equivalence.Tests/NoesisToolkit.Equivalence.Tests.csproj" />
     <Project Path="tests/NoesisToolkit.Testing.Tests/NoesisToolkit.Testing.Tests.csproj" />
+    <Project Path="tests/NoesisToolkit.Trimming.Tests/NoesisToolkit.Trimming.Tests.csproj" />
   </Folder>
 </Solution>

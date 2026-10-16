@@ -225,6 +225,8 @@ dotnet build NoesisToolkit.slnx
 dotnet run --project tests/NoesisToolkit.Tests
 dotnet run --project tests/NoesisToolkit.Equivalence.Tests
 dotnet run --project tests/NoesisToolkit.Testing.Tests
+dotnet publish tests/NoesisToolkit.Trimming.Tests -c Release -r linux-x64
+tests/NoesisToolkit.Trimming.Tests/bin/Release/net10.0/linux-x64/publish/NoesisToolkit.Trimming.Tests
 csharpier format .
 ```
 
@@ -233,7 +235,9 @@ that does not bind fails the suite. `NoesisToolkit.Equivalence.Tests` is the gat
 faithfulness: every fixture is realized twice — once by the real Noesis parser, once by the compiled
 path — and the two object graphs are diffed. `NoesisToolkit.Testing.Tests` runs the collectability
 harness over a control pinned on purpose and one that is not, so a harness that reports nothing
-fails. The last two link `libNoesis.so`, so they need X11 and GL present.
+fails. `NoesisToolkit.Trimming.Tests` runs only as a NativeAOT binary: each name its document hands
+the engine is read by nothing but Noesis, so a root the compiler gets wrong is trimmed away and the
+test reading it fails. The last three link `libNoesis.so`, so they need X11 and GL present.
 
 ## Releasing
 

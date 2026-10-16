@@ -1,0 +1,50 @@
+<UserControl
+  x:Class="NoesisToolkit.Trimming.Tests.Rooted"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+  xmlns:t="clr-namespace:NoesisToolkit.Trimming.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:DataType="t:PanelModel"
+>
+  <UserControl.Resources>
+    <ControlTemplate x:Key="Stacked" TargetType="ItemsControl">
+      <StackPanel IsItemsHost="True" />
+    </ControlTemplate>
+  </UserControl.Resources>
+  <StackPanel>
+    <TextBlock x:Name="Hop" Text="{Binding Headline.Text}" />
+    <TextBlock x:Name="Through" Text="{Binding Labelled.Label}" />
+    <ItemsControl
+      x:Name="Display"
+      Template="{StaticResource Stacked}"
+      ItemsSource="{Binding Rows}"
+      DisplayMemberPath="Name"
+    />
+    <ItemsControl x:Name="Walk" Template="{StaticResource Stacked}" ItemsSource="{Binding Rows}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate ntk:AncestorDataType="{x:Type t:PanelModel}">
+          <TextBlock Text="{Binding DataContext.Title, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <Button x:Name="Act" Command="{Binding SaveCommand}" />
+    <t:Chooser x:Name="Chooser">
+      <t:Chooser.Template>
+        <ControlTemplate TargetType="t:Chooser">
+          <ListBox
+            x:Name="Choices"
+            Template="{StaticResource Stacked}"
+            ItemsSource="{Binding Choices, RelativeSource={RelativeSource TemplatedParent}}"
+            SelectedValuePath="Value"
+          />
+        </ControlTemplate>
+      </t:Chooser.Template>
+    </t:Chooser>
+    <t:Pinger x:Name="Pinger">
+      <i:Interaction.Triggers>
+        <t:OnEvent EventName="Pinged" />
+      </i:Interaction.Triggers>
+    </t:Pinger>
+  </StackPanel>
+</UserControl>
