@@ -33,7 +33,7 @@ sealed partial class XamlEmitter
         if (valueElements.Count > 0)
             return valueElements
                 .SelectMany(e => e.Elements())
-                .Any(e => e.Name.LocalName is "Binding" or "MultiBinding");
+                .Any(e => e.Name.LocalName is "Binding" or "MultiBinding" or "DynamicResource");
 
         var value = element.Attribute("Value")?.Value;
         if (value is null || !XamlMarkupParser.IsMarkup(value))
@@ -93,9 +93,15 @@ sealed partial class XamlEmitter
         if (scopeNamespace is not null)
             probe.Add(new XAttribute(XNamespace.Xmlns + "__probe", scopeNamespace));
 
-        // Noesis seals the binding as it parses, so the fragment has to carry what it names.
-        foreach (var key in ResourceKeysIn(style))
+        // Noesis seals the binding as it parses, so the fragment carries what it names, transitively.
+        var pending = new Queue<string>(ResourceKeysIn(style));
+        var carried = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.Count > 0)
         {
+            var key = pending.Dequeue();
+            if (!carried.Add(key))
+                continue;
+
             if (DeclarationOf(setter, key) is not { } declaration)
             {
                 return Fail(
@@ -105,6 +111,9 @@ sealed partial class XamlEmitter
 
             probe.AddFirst(new XElement(declaration));
             RootParsed(declaration, SetterLeftToParser);
+
+            foreach (var inner in ResourceKeysIn(declaration))
+                pending.Enqueue(inner);
         }
 
         var name = NextName("setter");
@@ -113,21 +122,51 @@ sealed partial class XamlEmitter
         return name;
     }
 
-    static readonly System.Text.RegularExpressions.Regex StaticResourceKey = new(
-        @"\{\s*StaticResource\s+([A-Za-z0-9_.]+)\s*\}",
-        System.Text.RegularExpressions.RegexOptions.CultureInvariant
-    );
-
     static IEnumerable<string> ResourceKeysIn(XElement fragment) =>
         fragment
             .DescendantsAndSelf()
-            .SelectMany(e => e.Attributes())
-            .Where(a => !a.IsNamespaceDeclaration)
-            .SelectMany(a =>
-                StaticResourceKey.Matches(a.Value).Cast<System.Text.RegularExpressions.Match>()
+            .SelectMany(e =>
+                e.Name.LocalName == "StaticResource"
+                    ? StaticResourceElementKey(e)
+                    : e.Attributes()
+                        .Where(a => !a.IsNamespaceDeclaration)
+                        .SelectMany(a => StaticResourceCalls(a.Value))
+                        .Select(StaticResourceKey)
+                        .OfType<string>()
             )
-            .Select(m => m.Groups[1].Value)
             .Distinct();
+
+    static IEnumerable<string> StaticResourceElementKey(XElement element) =>
+        element.Attribute("ResourceKey")?.Value.Trim() is { Length: > 0 } key
+            ? new[] { key }
+            : Enumerable.Empty<string>();
+
+    static string? StaticResourceKey(MarkupCall call) =>
+        (
+            call.Positional.FirstOrDefault()
+            ?? call.Named.FirstOrDefault(p => p.Key == "ResourceKey").Value as string
+        )?.Trim();
+
+    static IEnumerable<MarkupCall> StaticResourceCalls(string value) =>
+        XamlMarkupParser.IsMarkup(value) && XamlMarkupParser.Parse(value) is { } call
+            ? StaticResourceCalls(call)
+            : Enumerable.Empty<MarkupCall>();
+
+    static IEnumerable<MarkupCall> StaticResourceCalls(MarkupCall call)
+    {
+        if (call.Name == "StaticResource")
+            yield return call;
+
+        var nested = call
+            .Named.Select(p => p.Value)
+            .OfType<MarkupCall>()
+            .Concat(call.PositionalCalls);
+        foreach (var inner in nested)
+        {
+            foreach (var found in StaticResourceCalls(inner))
+                yield return found;
+        }
+    }
 
     static XElement? DeclarationOf(XElement scope, string key) =>
         DeclaredIn(scope.Document?.Root, key);
@@ -222,7 +261,7 @@ sealed partial class XamlEmitter
 
         var parts = NextName("templated");
         _lines.Add(
-            $"var {parts} = __templated(global::Noesis.GUI.ParseXaml({Verbatim(Serialize(probe))}), {carried.Count});"
+            $"var {parts} = __templated(global::Noesis.GUI.ParseXaml({Quote(Serialize(probe))}), {carried.Count});"
         );
         _usesTemplated = true;
 
@@ -385,7 +424,7 @@ sealed partial class XamlEmitter
 
         var name = NextName(element.Name.LocalName);
         _lines.Add(
-            $"var {name} = ({cast})global::Noesis.GUI.ParseXaml({Verbatim(Serialize(clone))});"
+            $"var {name} = ({cast})global::Noesis.GUI.ParseXaml({Quote(Serialize(clone))});"
         );
 
         RegisterParsedNames(element, name);
@@ -460,7 +499,7 @@ sealed partial class XamlEmitter
         );
 
     // DynamicResource is exempt: it resolves against the live tree, long after this parse.
-    static bool NamesAResource(string value) => StaticResourceKey.IsMatch(value);
+    static bool NamesAResource(string value) => StaticResourceCalls(value).Any();
 
     static IEnumerable<XAttribute> Namespaces(XElement element)
     {
@@ -501,11 +540,9 @@ sealed partial class XamlEmitter
 
     static string ParsedStyle(XElement probe) =>
         $"((global::Noesis.Style)((global::Noesis.ResourceDictionary)"
-        + $"global::Noesis.GUI.ParseXaml({Verbatim(Serialize(probe))}))[\"__p\"])";
+        + $"global::Noesis.GUI.ParseXaml({Quote(Serialize(probe))}))[\"__p\"])";
 
     static string WrapAsDictionary(XElement entry) => Serialize(Probe(entry, new XElement(entry)));
-
-    static string Verbatim(string value) => "@\"" + value.Replace("\"", "\"\"") + "\"";
 
     static string Serialize(XElement fragment)
     {

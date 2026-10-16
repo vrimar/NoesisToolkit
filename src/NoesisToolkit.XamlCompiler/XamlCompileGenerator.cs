@@ -315,6 +315,8 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
                 if (leaf is not null)
                     keyLeaves[key] = leaf;
+                else
+                    keyLeaves.Remove(key);
             }
         }
 
@@ -708,6 +710,8 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             document.Gated = true;
             return null;
         }
+
+        emitter.Errors.AddRange(XamlCodeBehind.Unwired(scan));
 
         var compiled = !scan.NeedsLoader;
         var body = compiled ? emitter.EmitRoot(root, rootClass) : null;

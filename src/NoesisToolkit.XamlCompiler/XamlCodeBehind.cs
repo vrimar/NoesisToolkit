@@ -30,6 +30,8 @@ static class XamlCodeBehind
 
         public bool UnresolvedHandlers;
 
+        public readonly List<XAttribute> Unwireable = new List<XAttribute>();
+
         public XAttribute? LoaderAttribute;
 
         public bool NeedsLoader => Events.Count > 0 || UnresolvedHandlers;
@@ -60,6 +62,7 @@ static class XamlCodeBehind
                 )
                 {
                     scan.UnresolvedHandlers = true;
+                    scan.Unwireable.Add(suspected);
                     scan.LoaderAttribute ??= suspected;
                 }
                 continue;
@@ -88,7 +91,7 @@ static class XamlCodeBehind
                 {
                     if (AttachedEvent(element, attribute, resolver) is { } attached)
                     {
-                        ReadAttachedEvent(scan, type, attribute.Value.Trim(), attached, resolver);
+                        ReadAttachedEvent(scan, type, attribute, attached, resolver);
                         scan.LoaderAttribute ??= attribute;
                     }
                     continue;
@@ -154,11 +157,12 @@ static class XamlCodeBehind
     static void ReadAttachedEvent(
         Scan scan,
         INamedTypeSymbol type,
-        string handler,
+        XAttribute attribute,
         (INamedTypeSymbol Owner, IEventSymbol Event) attached,
         XamlTypeResolver resolver
     )
     {
+        var handler = attribute.Value.Trim();
         var name = attached.Event.Name;
         var element = XamlTypeResolver.Fqn(type);
 
@@ -180,7 +184,10 @@ static class XamlCodeBehind
         )
             scan.Events.Add(new EventHook(name, handler, element));
         else
+        {
             scan.UnresolvedHandlers = true;
+            scan.Unwireable.Add(attribute);
+        }
     }
 
     static string? RoutedEventOf(ITypeSymbol owner, string name)
@@ -329,6 +336,15 @@ static class XamlCodeBehind
     /// <summary>Names one document cannot carry: two elements sharing an x:Name would emit one field
     /// and two assignments, and a name equal to the class would emit a member that hides its own
     /// type.</summary>
+    // With no resolvable handler no ConnectEvent is generated, and the class's own can wire these.
+    internal static IEnumerable<string> Unwired(Scan scan) =>
+        scan.Events.Count == 0
+            ? Enumerable.Empty<string>()
+            : scan.Unwireable.Select(a =>
+                $"<{a.Parent!.Name.LocalName} {a.Name.LocalName}=\"{a.Value}\"> names a handler on a type "
+                + "the compiler cannot resolve, so the generated ConnectEvent cannot wire it"
+            );
+
     internal static string? NameConflict(Scan scan, INamedTypeSymbol rootClass)
     {
         foreach (var group in scan.Names.GroupBy(n => n.Name))

@@ -75,6 +75,19 @@ sealed partial class XamlEmitter
     static bool TakesAnything(ITypeSymbol? expected) =>
         expected is null || expected.SpecialType == SpecialType.System_Object;
 
+    string? ConvertOrFail(XElement scope, string raw, ITypeSymbol targetType, string property)
+    {
+        var errors = Errors.Count;
+        return ConvertValue(scope, raw, targetType)
+            ?? (
+                Errors.Count == errors
+                    ? Fail(
+                        $"'{property}' cannot take '{raw}': it does not convert to {XamlTypeResolver.Fqn(targetType)}"
+                    )
+                    : null
+            );
+    }
+
     string? ConvertValue(XElement scope, string raw, ITypeSymbol targetType)
     {
         var type = targetType;

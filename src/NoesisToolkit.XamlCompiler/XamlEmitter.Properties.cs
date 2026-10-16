@@ -96,10 +96,22 @@ sealed partial class XamlEmitter
             return;
         }
 
+        // The parser registers a plain Name as it does x:Name, only with no field behind it.
+        if (
+            local == "Name"
+            && ns.Length == 0
+            && element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs)) is null
+            && XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement")
+        )
+        {
+            EmitName(target, attribute.Value.Trim(), type, field: false);
+            return;
+        }
+
         ApplyProperty(element, target, type, local, attribute.Value);
     }
 
-    void EmitName(string target, string name, INamedTypeSymbol type)
+    void EmitName(string target, string name, INamedTypeSymbol type, bool field = true)
     {
         if (resolver.FindProperty(type, "Name")?.SetMethod is not null)
             _lines.Add($"{target}.Name = {Quote(name)};");
@@ -116,7 +128,8 @@ sealed partial class XamlEmitter
         // resolves ElementName through the name scope and nothing else populates it.
         if (_rootClass is not null)
         {
-            _lines.Add($"this._{name} = {target};");
+            if (field)
+                _lines.Add($"this._{name} = {target};");
             _lines.Add($"{RootScope}.RegisterName({Quote(name)}, {target});");
         }
     }
@@ -168,7 +181,10 @@ sealed partial class XamlEmitter
             if (!TryMarkup(raw, out var call))
                 return;
 
-            if (call.Name == "StaticResource" && _dictionaries.Count > 0)
+            if (
+                call.Name == "StaticResource"
+                && (_dictionaries.Count > 0 || _rootClass is not null)
+            )
             {
                 var key = ResourceKeyExpression(element, call);
                 if (key is not null)
@@ -358,7 +374,9 @@ sealed partial class XamlEmitter
         }
 
         var text = XamlMarkupParser.Unescape(rawValue);
-        var value = valueType is null ? LiteralGuess(text) : ConvertValue(element, text, valueType);
+        var value = valueType is null
+            ? LiteralGuess(text)
+            : ConvertOrFail(element, text, valueType, local);
 
         if (value is not null)
             _lines.Add($"{ownerFqn}.Set{propertyName}({target}, {value});");
@@ -446,7 +464,12 @@ sealed partial class XamlEmitter
 
         RootNamedByText(element, type, name, XamlMarkupParser.Unescape(rawValue));
 
-        var value = ConvertValue(element, XamlMarkupParser.Unescape(rawValue), property.Type);
+        var value = ConvertOrFail(
+            element,
+            XamlMarkupParser.Unescape(rawValue),
+            property.Type,
+            name
+        );
         if (value is null)
             return;
 

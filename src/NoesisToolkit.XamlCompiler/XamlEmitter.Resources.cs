@@ -91,12 +91,6 @@ sealed partial class XamlEmitter
 
     static readonly string LookupHelper = XamlLookupHelper.Emit("__lookup");
 
-    /// <summary>Where a StaticResource is read from, now rather than through the live tree.</summary>
-    string ResourceValueExpression(string key) =>
-        _dictionary is null
-            ? $"global::Noesis.GUI.GetApplicationResources()[{key}]"
-            : ResolveExpression(key);
-
     const string ResolveInHelper =
         "static object __resolveIn(global::Noesis.ResourceDictionary root, global::Noesis.ResourceDictionary[] scopes, object k)\n"
         + "{\n"
@@ -198,11 +192,7 @@ sealed partial class XamlEmitter
     string EmitUnmanagedKeyEntry(XElement entry)
     {
         var escaped = new XElement(entry);
-        foreach (var declaration in Namespaces(entry))
-        {
-            if (escaped.Attribute(declaration.Name) is null)
-                escaped.Add(new XAttribute(declaration.Name, declaration.Value));
-        }
+        CopyScope(escaped, entry);
 
         var basedOn = escaped.Attribute("BasedOn");
         var basedOnKey =
@@ -219,7 +209,7 @@ sealed partial class XamlEmitter
 
         var parsed = NextName("escaped");
         _lines.Add(
-            $"var {parsed} = (global::Noesis.ResourceDictionary)global::Noesis.GUI.ParseXaml({Verbatim(WrapAsDictionary(escaped))});"
+            $"var {parsed} = (global::Noesis.ResourceDictionary)global::Noesis.GUI.ParseXaml({Quote(WrapAsDictionary(escaped))});"
         );
 
         if (basedOnKey is not null)

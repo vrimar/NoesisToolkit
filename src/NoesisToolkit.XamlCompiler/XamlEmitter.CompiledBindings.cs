@@ -2220,7 +2220,7 @@ sealed partial class XamlEmitter
         if (ResourceKeyExpression(element, resource) is not { } key)
             return null;
 
-        return $"({interfaceFqn}){ResourceValueExpression(key)}";
+        return $"({interfaceFqn}){ResolveExpression(key)}";
     }
 
     string ConverterParameter(MarkupCall call) =>

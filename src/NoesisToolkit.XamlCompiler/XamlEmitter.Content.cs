@@ -444,6 +444,18 @@ sealed partial class XamlEmitter
             return;
         }
 
+        if (
+            elements.Length == 1
+            && elements[0].Name.LocalName == "DynamicResource"
+            && elements[0].Attribute("ResourceKey")?.Value is { } resourceKey
+        )
+        {
+            var reference = new MarkupCall { Name = "DynamicResource" };
+            reference.Positional.Add(resourceKey);
+            ApplyMarkup(owner, target, type, property, reference);
+            return;
+        }
+
         if (elements.Length == 1 && elements[0].Name.LocalName is "MultiBinding" or "Binding")
         {
             if (

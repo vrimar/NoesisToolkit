@@ -33,8 +33,6 @@ sealed partial class XamlEmitter(
 
     bool _usesResourceLookup;
 
-    string? _dictionary => _dictionaries.Count == 0 ? null : _dictionaries[_dictionaries.Count - 1];
-
     readonly List<INamedTypeSymbol?> _styleTargets = new List<INamedTypeSymbol?>();
 
     readonly List<string> _templates = new List<string>();

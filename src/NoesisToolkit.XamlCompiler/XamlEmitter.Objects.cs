@@ -129,6 +129,14 @@ sealed partial class XamlEmitter
         var isTemplate = XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
         if (pushed)
             PushNameScope(element);
+
+        // A template's own name belongs to the scope around it, not the one it opens.
+        var ownName = isTemplate
+            ? element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))
+            : null;
+        if (ownName is not null)
+            ApplyAttribute(element, name, symbol, ownName);
+
         if (isTemplate)
         {
             _templates.Add(name);
@@ -137,7 +145,12 @@ sealed partial class XamlEmitter
         }
 
         // Value converts against the type Property names, so Property applies first either way.
-        foreach (var attribute in element.Attributes().OrderBy(a => a.Name.LocalName == "Value"))
+        foreach (
+            var attribute in element
+                .Attributes()
+                .Where(a => a != ownName)
+                .OrderBy(a => a.Name.LocalName == "Value")
+        )
             ApplyAttribute(element, name, symbol, attribute);
 
         if (XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ResourceDictionary"))

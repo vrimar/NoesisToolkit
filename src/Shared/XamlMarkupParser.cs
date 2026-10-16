@@ -67,27 +67,31 @@ internal static class XamlMarkupParser
                 continue;
             }
 
-            var start = i;
-            var token = ReadUntil(s, ref i, c => c == '=' || c == ',' || c == '}');
+            // A nested call or a quoted value is positional, whatever '=' it holds inside.
+            if (s[i] is not ('{' or '\'' or '"'))
+            {
+                var start = i;
+                var token = ReadUntil(s, ref i, c => c == '=' || c == ',' || c == '}');
 
-            if (i < s.Length && s[i] == '=')
-            {
-                i++;
-                SkipWs(s, ref i);
-                var val = ReadValue(s, ref i);
-                call.Named.Add(new KeyValuePair<string, object>(token.Trim(), val));
-            }
-            else
-            {
+                if (i < s.Length && s[i] == '=')
+                {
+                    i++;
+                    SkipWs(s, ref i);
+                    var named = ReadValue(s, ref i);
+                    call.Named.Add(new KeyValuePair<string, object>(token.Trim(), named));
+                    continue;
+                }
+
                 i = start;
-                var val = ReadValue(s, ref i);
-                if (val is string text)
-                    call.Positional.Add(text);
-                else if (val is MarkupCall nested)
-                    call.PositionalCalls.Add(nested);
-                else
-                    return null;
             }
+
+            var val = ReadValue(s, ref i);
+            if (val is string text)
+                call.Positional.Add(text);
+            else if (val is MarkupCall nested)
+                call.PositionalCalls.Add(nested);
+            else
+                return null;
         }
 
         if (i < s.Length && s[i] == '}')
@@ -133,7 +137,12 @@ internal static class XamlMarkupParser
     {
         var sb = new StringBuilder();
         while (i < s.Length && !stop(s[i]))
+        {
+            if (s[i] == '\\' && i + 1 < s.Length)
+                sb.Append(s[i++]);
+
             sb.Append(s[i++]);
+        }
         return sb.ToString();
     }
 
@@ -146,6 +155,14 @@ internal static class XamlMarkupParser
         while (i < s.Length)
         {
             var c = s[i];
+
+            if (c == '\\' && i + 1 < s.Length)
+            {
+                sb.Append(s[i + 1]);
+                i += 2;
+                continue;
+            }
+
             if (depth == 0 && (c == ',' || c == '}'))
                 break;
 

@@ -780,6 +780,30 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_handler_the_generated_connect_cannot_type_is_an_error_not_a_silent_drop()
+    {
+        var run = Run(
+            ["MixedHandlers.xaml"],
+            [UnresolvedHostPartial.Replace("UnresolvedHost", "MixedHandlersHost")]
+        );
+
+        await Assert
+            .That(run.GeneratorDiagnostics.Select(d => d.GetMessage()))
+            .Contains(m => m.Contains("<Ellipse Click=\"OnGo\">") && m.Contains("cannot wire it"));
+    }
+
+    [Test]
+    public async Task A_plain_name_registers_in_the_root_scope_without_a_field()
+    {
+        var run = Run(["PlainName.xaml"], [Host("PlainNameHost")]);
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+        await Assert.That(source).Contains("RegisterName(\"Plain\"");
+        await Assert.That(source).DoesNotContain("this._Plain");
+    }
+
+    [Test]
     public async Task A_template_name_gets_no_code_behind_accessor()
     {
         var run = Run(["TemplateName.xaml"], [Host("TemplateHost")]);
@@ -1081,9 +1105,9 @@ public partial class XamlCompilerTests
         Regex
             .Matches(
                 FragmentRun.Value.Source("FragmentNamespaces"),
-                "ParseXaml\\(@\"((?:[^\"]|\"\")*)\""
+                "ParseXaml\\(\"((?:[^\"\\\\]|\\\\.)*)\""
             )
-            .Select(m => m.Groups[1].Value.Replace("\"\"", "\""))
+            .Select(m => Regex.Unescape(m.Groups[1].Value))
             .Single(fragment => fragment.Contains(marker));
 
     static int Occurrences(string text, string value) =>
@@ -1101,10 +1125,10 @@ public partial class XamlCompilerTests
         await Assert
             .That(source.Split("__templated(global::Noesis.GUI.ParseXaml(").Length)
             .IsEqualTo(2);
-        await Assert.That(source).Contains("TargetType=\"\"{x:Type Button}\"\"");
-        await Assert.That(source).Contains("Background=\"\"{TemplateBinding Background}\"\"");
+        await Assert.That(source).Contains("TargetType=\\\"{x:Type Button}\\\"");
+        await Assert.That(source).Contains("Background=\\\"{TemplateBinding Background}\\\"");
         await Assert.That(source).DoesNotContain("RelativeSource.TemplatedParent");
-        await Assert.That(source).DoesNotContain("Padding=\"\"2\"\"");
+        await Assert.That(source).DoesNotContain("Padding=\\\"2\\\"");
         await Assert
             .That(run.GeneratorDiagnostics.Select(d => d.GetMessage()))
             .Contains(

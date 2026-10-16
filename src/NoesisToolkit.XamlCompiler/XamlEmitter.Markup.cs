@@ -290,9 +290,6 @@ sealed partial class XamlEmitter
                         $"{name}.UpdateSourceTrigger = global::Noesis.UpdateSourceTrigger.{trigger};"
                     );
                     continue;
-                case "StringFormat":
-                    _lines.Add($"{name}.StringFormat = {Quote(Text(pair.Value))};");
-                    continue;
                 case "ElementName":
                     _lines.Add($"{name}.ElementName = {Quote(Text(pair.Value))};");
                     continue;
@@ -305,6 +302,7 @@ sealed partial class XamlEmitter
                     _lines.Add($"{name}.Delay = {delay};");
                     continue;
                 }
+                case "StringFormat":
                 case "FallbackValue":
                 case "TargetNullValue":
                 case "ConverterParameter":
@@ -360,7 +358,7 @@ sealed partial class XamlEmitter
                 if (key is null)
                     return false;
 
-                var found = ResourceValueExpression(key);
+                var found = ResolveExpression(key);
                 _lines.Add($"{binding}.{knob} = {(text ? $"{found} as string" : found)};");
                 return true;
             }
@@ -413,7 +411,7 @@ sealed partial class XamlEmitter
                 if (key is null)
                     return false;
 
-                _lines.Add($"{target}.Converter = ({interfaceFqn}){ResourceValueExpression(key)};");
+                _lines.Add($"{target}.Converter = ({interfaceFqn}){ResolveExpression(key)};");
                 return true;
             }
             case MarkupCall other:
@@ -612,7 +610,7 @@ sealed partial class XamlEmitter
             if (attribute.IsNamespaceDeclaration)
                 continue;
 
-            object value = attribute.Value;
+            object value = XamlMarkupParser.Unescape(attribute.Value);
             if (XamlMarkupParser.IsMarkup(attribute.Value))
             {
                 var nested = XamlMarkupParser.Parse(attribute.Value);
