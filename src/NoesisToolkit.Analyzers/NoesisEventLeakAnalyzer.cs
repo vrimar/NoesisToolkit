@@ -240,7 +240,7 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
                 switch (creation.Target)
                 {
                     case IMethodReferenceOperation method:
-                        return (method.Method.IsStatic, false, method.Method);
+                        return (!InstanceCapture.TargetsInstance(method), false, method.Method);
                     case IAnonymousFunctionOperation lambda:
                         var capturesThis =
                             !lambda.Symbol.IsStatic && InstanceCapture.CapturesInBody(lambda.Body);

@@ -55,6 +55,10 @@ public class NoesisEventLeakAnalyzerTests
         "void Hook() { _button.Click += OnClick; } void Drop() { _button.Click -= OnOther; }",
         1
     )]
+    [Arguments(
+        "sealed class Helper { public void OnClick(object s, System.EventArgs e) { } } readonly Helper _helper = new Helper(); void Hook() { _button.Click += _helper.OnClick; }",
+        0
+    )]
     public async Task A_subscription_is_reported_only_when_it_pins_the_element(
         string body,
         int expected

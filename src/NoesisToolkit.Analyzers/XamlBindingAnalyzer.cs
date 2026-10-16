@@ -532,7 +532,14 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         if (type is IArrayTypeSymbol array)
             return array.ElementType;
 
-        var enumerable = (type as INamedTypeSymbol)?.AllInterfaces.FirstOrDefault(i =>
+        if (type is not INamedTypeSymbol named)
+            return null;
+
+        var candidates =
+            named.TypeKind == TypeKind.Interface
+                ? new[] { named }.Concat(named.AllInterfaces)
+                : named.AllInterfaces;
+        var enumerable = candidates.FirstOrDefault(i =>
             i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T
         );
         return enumerable?.TypeArguments.FirstOrDefault();

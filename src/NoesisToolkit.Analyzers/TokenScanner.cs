@@ -51,6 +51,15 @@ internal static class TokenScanner
                 var isSetter = elementName == "Setter";
                 var isTargetHost = TargetTypeHosts.Contains(elementName);
 
+                if (
+                    elementName
+                        is "DataTemplate"
+                            or "HierarchicalDataTemplate"
+                            or "ItemsPanelTemplate"
+                    && !reader.IsEmptyElement
+                )
+                    scopes.Add(new TargetScope(depth, null));
+
                 if (!reader.HasAttributes)
                     continue;
 
@@ -141,9 +150,9 @@ internal static class TokenScanner
         }
         else
         {
-            if (hasTargetName || scopes.Count == 0)
+            if (hasTargetName || scopes.Count == 0 || scopes[scopes.Count - 1].TargetType is null)
                 return;
-            owner = scopes[scopes.Count - 1].TargetType;
+            owner = scopes[scopes.Count - 1].TargetType!;
             member = property;
         }
 
@@ -233,14 +242,14 @@ internal static class TokenScanner
 
     readonly struct TargetScope
     {
-        public TargetScope(int depth, string targetType)
+        public TargetScope(int depth, string? targetType)
         {
             Depth = depth;
             TargetType = targetType;
         }
 
         public int Depth { get; }
-        public string TargetType { get; }
+        public string? TargetType { get; }
     }
 }
 

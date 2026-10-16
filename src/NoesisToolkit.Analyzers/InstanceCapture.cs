@@ -16,12 +16,20 @@ static class InstanceCapture
 
         return creation.Target switch
         {
-            IMethodReferenceOperation method => !method.Method.IsStatic,
+            IMethodReferenceOperation method => TargetsInstance(method),
             IAnonymousFunctionOperation lambda => !lambda.Symbol.IsStatic
                 && CapturesInBody(lambda.Body),
             _ => false,
         };
     }
+
+    // A method group bound off another object holds that object, not this one.
+    public static bool TargetsInstance(IMethodReferenceOperation method) =>
+        method.Instance
+            is IInstanceReferenceOperation
+            {
+                ReferenceKind: InstanceReferenceKind.ContainingTypeInstance
+            };
 
     public static bool CapturesInBody(IOperation body)
     {

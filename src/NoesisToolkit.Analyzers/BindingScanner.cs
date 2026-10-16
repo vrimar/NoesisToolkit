@@ -355,9 +355,11 @@ internal static class BindingScanner
 
         switch (name)
         {
+            // Content of any template but a ControlTemplate is templated by whatever presents it.
             case "DataTemplate":
             case "HierarchicalDataTemplate":
                 frame.Data = ResolveDataTemplateScope(reader, parent, prefixes);
+                frame.TargetType = null;
                 break;
             case "Style":
             case "ControlTemplate":
@@ -367,6 +369,7 @@ internal static class BindingScanner
                 break;
             case "ItemsPanelTemplate":
                 frame.Data = TemplatedScope(reader, parent);
+                frame.TargetType = null;
                 break;
         }
 
