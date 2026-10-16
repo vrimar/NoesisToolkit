@@ -72,20 +72,18 @@ readonly record struct OwnerInfo(
     string Display,
     string Declarations,
     string? Namespace,
-    string Constraints,
     bool IsPartial,
     string? NotPartial,
     LocationInfo? Location
 )
 {
-    public static OwnerInfo From(INamedTypeSymbol type, string constraints = "") =>
+    public static OwnerInfo From(INamedTypeSymbol type) =>
         new OwnerInfo(
             OwnerNaming.Key(type),
             type.Fq(),
             type.ToDisplayString(),
             PartialTypeEmitter.DeclarationChain(type),
             type.NamespaceOrNull(),
-            constraints,
             OwnerNaming.NotPartialIn(type) is null,
             OwnerNaming.NotPartialIn(type)?.ToDisplayString(),
             LocationInfo.From(type.Locations.FirstOrDefault())

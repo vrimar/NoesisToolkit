@@ -36,21 +36,12 @@ static class PartialTypeEmitter
 
     /// <summary>Opens <paramref name="chain"/> as nested <c>partial</c> blocks, innermost last.
     /// Dispose in reverse to close them.</summary>
-    public static List<CodeWriter.Scope> Open(CodeWriter w, string chain, string constraints = "")
+    public static List<CodeWriter.Scope> Open(CodeWriter w, string chain)
     {
         var levels = chain.Split(';');
         var scopes = new List<CodeWriter.Scope>();
-        for (var i = 0; i < levels.Length; i++)
-        {
-            var last = i == levels.Length - 1;
-            scopes.Add(
-                w.Block(
-                    last && constraints.Length > 0
-                        ? $"partial {levels[i]}\n    {constraints}"
-                        : $"partial {levels[i]}"
-                )
-            );
-        }
+        foreach (var level in levels)
+            scopes.Add(w.Block($"partial {level}"));
 
         return scopes;
     }

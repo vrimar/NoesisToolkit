@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -32,7 +33,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             .SyntaxProvider.ForAttributeWithMetadataName(
                 AttributeMetadataName,
                 static (node, _) => node is PropertyDeclarationSyntax,
-                static (ctx, _) => BuildModel((IPropertySymbol)ctx.TargetSymbol)
+                static (ctx, _) => BuildModel((IPropertySymbol)ctx.TargetSymbol, ctx.SemanticModel)
             )
             .WithTrackingName(PropertiesStep)
             .Collect();
@@ -67,50 +68,47 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         );
     }
 
-    private static string Parameter(int index) =>
-        index switch
-        {
-            0 => "defaultValue",
-            1 => "propertyChanged",
-            2 => "metadataOptions",
-            _ => "",
-        };
-
-    private static Model BuildModel(IPropertySymbol prop)
+    private static Model BuildModel(IPropertySymbol prop, SemanticModel model)
     {
         var attr = prop.GetAttributes()
             .First(a => a.AttributeClass?.ToDisplayString() == AttributeMetadataName);
+
+        var typeFqn = prop.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated).Fq();
 
         string? defaultValue = null;
         string? propertyChanged = null;
         string? metadataOptions = null;
 
-        // Syntax, not AttributeData: the default value is emitted verbatim and a callback is a method group.
-        if (
-            attr.ApplicationSyntaxReference?.GetSyntax() is AttributeSyntax syntax
-            && syntax.ArgumentList is { Arguments.Count: > 0 } list
-        )
+        // Bound values, not source text: the generated file has none of the declaring file's usings.
+        if (attr.AttributeConstructor is { } constructor)
         {
-            var positional = 0;
-            foreach (var argument in list.Arguments)
+            var count = Math.Min(constructor.Parameters.Length, attr.ConstructorArguments.Length);
+            for (var i = 0; i < count; i++)
             {
-                var name =
-                    argument.NameColon?.Name.Identifier.Text
-                    ?? argument.NameEquals?.Name.Identifier.Text
-                    ?? Parameter(positional++);
-                var text = argument.Expression.ToString();
-
-                switch (name)
+                var argument = attr.ConstructorArguments[i];
+                switch (constructor.Parameters[i].Name)
                 {
                     case "defaultValue":
-                        if (!text.Equals("null", StringComparison.OrdinalIgnoreCase))
-                            defaultValue = text;
+                        if (!argument.IsNull && Literal(argument) is { } literal)
+                            defaultValue = $"({typeFqn})({literal})";
                         break;
                     case "propertyChanged":
-                        propertyChanged = CleanCallbackString(text);
+                        if (argument.Value is string { Length: > 0 } callback)
+                            propertyChanged = CallbackReference(
+                                attr,
+                                i,
+                                callback,
+                                prop.ContainingType,
+                                model
+                            );
                         break;
                     case "metadataOptions":
-                        metadataOptions = text;
+                        if (
+                            argument.Type is INamedTypeSymbol options
+                            && argument.Value is { } flags
+                            && Bits(flags) != 0
+                        )
+                            metadataOptions = EnumLiteral(options, flags, options.Name);
                         break;
                 }
             }
@@ -122,7 +120,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             OwnerInfo.From(owner),
             prop.Name,
             prop.Type.ToDisplayString(SymbolText.FqnNullable),
-            prop.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated).Fq(),
+            typeFqn,
             propertyChanged,
             defaultValue,
             metadataOptions,
@@ -131,9 +129,157 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             InheritsMemberNamed(owner, prop.Name),
             InheritsMemberNamed(owner, prop.Name + "Property"),
             TypedRead(prop.Type),
-            WritesTyped(prop.Type)
+            WritesTyped(prop.Type),
+            SyntaxFacts.GetText(prop.DeclaredAccessibility),
+            prop.GetMethod is null ? null : AccessorModifier(prop, prop.GetMethod),
+            prop.SetMethod is null ? null
+                : prop.SetMethod.IsInitOnly ? "init"
+                : "set",
+            prop.SetMethod is null ? "" : AccessorModifier(prop, prop.SetMethod)
         );
     }
+
+    // nameof binds to the bare name, so a callback another type declares is found through the syntax.
+    private static string CallbackReference(
+        AttributeData attr,
+        int parameter,
+        string name,
+        INamedTypeSymbol owner,
+        SemanticModel model
+    )
+    {
+        if (
+            ArgumentSyntax(attr, parameter, "propertyChanged")
+                is InvocationExpressionSyntax
+                {
+                    Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
+                    ArgumentList.Arguments: { Count: 1 } arguments,
+                }
+            && model.GetSymbolInfo(arguments[0].Expression) is var info
+            && (info.Symbol ?? info.CandidateSymbols.FirstOrDefault())
+                is IMethodSymbol { ContainingType: { } declaring }
+            && !InheritsFrom(owner, declaring)
+        )
+            return $"{declaring.Fq()}.{name}";
+
+        return name;
+    }
+
+    private static ExpressionSyntax? ArgumentSyntax(
+        AttributeData attr,
+        int parameter,
+        string parameterName
+    )
+    {
+        if (
+            attr.ApplicationSyntaxReference?.GetSyntax()
+            is not AttributeSyntax { ArgumentList: { } list }
+        )
+            return null;
+
+        for (var i = 0; i < list.Arguments.Count; i++)
+        {
+            var argument = list.Arguments[i];
+            if (argument.NameEquals is not null)
+                continue;
+
+            if (
+                argument.NameColon is { } named
+                    ? named.Name.Identifier.Text == parameterName
+                    : i == parameter
+            )
+                return argument.Expression;
+        }
+
+        return null;
+    }
+
+    private static bool InheritsFrom(INamedTypeSymbol type, INamedTypeSymbol ancestor)
+    {
+        for (INamedTypeSymbol? t = type; t is not null; t = t.BaseType)
+        {
+            if (
+                SymbolEqualityComparer.Default.Equals(
+                    t.OriginalDefinition,
+                    ancestor.OriginalDefinition
+                )
+            )
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string AccessorModifier(IPropertySymbol prop, IMethodSymbol accessor) =>
+        accessor.DeclaredAccessibility == prop.DeclaredAccessibility
+            ? ""
+            : SyntaxFacts.GetText(accessor.DeclaredAccessibility) + " ";
+
+    private static string? Literal(TypedConstant constant) =>
+        constant.Kind switch
+        {
+            _ when constant.IsNull => "null",
+            TypedConstantKind.Enum when constant.Type is INamedTypeSymbol type => EnumLiteral(
+                type,
+                constant.Value!,
+                type.Fq()
+            ),
+            TypedConstantKind.Type when constant.Value is ITypeSymbol type =>
+                $"typeof({type.Fq()})",
+            TypedConstantKind.Primitive => PrimitiveLiteral(constant.Value!),
+            TypedConstantKind.Array when constant.Type is { } type => ArrayLiteral(
+                type,
+                constant.Values
+            ),
+            _ => null,
+        };
+
+    private static string? ArrayLiteral(ITypeSymbol type, IEnumerable<TypedConstant> values)
+    {
+        var elements = values.Select(Literal).ToList();
+        return elements.Any(e => e is null)
+            ? null
+            : $"new {type.Fq()} {{ {string.Join(", ", elements)} }}";
+    }
+
+    private static string PrimitiveLiteral(object value) =>
+        value switch
+        {
+            double d when double.IsNaN(d) => "double.NaN",
+            double d when double.IsPositiveInfinity(d) => "double.PositiveInfinity",
+            double d when double.IsNegativeInfinity(d) => "double.NegativeInfinity",
+            double d => d.ToString("R", CultureInfo.InvariantCulture) + "D",
+            float f when float.IsNaN(f) => "float.NaN",
+            float f when float.IsPositiveInfinity(f) => "float.PositiveInfinity",
+            float f when float.IsNegativeInfinity(f) => "float.NegativeInfinity",
+            float f => f.ToString("R", CultureInfo.InvariantCulture) + "F",
+            _ => SymbolDisplay.FormatPrimitive(
+                value,
+                quoteStrings: true,
+                useHexadecimalNumbers: false
+            ),
+        };
+
+    private static string EnumLiteral(INamedTypeSymbol type, object value, string typeName)
+    {
+        var bits = Bits(value);
+        var members = type.GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue && f.ConstantValue is not null)
+            .Select(f => (f.Name, Bits: Bits(f.ConstantValue!)))
+            .ToList();
+
+        if (members.FirstOrDefault(m => m.Bits == bits) is { Name: { } exact })
+            return $"{typeName}.{exact}";
+
+        var parts = members.Where(m => m.Bits != 0 && (bits & m.Bits) == m.Bits).ToList();
+        return parts.Aggregate(0L, (all, m) => all | m.Bits) == bits && parts.Count > 0
+            ? string.Join(" | ", parts.Select(m => $"{typeName}.{m.Name}"))
+            : $"({typeName})({bits.ToString(CultureInfo.InvariantCulture)})";
+    }
+
+    private static long Bits(object value) =>
+        value is ulong wide ? unchecked((long)wide) : Convert.ToInt64(value);
 
     private static string? TypedRead(ITypeSymbol type)
     {
@@ -227,10 +373,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         WriteRegistration(w, m, attached: false);
 
         w.Line();
-        using (w.Block($"public {propertyNew}partial {m.TypeFqnNullable} {m.PropertyName}"))
+        using (
+            w.Block($"{m.Accessibility} {propertyNew}partial {m.TypeFqnNullable} {m.PropertyName}")
+        )
         {
-            w.Line($"get => {Read(m, "this")};");
-            w.Line($"set => {Write(m, "this")};");
+            if (m.GetterModifier is { } getter)
+                w.Line($"{getter}get => {Read(m, "this")};");
+            if (m.SetterKeyword is { } setter)
+                w.Line($"{m.SetterModifier}{setter} => {Write(m, "this")};");
         }
         w.Line();
     }
@@ -310,10 +460,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         if (m.IsPropertyPartial)
         {
             w.Line($"private static {m.TypeFqnNullable} __backing_{m.PropertyName} = default!;");
-            using (w.Block($"public static partial {m.TypeFqnNullable} {m.PropertyName}"))
+            using (
+                w.Block($"{m.Accessibility} static partial {m.TypeFqnNullable} {m.PropertyName}")
+            )
             {
-                w.Line($"get => __backing_{m.PropertyName};");
-                w.Line($"set => __backing_{m.PropertyName} = value;");
+                if (m.GetterModifier is { } getter)
+                    w.Line($"{getter}get => __backing_{m.PropertyName};");
+                if (m.SetterKeyword is { } setter)
+                    w.Line($"{m.SetterModifier}{setter} => __backing_{m.PropertyName} = value;");
             }
             w.Line();
         }
@@ -330,25 +484,6 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             : $"{WatcherFqn}.Metadata({def}, {opts})";
     }
 
-    private static string? CleanCallbackString(string raw)
-    {
-        string s = raw.Trim();
-
-        if (s.StartsWith("nameof", StringComparison.Ordinal))
-        {
-            int open = s.IndexOf('(');
-            int close = s.IndexOf(')');
-            if (open >= 0 && close > open)
-                s = s.Substring(open + 1, close - open - 1).Trim();
-        }
-
-        if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
-            s = s.Substring(1, s.Length - 2);
-
-        // A blank name is no callback at all; interpolated, it leaves the argument missing.
-        return s.Length == 0 || s == "null" ? null : s;
-    }
-
     private readonly record struct Model(
         OwnerInfo Owner,
         string PropertyName,
@@ -362,6 +497,10 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         bool HidesInheritedProperty,
         bool HidesInheritedField,
         string? TypedRead,
-        bool WritesTyped
+        bool WritesTyped,
+        string Accessibility,
+        string? GetterModifier,
+        string? SetterKeyword,
+        string SetterModifier
     );
 }

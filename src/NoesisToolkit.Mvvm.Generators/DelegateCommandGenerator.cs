@@ -73,7 +73,7 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
         var firstParam = method.Parameters.FirstOrDefault();
 
         return new Command(
-            OwnerInfo.From(type, Constraints(type)),
+            OwnerInfo.From(type),
             method.Name,
             method.ReturnType.ToDisplayString(),
             method.ReturnsVoid,
@@ -156,11 +156,7 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
             w.Line();
 
             // No accessibility modifier: stating one would conflict with an internal declaration.
-            var scopes = PartialTypeEmitter.Open(
-                w,
-                owner.Owner.Declarations,
-                owner.Owner.Constraints
-            );
+            var scopes = PartialTypeEmitter.Open(w, owner.Owner.Declarations);
             w.Line(members.ToString().TrimEnd('\n'));
             PartialTypeEmitter.Close(scopes);
 
@@ -171,36 +167,4 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
     static bool ReturnsValueTask(IMethodSymbol method) =>
         method.ReturnType is INamedTypeSymbol { Name: "ValueTask", IsGenericType: false } named
         && named.ContainingNamespace?.ToDisplayString() == "System.Threading.Tasks";
-
-    // A string, not a list: an array is reference-equal and would defeat incremental caching.
-    static string Constraints(INamedTypeSymbol type)
-    {
-        if (type.Arity == 0)
-            return "";
-
-        var clauses = new List<string>();
-        foreach (var p in type.TypeParameters)
-        {
-            var parts = new List<string>();
-
-            if (p.HasNotNullConstraint)
-                parts.Add("notnull");
-            if (p.HasUnmanagedTypeConstraint)
-                parts.Add("unmanaged");
-            else if (p.HasValueTypeConstraint)
-                parts.Add("struct");
-            else if (p.HasReferenceTypeConstraint)
-                parts.Add("class");
-
-            parts.AddRange(p.ConstraintTypes.Select(t => t.Fq()));
-
-            if (p.HasConstructorConstraint)
-                parts.Add("new()");
-
-            if (parts.Count > 0)
-                clauses.Add($"where {p.Name} : {string.Join(", ", parts)}");
-        }
-
-        return string.Join("\n", clauses);
-    }
 }
