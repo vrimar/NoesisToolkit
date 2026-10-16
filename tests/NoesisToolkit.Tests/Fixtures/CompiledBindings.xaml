@@ -125,7 +125,10 @@
             <TextBlock x:Name="Peer" />
             <TextBlock Text="{Binding ElementName=Peer, Path=DataContext.Family}" />
             <TextBlock Text="{Binding ElementName=Outer, Path=DataContext.Family}" />
-            <TextBlock Text="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.Family}" />
+            <TextBlock
+              ntk:AncestorDataType="ui:ItemViewModel"
+              Text="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.Family}"
+            />
             <TextBlock Text="{Binding RelativeSource={RelativeSource AncestorType=Border}, Path=DataContext.Family}" />
           </StackPanel>
           <DataTemplate.Triggers>

@@ -58,8 +58,10 @@ Path=Text}`. A dependency property is the only part of an element that can be wa
 falls back. When a source element's DataContext is not what the surrounding markup implies, state it
 with `ntk:DataType` on that element.
 
-A `FindAncestor` binding written inside a detached template has no ancestor the document can prove,
-so state the type the walk will land on with `ntk:AncestorDataType`:
+A `FindAncestor` binding written inside a template or a style has no ancestor the document can
+prove: past a template the walk can land on a container the markup never shows, as
+`AncestorType=ItemsControl` in a `TreeView`'s item template lands on the `TreeViewItem`, whose
+DataContext is the item. State the type the walk will land on with `ntk:AncestorDataType`:
 
 ```xml
 <DataTemplate ntk:AncestorDataType="{x:Type app:ShellViewModel}">

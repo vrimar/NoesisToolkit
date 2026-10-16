@@ -1,0 +1,55 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <t:EdgeParameter x:Key="Parameter" />
+  <t:EdgeRecorder x:Key="Recorder" />
+  <t:EdgeTextBack x:Key="TextBack" />
+
+  <ControlTemplate x:Key="Escaped" TargetType="{x:Type Control}">
+    <TextBlock
+      x:Name="Out"
+      Text="{Binding Source=abc, Converter={StaticResource Parameter}, ConverterParameter=a\,b}"
+    />
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Broken" TargetType="{x:Type Control}">
+    <TextBox
+      x:Name="Box"
+      ntk:DataType="t:EdgeItem"
+      Text="{Binding Selected.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+    />
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Narrow" TargetType="{x:Type Control}">
+    <StackPanel ntk:DataType="t:EdgeItem">
+      <TextBlock Text="{Binding Price, Converter={StaticResource Recorder}}" />
+      <TextBlock Text="{Binding Small, Converter={StaticResource Recorder}}" />
+      <TextBlock Text="{Binding Letter, Converter={StaticResource Recorder}}" />
+    </StackPanel>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Back" TargetType="{x:Type Control}">
+    <TextBox
+      x:Name="Box"
+      ntk:DataType="t:EdgeItem"
+      Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource TextBack}}"
+    />
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="Tree" TargetType="{x:Type Control}">
+    <TreeView ntk:DataType="t:EdgeItem" ItemsSource="{Binding Leaves}">
+      <TreeView.ItemTemplate>
+        <DataTemplate DataType="{x:Type t:EdgeLeaf}">
+          <TextBlock
+            x:Name="Up"
+            Text="{Binding DataContext.Name, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+          />
+        </DataTemplate>
+      </TreeView.ItemTemplate>
+    </TreeView>
+  </ControlTemplate>
+</ResourceDictionary>

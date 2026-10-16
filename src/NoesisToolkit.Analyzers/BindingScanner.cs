@@ -440,7 +440,7 @@ internal static class BindingScanner
                     : frame.Data?.Extend(path, host.IsCollection);
             }
 
-            if (frame.Breaks)
+            if (frame.Breaks || !host.SourcedAbove)
                 return null;
         }
 
@@ -663,6 +663,9 @@ internal static class BindingScanner
     {
         for (var i = stack.Count - 1; i >= 0; i--)
         {
+            if (stack[i].Breaks)
+                return null;
+
             if (stack[i].SelfType is not { } self)
                 continue;
 

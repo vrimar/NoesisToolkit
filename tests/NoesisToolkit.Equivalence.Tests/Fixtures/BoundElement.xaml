@@ -42,10 +42,12 @@
             />
             <TextBlock
               x:Name="FromAncestor"
+              ntk:AncestorDataType="t:SpikeOwner"
               Text="{Binding RelativeSource={RelativeSource AncestorType=ItemsControl}, Path=DataContext.Title}"
             />
             <Button
               x:Name="Poker"
+              ntk:AncestorDataType="t:SpikeOwner"
               Command="{Binding DataContext.Poke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
             />
           </StackPanel>

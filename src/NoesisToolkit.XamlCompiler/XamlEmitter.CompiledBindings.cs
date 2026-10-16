@@ -1220,8 +1220,8 @@ sealed partial class XamlEmitter
         if (AncestorScope(element, type) is { } scope)
             return new BindingSource(lookup, scope);
 
-        // Past a style the XML ancestry says nothing, so the type comes from the attribute alone
-        // and the run-time walk retries off LayoutUpdated until the tree connects. What that
+        // Past a style or template the XML ancestry says nothing, so the type comes from the attribute
+        // alone and the run-time walk retries off LayoutUpdated until the tree connects. What that
         // ancestor's DataContext holds stays unknowable, so only its own properties may be read.
         return new BindingSource(lookup, element, type, detached: true);
     }
@@ -1238,7 +1238,7 @@ sealed partial class XamlEmitter
         );
     }
 
-    // A style detaches content from where it was written, so past one the XML ancestry says nothing.
+    // Past a style or template the XML ancestry says nothing: a template adds containers unwritten.
     XElement? AncestorScope(XElement element, INamedTypeSymbol type)
     {
         var wanted = XamlTypeResolver.Fqn(type);
@@ -1249,7 +1249,10 @@ sealed partial class XamlEmitter
             if (symbol is null)
                 continue;
 
-            if (XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style"))
+            if (
+                XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style")
+                || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate")
+            )
                 return null;
 
             if (XamlTypeResolver.DerivesFrom(symbol, wanted))
@@ -1488,11 +1491,15 @@ sealed partial class XamlEmitter
     // named above -- but never past a breaker, which renders something else entirely.
     INamedTypeSymbol? SourcedContext(XElement slot, XamlScopeRules.TemplateHost host)
     {
+        var owner = slot.Name.LocalName.IndexOf('.') < 0 ? slot : slot.Parent;
         foreach (var element in slot.AncestorsAndSelf())
         {
             if (!WritesSource(element, host.SourceProperty, out var written))
             {
-                if (XamlScopeRules.ScopeBreakers.Contains(element.Name.LocalName))
+                if (
+                    XamlScopeRules.ScopeBreakers.Contains(element.Name.LocalName)
+                    || !host.SourcedAbove && element == owner
+                )
                     return null;
 
                 continue;

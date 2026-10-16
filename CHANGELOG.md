@@ -3,6 +3,57 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`DisplayMemberPath` and `SelectedValuePath` keep their members in a trimmed build when the items
+  come through a plain property of an element.** An `ItemsSource` bound off `TemplatedParent`,
+  `ElementName` or `Self` to a property that is not a dependency property left the item type unknown,
+  so the member was never rooted. Item paths set by a `Setter`, a compiled trigger or a property
+  element are rooted too, and an `ItemsSource` written as `<X.ItemsSource><Binding/>` is read.
+- **A converter or getter that throws fails its own compiled binding, as a native one does,** instead
+  of escaping into the code that raised `PropertyChanged` and leaving sibling bindings stale.
+- **A user `[DependencyProperty]` that binds two-way by default writes back.** A compiled binding
+  with no writer stays native for it, as it does for Noesis' own two-way properties.
+- **`ConvertBack` receives the source's type**, and a value it returns of another type converts as
+  the engine converts it rather than writing the default. A converter reads a `decimal`, `byte`,
+  `sbyte` or `char` source as the wider type Noesis hands it.
+- **A compiled binding whose path is still broken writes its default again on a change notification,**
+  as the native engine does.
+- **A `Loaded` handler taken with `Events.On` on an element with a compiled binding runs once.**
+- **`NoesisXamlNamespaces` and `NoesisXamlExtensions` take several `;`-separated entries, and a project
+  under a path holding `#` or `;` keeps its folders in logical names.** The editorconfig line MSBuild
+  writes cut each value at the first `;` or `#`.
+- **A custom markup extension receives a service provider** answering `IProvideValueTarget` and
+  `IUriContext`, and a binding it returns is set as a binding. One with no parameterless constructor
+  is left to the parser.
+- **A `[DependencyProperty]` default converts to the property's type and no longer depends on the
+  declaring file's usings.** The generated part keeps the declaration's accessibility and accessors,
+  and a callback on another type is qualified.
+- **A ConnectEvent the compiler generates reports a handler it cannot wire** as `NTK1001`, where it
+  dropped the handler silently.
+- Generated code no longer fails to compile for `PasswordChar="*"`, `Width="1,000"`, a dictionary
+  under a folder starting with a digit, colliding element variable names, a misspelt attached property
+  with a markup value, or an attached binding on a non-element; a literal that does not convert is an
+  `NTK1001` error rather than dropped.
+- `StringFormat={StaticResource}` and a `{}`-escaped format in element syntax reach native bindings; a
+  `\,` in a markup argument is an escaped comma; a `<DynamicResource/>` element stays live; a
+  `StaticResource` in a root's inline style resolves once; a plain `Name=` registers in the root's
+  name scope; an `x:Name` on a template in an `x:Class` document fills its accessor; an `x:Class` in
+  the global namespace compiles.
+- The analyzer no longer checks a `TemplatedParent` binding in a `DataTemplate` against the enclosing
+  control template, checks item templates over an `IEnumerable<T>`, and `NTK2101`/`NTK2102` no
+  longer flag a handler or command bound off another object.
+
+### Changed
+
+- **A `FindAncestor` binding past a template boundary needs `ntk:AncestorDataType` to read the
+  ancestor's DataContext**, as one past a style already did: the walk can land on a container the
+  markup never shows. Without it the binding stays native and, in a trimmed build, raises `NTK1004`.
+- **A template's DataContext is typed only from its own host's source**, except a `CellTemplate` and
+  a group header, which read the nearest list above.
+
 ## [0.5.7] - 2026-10-14
 
 ### Fixed

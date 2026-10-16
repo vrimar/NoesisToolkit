@@ -46,11 +46,11 @@ public class XamlBindingAnalyzerTests
               xmlns:ui="clr-namespace:Sample.Ui"
               xmlns:ntk="https://github.com/vrimar/NoesisToolkit">
               <ui:TypedListHost ntk:DataType="ui:ItemViewModel">
-                <DataTemplate>
+                <StackPanel>
                   <TextBlock
                     Text="{Binding DataContext.Nope,
                                    RelativeSource={RelativeSource AncestorType={x:Type ui:ListHost}}}" />
-                </DataTemplate>
+                </StackPanel>
               </ui:TypedListHost>
             </ResourceDictionary>
             """,

@@ -441,7 +441,7 @@ public partial class XamlCompilerTests
             .That(source)
             .Contains("CompiledBinding.FindAncestor(__s, typeof(global::Noesis.ItemsControl))");
 
-        // Which element the walk lands on is derived from the tree, not declared, so it is checked.
+        // The declared ancestor type only claims what the run-time walk lands on, so it is checked.
         await Assert
             .That(source)
             .Contains("BindingHop.Guarded<global::Sample.Ui.ItemViewModel>(\"Family\"");
