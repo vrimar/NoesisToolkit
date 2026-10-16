@@ -449,6 +449,24 @@ public class XamlTrimRootsTests
     }
 
     [Test]
+    public async Task A_name_handed_over_as_text_that_its_type_lacks_warns_in_an_app_that_does_not_trim()
+    {
+        var run = RunApp("RootsAbsent.xaml", NoTrimming, Host("AbsentHost"));
+
+        var absent = run
+            .GeneratorDiagnostics.Where(d => d.Id == "NTK1008")
+            .Select(d => (Line: d.Location.GetLineSpan().StartLinePosition.Line + 1, d.Severity))
+            .OrderBy(d => d.Line)
+            .ToList();
+
+        await Assert.That(Text(run.Errors)).IsEmpty();
+        await Assert.That(Unrooted(run)).IsEmpty();
+        await Assert
+            .That(absent)
+            .IsEquivalentTo([(11, DiagnosticSeverity.Warning), (14, DiagnosticSeverity.Warning)]);
+    }
+
+    [Test]
     public async Task A_library_that_declares_no_trimming_hears_of_them_as_warnings()
     {
         var run = Run("RootsUnrooted.xaml", NoTrimming, Host("UnrootedHost"));

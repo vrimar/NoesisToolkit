@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`NTK1008` reports a `DisplayMemberPath`, `SelectedValuePath` or `EventName` naming a member its
+  type does not have**, as a warning in every build. These were `NTK1004`, which a project that does
+  not trim hears of only as information, though the lookup fails there too.
+
 ### Fixed
 
 - **`DisplayMemberPath` and `SelectedValuePath` keep their members in a trimmed build when the items

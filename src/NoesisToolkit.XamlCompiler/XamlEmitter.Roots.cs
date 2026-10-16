@@ -16,6 +16,8 @@ sealed partial class XamlEmitter
 
     public readonly List<MarkupSite> Unrooted = new List<MarkupSite>();
 
+    public readonly List<MarkupSite> Absent = new List<MarkupSite>();
+
     public readonly List<MarkupSite> LeftNative = new List<MarkupSite>();
 
     public readonly List<XAttribute> UnresolvedTypes = new List<XAttribute>();
@@ -30,18 +32,20 @@ sealed partial class XamlEmitter
 
     const string ItemTypeAttribute = "ItemType";
 
-    readonly struct RootsMark(int roots, int unrooted)
+    readonly struct RootsMark(int roots, int unrooted, int absent)
     {
         public int Roots { get; } = roots;
         public int Unrooted { get; } = unrooted;
+        public int Absent { get; } = absent;
     }
 
-    RootsMark MarkRoots() => new RootsMark(Roots.Count, Unrooted.Count);
+    RootsMark MarkRoots() => new RootsMark(Roots.Count, Unrooted.Count, Absent.Count);
 
     void RestoreRoots(RootsMark mark)
     {
         Roots.Truncate(mark.Roots);
         Unrooted.RemoveRange(mark.Unrooted, Unrooted.Count - mark.Unrooted);
+        Absent.RemoveRange(mark.Absent, Absent.Count - mark.Absent);
     }
 
     const string ContextUndeclared =
@@ -172,7 +176,14 @@ sealed partial class XamlEmitter
         XElement element,
         ITypeSymbol source,
         string path
-    ) => path.Length == 0 ? (null, source) : PathRoots(element, source, path);
+    )
+    {
+        if (path.Length == 0)
+            return (null, source);
+
+        var (problem, type, _) = PathRoots(element, source, path);
+        return (problem, type);
+    }
 
     BindingSource? SelfSource(XElement element)
     {
@@ -365,10 +376,14 @@ sealed partial class XamlEmitter
         return segments.Count == 0 ? null : segments;
     }
 
-    (string? Problem, ITypeSymbol? Type) PathRoots(XElement scope, ITypeSymbol source, string path)
+    (string? Problem, ITypeSymbol? Type, bool Absent) PathRoots(
+        XElement scope,
+        ITypeSymbol source,
+        string path
+    )
     {
         if (Segments(path) is not { } segments)
-            return ("has a path the compiler cannot read", null);
+            return ("has a path the compiler cannot read", null, false);
 
         var current = source;
         for (var i = 0; i < segments.Count; i++)
@@ -379,14 +394,16 @@ sealed partial class XamlEmitter
                 if (ResolveTypeSymbol(scope, segment.Owner) is not { } owner)
                     return (
                         $"names an attached owner '{segment.Owner}' that does not resolve",
-                        null
+                        null,
+                        false
                     );
 
                 RootDependencyProperty(owner, segment.Name);
                 if (resolver.FindAttachedValueType(owner, segment.Name) is not { } value)
                     return (
                         $"reads '{segment.Owner}.{segment.Name}', which is not an attached property",
-                        null
+                        null,
+                        true
                     );
 
                 current = value;
@@ -399,7 +416,8 @@ sealed partial class XamlEmitter
                         i == 0
                             ? $"reads '{segment.Name}' off a source typed {Display(current)}"
                             : $"steps through '{segments[i - 1].Name}', typed {Display(current)}, which says nothing about what it holds",
-                        null
+                        null,
+                        false
                     );
 
                 _referenced?.Add(owner);
@@ -408,7 +426,8 @@ sealed partial class XamlEmitter
                 {
                     return (
                         $"reads '{segment.Name}' through {Display(unimplemented)}, which no class the compiler can see implements",
-                        null
+                        null,
+                        false
                     );
                 }
                 else if (read is not null)
@@ -417,11 +436,15 @@ sealed partial class XamlEmitter
                 }
                 else if (owner.ContainingAssembly?.Name == "Noesis.GUI")
                 {
-                    return (null, null);
+                    return (null, null, false);
                 }
                 else
                 {
-                    return ($"reads '{segment.Name}', which {Display(owner)} does not have", null);
+                    return (
+                        $"reads '{segment.Name}', which {Display(owner)} does not have",
+                        null,
+                        true
+                    );
                 }
             }
 
@@ -430,7 +453,8 @@ sealed partial class XamlEmitter
                 if (Indexed(current) is not { } item)
                     return (
                         $"indexes '{segment.Name}', typed {Display(current)}, which has no element type",
-                        null
+                        null,
+                        false
                     );
 
                 current = item;
@@ -445,7 +469,7 @@ sealed partial class XamlEmitter
                 _referenced.Add(item);
         }
 
-        return (null, current);
+        return (null, current, false);
     }
 
     static bool Untyped(INamedTypeSymbol type) => type.SpecialType == SpecialType.System_Object;
@@ -716,10 +740,13 @@ sealed partial class XamlEmitter
                 return;
             }
 
-            var (problem, _) = Quietly(() => PathRoots(element, item, path));
+            var (problem, _, absent) = Quietly(() => PathRoots(element, item, path));
             if (problem is not null)
             {
-                ReportUnrooted(element, $"{name} '{path}' {problem}");
+                if (absent)
+                    ReportAbsent(element, $"{name} '{path}' {problem}");
+                else
+                    ReportUnrooted(element, $"{name} '{path}' {problem}");
                 return;
             }
         }
@@ -796,10 +823,7 @@ sealed partial class XamlEmitter
 
         if (resolver.FindEvent(owner, name) is not { ContainingType: { } declaring } found)
         {
-            ReportUnrooted(
-                trigger,
-                $"EventName '{name}' is not a public event of {Display(owner)}"
-            );
+            ReportAbsent(trigger, $"EventName '{name}' is not a public event of {Display(owner)}");
             return;
         }
 
@@ -1141,20 +1165,25 @@ sealed partial class XamlEmitter
 
     void ReportUnrooted(XElement element, string message)
     {
-        // NTK1006 already names the stated type every name under it depends on.
-        if (
-            element
-                .AncestorsAndSelf()
-                .Any(scope =>
-                    scope
-                        .Attributes()
-                        .Any(a => IsStatedType(a.Name) && ResolveTypeSymbol(scope, a.Value) is null)
-                )
-        )
-            return;
-
-        Unrooted.Add(SiteOf(element, message));
+        if (!UnderUnresolvedStatedType(element))
+            Unrooted.Add(SiteOf(element, message));
     }
+
+    void ReportAbsent(XElement element, string message)
+    {
+        if (!UnderUnresolvedStatedType(element))
+            Absent.Add(SiteOf(element, message));
+    }
+
+    // NTK1006 already names the stated type every name under it depends on.
+    bool UnderUnresolvedStatedType(XElement element) =>
+        element
+            .AncestorsAndSelf()
+            .Any(scope =>
+                scope
+                    .Attributes()
+                    .Any(a => IsStatedType(a.Name) && ResolveTypeSymbol(scope, a.Value) is null)
+            );
 
     void ReportParsedBinding(XElement element)
     {

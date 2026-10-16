@@ -67,6 +67,18 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    static readonly DiagnosticDescriptor AbsentName = new(
+        "NTK1008",
+        "A name the engine is handed as text does not exist",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The engine looks up a DisplayMemberPath, SelectedValuePath or EventName by name "
+            + "at run time and finds nothing when the type it reads does not have that member, in "
+            + "every build."
+    );
+
     static readonly DiagnosticDescriptor LeftNative = new(
         "NTK1007",
         "A binding stays native",
@@ -210,6 +222,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     additionalLocations: null,
                     properties: null,
                     $"{document.File} :: {unrooted.Message}"
+                )
+            );
+
+        foreach (var absent in document.Absent)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    AbsentName,
+                    absent.Location?.ToLocation(),
+                    $"{document.File} :: {absent.Message}"
                 )
             );
 
@@ -660,6 +681,10 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         document.Unrooted = emitter
             .Unrooted.Distinct()
             .Select(u => new MarkupDiagnostic(u.Message, LocationIn(path, text, u.Line, u.Column)))
+            .ToList();
+        document.Absent = emitter
+            .Absent.Distinct()
+            .Select(a => new MarkupDiagnostic(a.Message, LocationIn(path, text, a.Line, a.Column)))
             .ToList();
         // A library is trimmed by whichever app consumes it, and no step there checks these names.
         document.UnrootedSeverity =

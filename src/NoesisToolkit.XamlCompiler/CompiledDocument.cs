@@ -31,6 +31,8 @@ sealed class CompiledDocument(string file)
 
     public DiagnosticSeverity UnrootedSeverity { get; set; }
 
+    public IReadOnlyList<MarkupDiagnostic> Absent { get; set; } = [];
+
     public IReadOnlyList<MarkupDiagnostic> LeftNative { get; set; } = [];
 
     public BindingTally Tally { get; set; } = new BindingTally();

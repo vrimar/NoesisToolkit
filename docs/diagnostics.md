@@ -10,6 +10,7 @@
 | `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute that keeps it on the loader |
 | `NTK1006` | Warning | `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` names a type the compiler cannot find |
 | `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
+| `NTK1008` | Warning | a `DisplayMemberPath`, `SelectedValuePath` or `EventName` names a member its type does not have |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve |
@@ -31,7 +32,7 @@ The compiler roots each of these for the trimmer (see
 [xaml-compiler.md](xaml-compiler.md#trimming)), but it can only root a member of a type it can name.
 Where it cannot — a binding under a DataContext no `ntk:DataType` states, an ancestor walk with no
 `ntk:AncestorDataType`, a path that steps through `object`, a `DisplayMemberPath` over items it
-cannot type, a name the type does not have, an interface no class it can see implements — NTK1004
+cannot type, a binding path its type does not have, an interface no class it can see implements — NTK1004
 points at the attribute holding the markup, because a trimmed build may drop the member and Noesis
 then resolves nothing without a word.
 
@@ -77,6 +78,14 @@ binding the survey calls native by design has no managed name in its path and is
 It is hidden, because a binding that stays native on purpose leaves nothing to fix. To audit a
 project, raise it the way NTK1005 is raised, with `dotnet_diagnostic.NTK1007.severity = warning` in
 a global analyzer config.
+
+## Why NTK1008 exists
+
+A `DisplayMemberPath`, a `SelectedValuePath` and a trigger's `EventName` are strings the engine
+looks up at run time. Where the compiler knows the type the lookup lands on and that type has no
+such member, the lookup finds nothing in every build, trimmed or not: rows show blank, a selection
+yields nothing, a trigger never fires. So it is a warning everywhere, where NTK1004 only marks what
+trimming may drop. A binding path naming a member its source lacks is the analyzer's `NTK2001`.
 
 ## Why NTK2101 and NTK2102 exist
 
