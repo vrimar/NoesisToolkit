@@ -5,6 +5,20 @@
     reaches csc as the unexpanded pattern. Both packages ship this same target name deliberately, so
     installing both still adds each document exactly once.
   -->
+  <!-- ';' and '#' cut an editorconfig value short; '%25' is doubled to survive MSBuild's unescaping. -->
+  <PropertyGroup>
+    <_NoesisXamlExtensionsEncoded>$(NoesisXamlExtensions.Replace('%', '%2525').Replace(';', '%253B').Replace('#', '%2523').Replace('&#13;', '%250D').Replace('&#10;', '%250A'))</_NoesisXamlExtensionsEncoded>
+    <_NoesisXamlNamespacesEncoded>$(NoesisXamlNamespaces.Replace('%', '%2525').Replace(';', '%253B').Replace('#', '%2523').Replace('&#13;', '%250D').Replace('&#10;', '%250A'))</_NoesisXamlNamespacesEncoded>
+    <_NoesisXamlProjectDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)'))</_NoesisXamlProjectDir>
+    <_NoesisXamlProjectDirEncoded>$(_NoesisXamlProjectDir.Replace('%', '%2525').Replace(';', '%253B').Replace('#', '%2523'))</_NoesisXamlProjectDirEncoded>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="_NoesisXamlExtensionsEncoded" />
+    <CompilerVisibleProperty Include="_NoesisXamlNamespacesEncoded" />
+    <CompilerVisibleProperty Include="_NoesisXamlProjectDirEncoded" />
+  </ItemGroup>
+
   <Target
     Name="NoesisToolkitCollectXamlFiles"
     BeforeTargets="CoreCompile"
@@ -14,7 +28,7 @@
       <_NoesisXamlExtension Include="$(NoesisXamlExtensions.Replace(',', ';'))" />
       <_NoesisXamlFile
         Include="**\*%(_NoesisXamlExtension.Identity)"
-        Exclude="$(BaseOutputPath)**;$(BaseIntermediateOutputPath)**;bin\**;obj\**"
+        Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);$(BaseOutputPath)**;$(BaseIntermediateOutputPath)**;bin\**;obj\**"
       />
       <AdditionalFiles Include="@(_NoesisXamlFile)" Exclude="@(AdditionalFiles)" />
     </ItemGroup>

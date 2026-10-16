@@ -8,13 +8,22 @@ static class XamlFiles
 {
     public const string ExtensionsProperty = "build_property.NoesisXamlExtensions";
 
+    public const string EncodedExtensionsProperty = "build_property._NoesisXamlExtensionsEncoded";
+
     public static string Extensions(AnalyzerConfigOptions options) =>
-        options.TryGetValue(ExtensionsProperty, out var value)
-        && value?.Trim() is { Length: > 0 } set
+        Property(options, EncodedExtensionsProperty, ExtensionsProperty).Trim()
+            is { Length: > 0 } set
             ? set
             // Restated from the packages' props for a consumer that takes the analyzer by project
             // reference, where those props never load.
             : ".xaml";
+
+    // ';' and '#' cut an editorconfig value short, so a packaged build hands it over percent-encoded.
+    public static string Property(AnalyzerConfigOptions options, string encoded, string raw) =>
+        options.TryGetValue(encoded, out var value) && value is not null
+            ? Uri.UnescapeDataString(value)
+        : options.TryGetValue(raw, out var plain) && plain is not null ? plain
+        : "";
 
     public static bool Matches(string path, string extensions)
     {
