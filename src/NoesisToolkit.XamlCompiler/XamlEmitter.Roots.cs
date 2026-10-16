@@ -564,7 +564,15 @@ sealed partial class XamlEmitter
         );
 
         if (indexer is not null && !list && indexer.ContainingType is { } declaring)
-            Roots.Member(declaring, indexer.MetadataName);
+        {
+            if (declaring.TypeKind != TypeKind.Interface)
+                Roots.Member(declaring, indexer.MetadataName);
+            else
+            {
+                foreach (var (_, member) in Implementations(indexer, declaring))
+                    Roots.Member(member.ContainingType, member.MetadataName);
+            }
+        }
 
         return indexer?.Type ?? ElementType(collection);
     }
@@ -673,7 +681,7 @@ sealed partial class XamlEmitter
         }
     }
 
-    void RootNamedByText(XElement element, INamedTypeSymbol type, string name, string value)
+    void RootNamedByText(XElement element, INamedTypeSymbol? type, string name, string value)
     {
         switch (name)
         {
@@ -682,11 +690,18 @@ sealed partial class XamlEmitter
                 RootItemPath(element, name, value.Trim());
                 return;
             case "EventName"
-                when XamlTypeResolver.DerivesFrom(type, "global::Noesis.Interactivity.TriggerBase"):
+                when type is not null
+                    && XamlTypeResolver.DerivesFrom(
+                        type,
+                        "global::Noesis.Interactivity.TriggerBase"
+                    ):
                 RootTriggerEvent(element, value.Trim());
                 return;
         }
     }
+
+    void RootSetterValue(XElement setter, string property, string value) =>
+        RootNamedByText(setter, null, property.Substring(property.LastIndexOf('.') + 1), value);
 
     void RootItemPath(XElement element, string name, string path)
     {
@@ -719,9 +734,11 @@ sealed partial class XamlEmitter
             yield break;
         }
 
-        if (element.Attribute("ItemsSource") is { } source)
+        if (WritesSource(element, "ItemsSource", out var source))
         {
-            var items = Quietly(() => SourceType(element, source.Value));
+            var items = source is null
+                ? null
+                : Quietly(() => SourceType(element, source, "ItemsSource"));
             yield return items is null ? null : ElementType(items);
             yield break;
         }
@@ -1066,6 +1083,9 @@ sealed partial class XamlEmitter
         var name = raw.Trim();
         var dot = name.LastIndexOf('.');
         ITypeSymbol? valueType = null;
+
+        if (setter.Attribute("Value") is { } literal && !XamlMarkupParser.IsMarkup(literal.Value))
+            RootSetterValue(setter, name, XamlMarkupParser.Unescape(literal.Value));
 
         if (dot > 0)
         {

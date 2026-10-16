@@ -153,9 +153,25 @@ sealed partial class XamlEmitter
             return null;
 
         foreach (var plan in compiled)
+        {
             _suppressed.Add(plan.Element);
+            RootTriggerSetterValues(plan.Element);
+        }
 
         return string.Join(", ", compiled.Select(c => c.Spec).ToArray());
+    }
+
+    void RootTriggerSetterValues(XElement trigger)
+    {
+        foreach (var setter in trigger.Descendants().Where(e => e.Name.LocalName == "Setter"))
+        {
+            if (
+                setter.Attribute("Property")?.Value.Trim() is { } property
+                && setter.Attribute("Value")?.Value is { } value
+                && !XamlMarkupParser.IsMarkup(value)
+            )
+                RootSetterValue(setter, property, XamlMarkupParser.Unescape(value));
+        }
     }
 
     void TriggerFell(XElement trigger, string reason)

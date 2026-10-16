@@ -183,6 +183,10 @@ sealed partial class XamlEmitter
         }
 
         var text = XamlMarkupParser.Unescape(raw);
+        var setter = BindingHost(element);
+        if (setter.Attribute("Property")?.Value.Trim() is { } property)
+            RootSetterValue(setter, property, text);
+
         var value = valueType is null
             ? Quote(text)
             : ConvertValue(element, text, valueType) ?? Quote(text);

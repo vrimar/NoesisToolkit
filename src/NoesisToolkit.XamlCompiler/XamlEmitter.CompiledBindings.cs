@@ -1475,7 +1475,7 @@ sealed partial class XamlEmitter
     {
         foreach (var element in slot.AncestorsAndSelf())
         {
-            if (element.Attribute(host.SourceProperty) is not { } written)
+            if (!WritesSource(element, host.SourceProperty, out var written))
             {
                 if (XamlScopeRules.ScopeBreakers.Contains(element.Name.LocalName))
                     return null;
@@ -1483,7 +1483,10 @@ sealed partial class XamlEmitter
                 continue;
             }
 
-            if (SourceType(element, written.Value) is not { } type)
+            if (
+                written is null
+                || SourceType(element, written, host.SourceProperty) is not { } type
+            )
                 return null;
 
             return host.IsCollection ? ElementType(type) : type as INamedTypeSymbol;
@@ -1493,11 +1496,8 @@ sealed partial class XamlEmitter
     }
 
     // What the host renders can be named the same three ways any other value can.
-    ITypeSymbol? SourceType(XElement element, string written)
+    ITypeSymbol? SourceType(XElement element, MarkupCall call, string slot)
     {
-        if (XamlMarkupParser.Parse(written) is not { } call)
-            return null;
-
         if (call.Name == "TemplateBinding")
             return TemplatedType(element, call.Positional.FirstOrDefault() as string);
 
@@ -1505,17 +1505,31 @@ sealed partial class XamlEmitter
         if (call.Named.Any(p => p.Key is "Converter" or "StringFormat"))
             return null;
 
-        // A pathless {Binding} hands on the DataContext itself, so the host renders what is here.
-        if (call is { Name: "Binding", Positional.Count: 0, Named.Count: 0 })
-            return DeclaredContext(element);
+        return BindingValueType(element, call, slot);
+    }
 
-        if (PlainPath(call) is not { } path)
-            return null;
+    static bool WritesSource(XElement element, string property, out MarkupCall? call)
+    {
+        call = null;
+        if (element.Attribute(property) is { } attribute)
+        {
+            call = XamlMarkupParser.Parse(attribute.Value);
+            return true;
+        }
 
-        if (ResolveSource(element, call) is not { } source)
-            return null;
+        var holder = element
+            .Elements()
+            .FirstOrDefault(e =>
+                e.Name.LocalName.EndsWith("." + property, StringComparison.Ordinal)
+            );
+        if (holder is null)
+            return false;
 
-        return ResolvePath(source, path)?.Type;
+        var values = holder.Elements().ToList();
+        if (values.Count == 1 && values[0].Name.LocalName == "Binding")
+            call = BindingElementCall(values[0]);
+
+        return true;
     }
 
     // The type a template states it applies to, which is what a TemplatedParent binding reads off.

@@ -585,6 +585,30 @@ public class XamlTrimRootsTests
         await Assert.That(source).Contains(Member("Text", "global::Sample.Roots.Headline"));
     }
 
+    static readonly Lazy<GeneratorRun> TemplatedItemsRun = new(() =>
+        Run("RootsTemplatedItems.xaml", Picker)
+    );
+
+    [Test]
+    public async Task Items_read_off_the_templated_parent_through_a_plain_property_are_typed()
+    {
+        var run = TemplatedItemsRun.Value;
+
+        await Assert.That(Text(run.Errors)).IsEmpty();
+        await Assert.That(Text(Unrooted(run))).IsEmpty();
+        await Assert
+            .That(run.Source("RootsTemplatedItems"))
+            .Contains(Member("Label", "global::Sample.Roots.Choice"));
+    }
+
+    [Test]
+    public async Task A_style_setter_naming_an_item_path_roots_it_on_the_stated_item_type()
+    {
+        await Assert
+            .That(TemplatedItemsRun.Value.Source("RootsTemplatedItems"))
+            .Contains(Member("Name", "global::Sample.Roots.RowViewModel"));
+    }
+
     [Test]
     public async Task The_overrides_Noesis_probes_are_rooted_on_every_type_a_document_references()
     {
@@ -649,6 +673,20 @@ public class XamlTrimRootsTests
             public event System.EventHandler? Opened;
 
             public void Open() => Opened?.Invoke(this, System.EventArgs.Empty);
+        }
+        """;
+
+    const string Picker = """
+        namespace Sample.Roots;
+
+        public class Choice
+        {
+            public string Label { get; set; } = "";
+        }
+
+        public class Picker : global::Noesis.Control
+        {
+            public System.Collections.Generic.IReadOnlyList<Choice> Choices { get; } = [];
         }
         """;
 

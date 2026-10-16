@@ -482,6 +482,8 @@ sealed partial class XamlEmitter
             if (TextOf(child) is not { } text)
                 return;
 
+            RootNamedByText(owner, type, propertyName, text);
+
             // Converted against the type Property names, as the attribute form is.
             if (IsSetterLike(type) && propertyName == "Value" && !XamlMarkupParser.IsMarkup(text))
             {
