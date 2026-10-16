@@ -414,6 +414,23 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 w.Line("return null;");
             }
 
+            using (
+                w.Block(
+                    "internal sealed class MarkupProvider : global::System.IServiceProvider, global::Noesis.IProvideValueTarget, global::Noesis.IUriContext"
+                )
+            )
+            {
+                w.Line(
+                    "public MarkupProvider(object target, object property, global::System.Uri baseUri) { TargetObject = target; TargetProperty = property; BaseUri = baseUri; }"
+                );
+                w.Line("public object TargetObject { get; }");
+                w.Line("public object TargetProperty { get; }");
+                w.Line("public global::System.Uri BaseUri { get; }");
+                w.Line(
+                    "public object GetService(global::System.Type serviceType) => serviceType == typeof(global::Noesis.IProvideValueTarget) || serviceType == typeof(global::Noesis.IUriContext) ? this : null;"
+                );
+            }
+
             w.Line(
                 "static readonly global::System.Collections.Generic.Dictionary<string, global::Noesis.ResourceDictionary> __shared = new();"
             );

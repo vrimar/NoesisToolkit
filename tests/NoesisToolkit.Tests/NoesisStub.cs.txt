@@ -326,6 +326,17 @@ public abstract class MarkupExtension
     public abstract object? ProvideValue(object? provider);
 }
 
+public interface IProvideValueTarget
+{
+    object TargetObject { get; }
+    object TargetProperty { get; }
+}
+
+public interface IUriContext
+{
+    System.Uri BaseUri { get; }
+}
+
 public enum BindingMode { Default, OneWay, TwoWay, OneWayToSource, OneTime }
 
 public enum UpdateSourceTrigger { Default, PropertyChanged, LostFocus, Explicit }

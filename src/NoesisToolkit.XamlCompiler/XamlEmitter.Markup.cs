@@ -11,7 +11,12 @@ namespace NoesisToolkit.Xaml;
 sealed partial class XamlEmitter
 {
     /// <summary>An expression for a markup extension used in value position.</summary>
-    string? MarkupValue(XElement element, MarkupCall call, ITypeSymbol? targetType)
+    string? MarkupValue(
+        XElement element,
+        MarkupCall call,
+        ITypeSymbol? targetType,
+        string targetObject = "null"
+    )
     {
         switch (call.Name)
         {
@@ -78,15 +83,49 @@ sealed partial class XamlEmitter
                 return EmitBindingLike(element, call, null);
 
             default:
-                return EmitCustomExtension(element, call, targetType);
+                return ProvidedValue(element, call, targetObject, "null") is { } provided
+                    ? $"{CastPrefix(targetType)}{provided}"
+                    : null;
         }
     }
 
-    string? EmitCustomExtension(XElement element, MarkupCall call, ITypeSymbol? targetType)
+    static bool IsCustomExtension(MarkupCall call) =>
+        call.Name
+            is not (
+                "x:Null"
+                or "Null"
+                or "x:Type"
+                or "Type"
+                or "x:Static"
+                or "Static"
+                or "StaticResource"
+                or "DynamicResource"
+                or "Binding"
+                or "TemplateBinding"
+            );
+
+    INamedTypeSymbol? CustomExtensionType(XElement element, MarkupCall call) =>
+        ResolveTypeSymbol(element, call.Name)
+        ?? ResolveTypeSymbol(element, call.Name + "Extension");
+
+    bool HasUnconstructibleExtension(XElement element, MarkupCall call) =>
+        IsCustomExtension(call)
+            && CustomExtensionType(element, call) is { } symbol
+            && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.MarkupExtension")
+            && !resolver.HasConstructor(symbol)
+        || call.Named.Any(p =>
+            p.Value is MarkupCall nested && HasUnconstructibleExtension(element, nested)
+        )
+        || call.PositionalCalls.Any(nested => HasUnconstructibleExtension(element, nested));
+
+    string? ProvidedValue(
+        XElement element,
+        MarkupCall call,
+        string targetObject,
+        string targetProperty
+    )
     {
-        var symbol =
-            ResolveTypeSymbol(element, call.Name)
-            ?? ResolveTypeSymbol(element, call.Name + "Extension");
+        var symbol = CustomExtensionType(element, call);
 
         if (symbol is null)
         {
@@ -96,6 +135,13 @@ sealed partial class XamlEmitter
         if (!XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.MarkupExtension"))
         {
             return Fail($"'{call.Name}' is not a MarkupExtension");
+        }
+
+        if (!resolver.HasConstructor(symbol))
+        {
+            return Fail(
+                $"markup extension '{call.Name}' has no public parameterless constructor, which only the parser can work around"
+            );
         }
 
         var name = NextName(symbol.Name);
@@ -148,9 +194,7 @@ sealed partial class XamlEmitter
             _lines.Add($"{name}.{pair.Key} = {value};");
         }
 
-        var cast = CastPrefix(targetType);
-
-        return $"{cast}{name}.ProvideValue(null)";
+        return $"{name}.ProvideValue(new __XamlResources.MarkupProvider({targetObject}, {targetProperty}, {BaseUri()}))";
     }
 
     /// <summary>An enum knob's member name. Nested markup has no name and would emit an
@@ -325,7 +369,7 @@ sealed partial class XamlEmitter
                 var expression =
                     nested.Name == "Binding"
                         ? EmitKnobBinding(element, nested, knob)
-                        : MarkupValue(element, nested, null);
+                        : MarkupValue(element, nested, null, binding);
                 if (expression is null)
                     return false;
 
@@ -374,7 +418,7 @@ sealed partial class XamlEmitter
             }
             case MarkupCall other:
             {
-                var expression = MarkupValue(element, other, null);
+                var expression = MarkupValue(element, other, null, target);
                 if (expression is null)
                     return false;
 

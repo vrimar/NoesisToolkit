@@ -176,7 +176,9 @@ sealed partial class XamlEmitter
                 return;
             }
 
-            var expression = MarkupValue(element, call, valueType);
+            var expression = IsCustomExtension(call)
+                ? ProvidedValue(element, call, target, "null")
+                : MarkupValue(element, call, valueType);
             if (expression is not null)
                 _lines.Add($"{target}.Value = {expression};");
             return;
@@ -304,6 +306,25 @@ sealed partial class XamlEmitter
             if (call.Name is "StaticResource" or "DynamicResource")
             {
                 ApplyAttachedResource(element, target, type, owner, propertyName, valueType, call);
+                return;
+            }
+
+            if (IsCustomExtension(call))
+            {
+                var slot = resolver.FindDependencyPropertyOwner(owner, propertyName) is not null
+                    ? $"{ownerFqn}.{propertyName}Property"
+                    : null;
+                ApplyProvided(
+                    element,
+                    call,
+                    target,
+                    slot,
+                    slot is null
+                        ? null
+                        : provided => SlotBindStatement(target, type, slot, provided),
+                    provided =>
+                        $"{ownerFqn}.Set{propertyName}({target}, {CastPrefix(valueType)}{provided});"
+                );
                 return;
             }
 
@@ -493,6 +514,31 @@ sealed partial class XamlEmitter
             }
             default:
             {
+                if (IsCustomExtension(call))
+                {
+                    var slot =
+                        XamlTypeResolver.DerivesFrom(type, "global::Noesis.DependencyObject")
+                        && resolver.FindDependencyPropertyOwner(
+                            property.ContainingType,
+                            property.Name
+                        )
+                            is { } owner
+                            ? SlotReference(owner, property.Name)
+                            : null;
+                    ApplyProvided(
+                        element,
+                        call,
+                        target,
+                        slot,
+                        slot is null
+                            ? null
+                            : provided => BindStatement(target, type, property, provided)!,
+                        provided =>
+                            $"{target}.{property.Name} = {CastPrefix(property.Type)}{provided};"
+                    );
+                    return;
+                }
+
                 var expression = MarkupValue(element, call, property.Type);
                 if (expression is not null)
                     _lines.Add($"{target}.{property.Name} = {expression};");
@@ -500,6 +546,43 @@ sealed partial class XamlEmitter
             }
         }
     }
+
+    void ApplyProvided(
+        XElement element,
+        MarkupCall call,
+        string target,
+        string? slot,
+        Func<string, string>? bind,
+        Func<string, string> assign
+    )
+    {
+        if (ProvidedValue(element, call, target, slot ?? "null") is not { } provided)
+            return;
+
+        var value = NextName("provided");
+        _lines.Add($"var {value} = {provided};");
+
+        if (bind is null)
+        {
+            _lines.Add(assign(value));
+            return;
+        }
+
+        var bound = NextName("bound");
+        _lines.Add(
+            $"if ({value} is global::Noesis.BindingBase {bound}) {bind(bound)} else {assign(value)}"
+        );
+    }
+
+    static string SlotBindStatement(
+        string target,
+        INamedTypeSymbol type,
+        string slot,
+        string binding
+    ) =>
+        XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement")
+            ? $"{target}.SetBinding({slot}, {binding});"
+            : $"global::Noesis.BindingOperations.SetBinding({target}, {slot}, {binding});";
 
     /// <summary>SetBinding is a FrameworkElement member; any other DependencyObject has to go
     /// through BindingOperations, and a BindingBase-typed slot stores the binding itself.</summary>

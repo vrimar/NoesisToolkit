@@ -142,7 +142,16 @@ sealed partial class XamlEmitter
     /// <summary>Noesis types a few slots as BindingExpressionBase, which no managed value can be
     /// assigned to; that element has to stay on the XAML parser.</summary>
     bool HasUnassignableSlot(XElement element, INamedTypeSymbol type) =>
-        Unassignable(element, type, resolver);
+        Unassignable(element, type, resolver)
+        || !IsSetterLike(type)
+            && element
+                .Attributes()
+                .Any(a =>
+                    !a.IsNamespaceDeclaration
+                    && XamlMarkupParser.IsMarkup(a.Value)
+                    && XamlMarkupParser.Parse(a.Value) is { } call
+                    && HasUnconstructibleExtension(element, call)
+                );
 
     internal static bool Unassignable(
         XElement element,
