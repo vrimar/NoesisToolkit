@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
 
@@ -153,11 +155,12 @@ public readonly struct BindingHop
     {
         const int Cap = 256;
 
-        // Equal is not identical for -0.0, a DateTimeOffset's offset or a DateTime's Kind.
-        static readonly bool Keyable =
-            Type.GetTypeCode(typeof(TValue)) is >= TypeCode.Boolean and <= TypeCode.UInt64;
+        // Keyed by bits, not Equals: equal is not identical for -0.0, a decimal's scale or a DateTime's Kind.
+        static readonly bool Keyable = !RuntimeHelpers.IsReferenceOrContainsReferences<TValue>();
 
-        readonly Dictionary<TValue, object> _boxes = new Dictionary<TValue, object>();
+        readonly Dictionary<TValue, object> _boxes = new Dictionary<TValue, object>(
+            Bitwise.Instance
+        );
 
         internal object Of(TValue value)
         {
@@ -172,6 +175,23 @@ public readonly struct BindingHop
                 _boxes[value] = boxed;
 
             return boxed;
+        }
+
+        sealed class Bitwise : IEqualityComparer<TValue>
+        {
+            internal static readonly Bitwise Instance = new Bitwise();
+
+            public bool Equals(TValue x, TValue y) => Bytes(ref x).SequenceEqual(Bytes(ref y));
+
+            public int GetHashCode(TValue value)
+            {
+                var hash = new HashCode();
+                hash.AddBytes(Bytes(ref value));
+                return hash.ToHashCode();
+            }
+
+            static ReadOnlySpan<byte> Bytes(ref TValue value) =>
+                MemoryMarshal.AsBytes(new ReadOnlySpan<TValue>(ref value));
         }
     }
 }

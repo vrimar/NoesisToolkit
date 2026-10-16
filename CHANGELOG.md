@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   `ElementName` or `Self` to a property that is not a dependency property left the item type unknown,
   so the member was never rooted. Item paths set by a `Setter`, a compiled trigger or a property
   element are rooted too, and an `ItemsSource` written as `<X.ItemsSource><Binding/>` is read.
+- **A compiled binding hands on `-0.0`, a decimal's trailing zeros and a `DateTime`'s `Kind` as it
+  read them**, where it could hand back an equal value an earlier read through the same template had
+  boxed. Reading a struct still reuses its box, so a rebind allocates nothing.
 - **A converter or getter that throws fails its own compiled binding, as a native one does,** instead
   of escaping into the code that raised `PropertyChanged` and leaving sibling bindings stale.
 - **A user `[DependencyProperty]` that binds two-way by default writes back.** A compiled binding

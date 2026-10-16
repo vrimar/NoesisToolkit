@@ -93,6 +93,26 @@ public sealed class SettledCostTests
             .IsEqualTo(Allocated(() => loose = new SpikeItem { Flag = !loose.Flag }));
     }
 
+    readonly record struct Bearing(double Degrees);
+
+    sealed class Compass
+    {
+        public Bearing Heading;
+    }
+
+    [Test]
+    public async Task A_struct_hop_reuses_a_box_only_for_the_same_bits()
+    {
+        var compass = new Compass { Heading = new Bearing(0.0) };
+        var hop = BindingHop.Value<Bearing>("Heading", static o => ((Compass)o).Heading);
+
+        hop.Read(compass);
+        await Assert.That(Allocated(() => hop.Read(compass))).IsEqualTo(0);
+
+        compass.Heading = new Bearing(-0.0);
+        await Assert.That(double.IsNegative(((Bearing)hop.Read(compass)!).Degrees)).IsTrue();
+    }
+
     [Test]
     public async Task A_bool_or_enum_dependency_property_reads_without_boxing()
     {
