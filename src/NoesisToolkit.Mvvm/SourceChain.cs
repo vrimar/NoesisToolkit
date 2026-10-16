@@ -129,7 +129,18 @@ sealed class SourceChain : IChangeListener
 
             _watched.Watch(current);
             owner = current;
-            current = _hops[i].Read(current);
+            try
+            {
+                current = _hops[i].Read(current);
+            }
+            catch (Exception exception)
+            {
+                Error.UnhandledException(exception);
+                owner = null;
+                current = null;
+                broke = true;
+                break;
+            }
 
             if (ReferenceEquals(current, BindingHop.Missed))
             {

@@ -284,8 +284,12 @@ public static class DependencyRead
         static readonly object False = false;
         static readonly object?[] SmallInts = new object?[256];
         static readonly Dictionary<int, object> Ints = new Dictionary<int, object>();
-        static readonly Dictionary<float, object> Floats = new Dictionary<float, object>();
-        static readonly Dictionary<double, object> Doubles = new Dictionary<double, object>();
+        static readonly Dictionary<float, object> Floats = new Dictionary<float, object>(
+            BitwiseFloat.Instance
+        );
+        static readonly Dictionary<double, object> Doubles = new Dictionary<double, object>(
+            BitwiseDouble.Instance
+        );
 
         internal override object? Read(nint source, DependencyProperty property)
         {
@@ -396,7 +400,9 @@ public static class DependencyRead
     {
         const int Cap = 64;
 
-        readonly Dictionary<float, object> _boxes = new Dictionary<float, object>();
+        readonly Dictionary<float, object> _boxes = new Dictionary<float, object>(
+            BitwiseFloat.Instance
+        );
 
         internal override object Read(nint source, DependencyProperty property)
         {
@@ -417,7 +423,9 @@ public static class DependencyRead
     {
         const int Cap = 64;
 
-        readonly Dictionary<double, object> _boxes = new Dictionary<double, object>();
+        readonly Dictionary<double, object> _boxes = new Dictionary<double, object>(
+            BitwiseDouble.Instance
+        );
 
         internal override object Read(nint source, DependencyProperty property)
         {
@@ -432,6 +440,27 @@ public static class DependencyRead
 
             return boxed;
         }
+    }
+
+    // Equal is not identical for -0.0, so a box is shared only by the same bits.
+    sealed class BitwiseFloat : IEqualityComparer<float>
+    {
+        internal static readonly BitwiseFloat Instance = new BitwiseFloat();
+
+        public bool Equals(float x, float y) =>
+            BitConverter.SingleToInt32Bits(x) == BitConverter.SingleToInt32Bits(y);
+
+        public int GetHashCode(float value) => BitConverter.SingleToInt32Bits(value);
+    }
+
+    sealed class BitwiseDouble : IEqualityComparer<double>
+    {
+        internal static readonly BitwiseDouble Instance = new BitwiseDouble();
+
+        public bool Equals(double x, double y) =>
+            BitConverter.DoubleToInt64Bits(x) == BitConverter.DoubleToInt64Bits(y);
+
+        public int GetHashCode(double value) => BitConverter.DoubleToInt64Bits(value).GetHashCode();
     }
 
     // Noesis' own typed getters, which its GetValue boxes the result of on every read.

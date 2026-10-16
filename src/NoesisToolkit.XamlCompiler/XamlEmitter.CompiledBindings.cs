@@ -433,6 +433,8 @@ sealed partial class XamlEmitter
                 fields.Add($"Converter = {converter}");
                 fields.Add($"ConverterParameter = {ConverterParameter(call)}");
                 fields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
+                if (write is not null)
+                    fields.Add($"SourceType = typeof({XamlTypeResolver.Fqn(resolved.Type)})");
             }
 
             if (write is not null)
@@ -1008,7 +1010,19 @@ sealed partial class XamlEmitter
             return null;
 
         return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{last.Name} = "
-            + NarrowTo(last.Type, "__v", "__w");
+            + NarrowBack(last.Type, "__v", "__w");
+    }
+
+    static string NarrowBack(ITypeSymbol type, string value, string temp)
+    {
+        var fqn = XamlTypeResolver.Fqn(type);
+        if (!type.IsValueType)
+            return $"{value} as {fqn}";
+
+        var back = $"{SlotConversionFqn}.Back<{fqn}>({value})";
+        return Wrapped(type) is { } inner
+            ? $"{value} is {XamlTypeResolver.Fqn(inner)} {temp} ? ({fqn}){temp} : {back}"
+            : $"{value} is {fqn} {temp} ? {temp} : {back}";
     }
 
     // The value arrives boxed as object, and `x is T?` does not parse, so a nullable slot has to be

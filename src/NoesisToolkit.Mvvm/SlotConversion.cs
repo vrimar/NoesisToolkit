@@ -343,6 +343,60 @@ public static class SlotConversion
         return true;
     }
 
+    internal static object? Marshalled(object? value) =>
+        value switch
+        {
+            decimal number => (double)number,
+            byte number => (ushort)number,
+            sbyte number => (short)number,
+            char letter => (uint)letter,
+            _ => value,
+        };
+
+    /// <summary>What a converter handed back for a source of another type, converted as the native
+    /// engine converts it on the way to the source: text parses, a number truncates toward zero
+    /// for an integer, a flag is one or zero, and anything else is the type's default.</summary>
+    /// <typeparam name="T">The type the source property declares.</typeparam>
+    /// <param name="value">What the converter returned.</param>
+    /// <returns>The value the source takes.</returns>
+    public static T Back<T>(object? value)
+    {
+        var type = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+        var code = Type.GetTypeCode(type);
+        if (value is null || type.IsEnum || code is < TypeCode.SByte or > TypeCode.Decimal)
+            return default!;
+
+        var integral = code <= TypeCode.UInt64;
+        object? number = value switch
+        {
+            string text
+                when double.TryParse(
+                    text,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out var parsed
+                ) => integral ? Math.Truncate(parsed) : parsed,
+            bool flag => flag ? 1 : 0,
+            double or float or decimal when integral => Math.Truncate(
+                System.Convert.ToDouble(value, CultureInfo.InvariantCulture)
+            ),
+            _ when IsNumber(value) => value,
+            _ => null,
+        };
+
+        if (number is null)
+            return default!;
+
+        try
+        {
+            return (T)System.Convert.ChangeType(number, type, CultureInfo.InvariantCulture);
+        }
+        catch (OverflowException)
+        {
+            return default!;
+        }
+    }
+
     static bool IsNumber(object value) =>
         value
             is double

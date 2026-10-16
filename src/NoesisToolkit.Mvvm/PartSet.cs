@@ -97,7 +97,7 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
 
     void IElementLifecycleOwner.Retry()
     {
-        if (Resolve())
+        if (Resolve() || _owner.StillMissing)
             _owner.PartsChanged();
     }
 

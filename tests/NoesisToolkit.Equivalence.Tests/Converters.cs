@@ -66,6 +66,25 @@ public sealed class ProbeJoin : IMultiValueConverter
         : $"{value.GetType().Name}:{value}";
 }
 
+public sealed class ThrowingConverter : IValueConverter
+{
+    public const string Trigger = "boom";
+
+    public object? Convert(
+        object? value,
+        Type targetType,
+        object? parameter,
+        CultureInfo culture
+    ) => Equals(value, Trigger) ? throw new InvalidOperationException(Trigger) : value;
+
+    public object? ConvertBack(
+        object? value,
+        Type targetType,
+        object? parameter,
+        CultureInfo culture
+    ) => value;
+}
+
 /// <summary>Prefixes the value, so a dump shows the converter was reached at all.</summary>
 public sealed class StampConverter : IValueConverter
 {

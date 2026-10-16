@@ -1,5 +1,6 @@
 using Noesis;
 using NoesisToolkit.Mvvm;
+using NoesisToolkit.Mvvm.CodeGen;
 using NoesisToolkit.Testing;
 
 namespace NoesisToolkit.Equivalence.Tests;
@@ -149,5 +150,24 @@ public sealed class EventsTests
         NoesisRuntime.Pump(view, host);
 
         await Assert.That(changes).IsEqualTo(shown + 2);
+    }
+
+    [Test]
+    public async Task A_handler_on_an_element_a_compiled_binding_also_watches_runs_once()
+    {
+        NoesisRuntime.Start();
+
+        var runs = 0;
+        var target = new TextBlock { DataContext = new SpikeItem { Label = "x" } };
+        CompiledBinding.Bind(
+            target,
+            TextBlock.TextProperty,
+            new CompiledBindingSpec { Hops = [Hop.Label] }
+        );
+        Events.On(target, FrameworkElement.LoadedEvent, _ => runs++);
+
+        NoesisRuntime.Show(target);
+
+        await Assert.That(runs).IsEqualTo(1);
     }
 }

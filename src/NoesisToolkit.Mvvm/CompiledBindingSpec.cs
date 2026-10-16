@@ -49,6 +49,10 @@ public sealed class CompiledBindingSpec
     /// <summary>Passed to the converter as the type it is converting to.</summary>
     public Type? TargetType { get; set; }
 
+    /// <summary>Passed to the converter's <c>ConvertBack</c> as the type it is converting to: the
+    /// type the path's last member declares, as the native engine passes it.</summary>
+    public Type? SourceType { get; set; }
+
     /// <summary>As the document wrote it. <see cref="BindingMode.Default"/> defers to the target
     /// property's own <c>BindsTwoWayByDefault</c>.</summary>
     public BindingMode Mode { get; set; } = BindingMode.Default;

@@ -150,6 +150,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public Noesis.IValueConverter? Converter { get; set; }
         public object? ConverterParameter { get; set; }
         public System.Type? TargetType { get; set; }
+        public System.Type? SourceType { get; set; }
         public Noesis.BindingMode Mode { get; set; } = Noesis.BindingMode.Default;
         public Noesis.UpdateSourceTrigger Trigger { get; set; } = Noesis.UpdateSourceTrigger.Default;
     }
@@ -197,6 +198,8 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static string Text(float value, string format) => "";
 
         public static System.Func<object?, object?> Cached<TSource>(System.Func<TSource, object?> convert, object? fallback) where TSource : struct => static v => v;
+
+        public static T Back<T>(object? value) => default!;
     }
 
     public sealed class CompiledBindingPart

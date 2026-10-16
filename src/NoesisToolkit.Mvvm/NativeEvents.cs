@@ -8,25 +8,21 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// allocates nothing, where Noesis' mints args per delivery and a store per element.</summary>
 static unsafe class NativeEvents
 {
-    static readonly nint Loaded = BaseComponent.getCPtr(FrameworkElement.LoadedEvent).Handle;
-    static readonly nint Reloaded = BaseComponent.getCPtr(FrameworkElement.ReloadedEvent).Handle;
-    static readonly nint Unloaded = BaseComponent.getCPtr(FrameworkElement.UnloadedEvent).Handle;
+    internal static readonly nint Loaded = BaseComponent
+        .getCPtr(FrameworkElement.LoadedEvent)
+        .Handle;
+    internal static readonly nint Reloaded = BaseComponent
+        .getCPtr(FrameworkElement.ReloadedEvent)
+        .Handle;
+    internal static readonly nint Unloaded = BaseComponent
+        .getCPtr(FrameworkElement.UnloadedEvent)
+        .Handle;
 
-    static readonly uint DataContextChanged = NoesisInternals.EventId(null, "DataContextChanged");
-    static readonly uint LayoutUpdated = NoesisInternals.EventId(null, "LayoutUpdated");
-
-    internal static void BindLifecycle(nint element)
-    {
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Loaded);
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Reloaded);
-        Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, Unloaded);
-    }
-
-    internal static void BindDataContext(nint element) =>
-        Noesis_Event_Bind(&OnEvent, element, DataContextChanged);
-
-    internal static void BindLayout(nint element) =>
-        Noesis_Event_Bind(&OnEvent, element, LayoutUpdated);
+    internal static readonly uint DataContextChanged = NoesisInternals.EventId(
+        null,
+        "DataContextChanged"
+    );
+    internal static readonly uint LayoutUpdated = NoesisInternals.EventId(null, "LayoutUpdated");
 
     internal static void BindRouted(nint element, nint routedEvent) =>
         Noesis_RoutedEvent_Bind(&OnRoutedEvent, element, routedEvent);

@@ -294,4 +294,46 @@ public sealed class CompiledConversionTests
         target.DataContext = swapped;
         await Assert.That(target.Tag).IsSameReferenceAs(swapped);
     }
+
+    [Test]
+    public async Task A_converter_that_throws_fails_its_own_binding_as_a_native_one_does()
+    {
+        NoesisRuntime.Start();
+
+        var item = new SpikeItem { Label = "calm" };
+
+        var native = new TextBlock { DataContext = item };
+        native.SetBinding(
+            TextBlock.TextProperty,
+            new Binding(nameof(SpikeItem.Label)) { Converter = new ThrowingConverter() }
+        );
+
+        var compiled = new TextBlock { DataContext = item };
+        CompiledBinding.Bind(
+            compiled,
+            TextBlock.TextProperty,
+            new CompiledBindingSpec { Hops = [Hop.Label], Converter = new ThrowingConverter() }
+        );
+
+        var sibling = new TextBlock { DataContext = item };
+        CompiledBinding.Bind(
+            sibling,
+            TextBlock.TextProperty,
+            new CompiledBindingSpec { Hops = [Hop.Label] }
+        );
+
+        Error.SetUnhandledCallback(_ => { });
+        try
+        {
+            NoesisRuntime.Show(native, compiled, sibling);
+            item.Label = ThrowingConverter.Trigger;
+        }
+        finally
+        {
+            Error.SetUnhandledCallback(null);
+        }
+
+        await Assert.That(sibling.Text).IsEqualTo(ThrowingConverter.Trigger);
+        await Assert.That(compiled.Text).IsEqualTo(native.Text);
+    }
 }

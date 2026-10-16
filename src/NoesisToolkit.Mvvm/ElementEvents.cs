@@ -7,13 +7,14 @@ namespace NoesisToolkit.Mvvm.CodeGen;
 /// <summary>The element events bindings subscribe to, bound natively so a delivery allocates nothing.</summary>
 static class ElementEvents
 {
-    static readonly Action<nint> BindDataContext = NativeEvents.BindDataContext;
-    static readonly Action<nint> BindLayout = NativeEvents.BindLayout;
-
     internal static void WatchDataContext(ElementState element, IChangeListener listener)
     {
-        if (element.Alive)
-            EntryOf(element).DataContextChanged.Add(element.Handle, listener);
+        if (!element.Alive)
+            return;
+
+        var entry = EntryOf(element);
+        Bind(entry, element.Handle, 0, NativeEvents.DataContextChanged);
+        entry.DataContextChanged.Add(listener);
     }
 
     internal static void UnwatchDataContext(ElementState element, IChangeListener listener) =>
@@ -21,8 +22,12 @@ static class ElementEvents
 
     internal static void WatchLayout(ElementState element, IChangeListener listener)
     {
-        if (element.Alive)
-            EntryOf(element).LayoutUpdated.Add(element.Handle, listener);
+        if (!element.Alive)
+            return;
+
+        var entry = EntryOf(element);
+        Bind(entry, element.Handle, 0, NativeEvents.LayoutUpdated);
+        entry.LayoutUpdated.Add(listener);
     }
 
     internal static void UnwatchLayout(ElementState element, IChangeListener listener) =>
@@ -31,8 +36,14 @@ static class ElementEvents
     /// <summary>Hears Loaded, Reloaded and Unloaded for as long as the element lives.</summary>
     internal static void WatchLifecycle(ElementState element, ElementLifecycle lifecycle)
     {
-        if (element.Alive)
-            EntryOf(element).Lifecycle(element.Handle).Add(lifecycle);
+        if (!element.Alive)
+            return;
+
+        var entry = EntryOf(element);
+        Bind(entry, element.Handle, NativeEvents.Loaded, 0);
+        Bind(entry, element.Handle, NativeEvents.Reloaded, 0);
+        Bind(entry, element.Handle, NativeEvents.Unloaded, 0);
+        entry.Lifecycle.Add(lifecycle);
     }
 
     internal static void WatchRouted(ElementState element, nint routed, IChangeListener listener)
@@ -195,7 +206,7 @@ static class ElementEvents
         HandlerList<Subscription>? _subscriptions;
         List<(nint Routed, uint Named)>? _bound;
 
-        // True the first time an event is asked for on this element, when the native bind is owed.
+        // True the first time an event is asked for on this element: a second native bind delivers twice.
         internal bool Bind(nint routed, uint named)
         {
             _bound ??= new List<(nint, uint)>(2);
@@ -206,12 +217,11 @@ static class ElementEvents
             return true;
         }
 
-        internal NamedEvent DataContextChanged =>
-            _dataContextChanged ??= new NamedEvent(BindDataContext);
+        internal NamedEvent DataContextChanged => _dataContextChanged ??= new NamedEvent();
 
         internal NamedEvent? DataContextChangedIfAny => _dataContextChanged;
 
-        internal NamedEvent LayoutUpdated => _layoutUpdated ??= new NamedEvent(BindLayout);
+        internal NamedEvent LayoutUpdated => _layoutUpdated ??= new NamedEvent();
 
         internal NamedEvent? LayoutUpdatedIfAny => _layoutUpdated;
 
@@ -222,16 +232,8 @@ static class ElementEvents
 
         internal HandlerList<Subscription>? SubscriptionsIfAny => _subscriptions;
 
-        internal HandlerList<ElementLifecycle> Lifecycle(nint handle)
-        {
-            if (_lifecycle is null)
-            {
-                _lifecycle = new HandlerList<ElementLifecycle>();
-                NativeEvents.BindLifecycle(handle);
-            }
-
-            return _lifecycle;
-        }
+        internal HandlerList<ElementLifecycle> Lifecycle =>
+            _lifecycle ??= new HandlerList<ElementLifecycle>();
 
         internal void OnLoaded()
         {
@@ -277,21 +279,11 @@ static class ElementEvents
         }
     }
 
-    /// <summary>One subscription, taken on the first listener and kept for the element's life.</summary>
-    internal sealed class NamedEvent(Action<nint> bind)
+    internal sealed class NamedEvent
     {
         readonly HandlerList<IChangeListener> _listeners = new HandlerList<IChangeListener>();
-        bool _bound;
 
-        internal void Add(nint element, IChangeListener listener)
-        {
-            _listeners.Add(listener);
-            if (!_bound)
-            {
-                _bound = true;
-                bind(element);
-            }
-        }
+        internal void Add(IChangeListener listener) => _listeners.Add(listener);
 
         internal void Remove(IChangeListener listener) => _listeners.Remove(listener);
 

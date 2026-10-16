@@ -153,9 +153,9 @@ public readonly struct BindingHop
     {
         const int Cap = 256;
 
-        // Without IEquatable a lookup boxes the key and reflects over its fields: dearer than the box.
+        // Equal is not identical for -0.0, a DateTimeOffset's offset or a DateTime's Kind.
         static readonly bool Keyable =
-            typeof(TValue).IsEnum || typeof(IEquatable<TValue>).IsAssignableFrom(typeof(TValue));
+            Type.GetTypeCode(typeof(TValue)) is >= TypeCode.Boolean and <= TypeCode.UInt64;
 
         readonly Dictionary<TValue, object> _boxes = new Dictionary<TValue, object>();
 
@@ -582,11 +582,8 @@ public sealed class CompiledBinding
         if (_spec.Lane is { } lane)
         {
             var owner = _chain.EvaluateOwner(out root, out broke);
-            if (!broke && !lane.TryRead(owner!, out slot))
+            if (!broke && !ReadLane(lane, owner!, out slot))
             {
-                if (_spec.Hops is [{ Reports: true } first, ..])
-                    CompiledBindingDiagnostics.Miss(first.Name, owner!, _target.Object);
-
                 owner = null;
                 broke = true;
             }
@@ -634,6 +631,26 @@ public sealed class CompiledBinding
         {
             _pushing = false;
         }
+    }
+
+    bool ReadLane(BindingLane lane, object owner, out ulong slot)
+    {
+        try
+        {
+            if (lane.TryRead(owner, out slot))
+                return true;
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
+            slot = 0;
+            return false;
+        }
+
+        if (_spec.Hops is [{ Reports: true } first, ..])
+            CompiledBindingDiagnostics.Miss(first.Name, owner, _target.Object);
+
+        return false;
     }
 
     void WriteTarget(ElementState receiver, object? produced)
@@ -688,19 +705,33 @@ public sealed class CompiledBinding
     void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)
     {
         // An empty name is the INotifyPropertyChanged signal for "everything changed".
-        if (string.IsNullOrEmpty(e.PropertyName) || _chain.Watches(e.PropertyName))
-            Rebuild();
+        if (!string.IsNullOrEmpty(e.PropertyName) && !_chain.Watches(e.PropertyName))
+            return;
+
+        _brokeFor = NotBroke;
+        Rebuild();
     }
 
-    object? Forward(object? value) =>
-        _spec.Converter is null
-            ? value
-            : _spec.Converter.Convert(
-                value,
+    object? Forward(object? value)
+    {
+        if (_spec.Converter is null)
+            return value;
+
+        try
+        {
+            return _spec.Converter.Convert(
+                SlotConversion.Marshalled(value),
                 _spec.TargetType ?? typeof(object),
                 _spec.ConverterParameter,
                 CultureInfo.CurrentCulture
             );
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
+            return DependencyProperty.UnsetValue;
+        }
+    }
 
     // What the binding itself left in the target is not an edit, however late the change reports.
     void Settle()
@@ -749,12 +780,22 @@ public sealed class CompiledBinding
 
         var value = DependencyRead.Value(_target.Handle, _property);
         if (_spec.Converter is not null)
-            value = _spec.Converter.ConvertBack(
-                value,
-                _spec.TargetType ?? typeof(object),
-                _spec.ConverterParameter,
-                CultureInfo.CurrentCulture
-            );
+        {
+            try
+            {
+                value = _spec.Converter.ConvertBack(
+                    value,
+                    _spec.SourceType ?? _spec.TargetType ?? typeof(object),
+                    _spec.ConverterParameter,
+                    CultureInfo.CurrentCulture
+                );
+            }
+            catch (Exception exception)
+            {
+                Error.UnhandledException(exception);
+                return;
+            }
+        }
 
         if (
             ReferenceEquals(value, Binding.DoNothing)
@@ -767,6 +808,10 @@ public sealed class CompiledBinding
         try
         {
             _spec.Write(_writable, value);
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
         }
         finally
         {
@@ -785,6 +830,10 @@ public sealed class CompiledBinding
         try
         {
             lane.WriteBack(writable, slot);
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
         }
         finally
         {

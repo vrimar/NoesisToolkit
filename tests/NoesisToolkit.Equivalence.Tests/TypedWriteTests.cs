@@ -125,4 +125,21 @@ public sealed class TypedWriteTests
         await Assert.That(allocated).IsEqualTo(0);
         await Assert.That(typed.Label).IsEqualTo((next - 1).ToString());
     }
+
+    [Test]
+    public async Task A_double_reads_back_with_the_sign_it_holds()
+    {
+        NoesisRuntime.Start();
+
+        var typed = new Typed();
+        NoesisRuntime.Show(typed);
+
+        typed.Scale = 0.0;
+        var positive = (double)DependencyRead.Value(typed, Typed.ScaleProperty)!;
+        typed.Scale = -0.0;
+        var negative = (double)DependencyRead.Value(typed, Typed.ScaleProperty)!;
+
+        await Assert.That(double.IsNegative(positive)).IsFalse();
+        await Assert.That(double.IsNegative(negative)).IsTrue();
+    }
 }

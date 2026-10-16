@@ -125,12 +125,7 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
         object? combined;
         if (_spec.Converter is not null)
-            combined = _spec.Converter.Convert(
-                values,
-                _spec.TargetType ?? typeof(object),
-                _spec.ConverterParameter,
-                CultureInfo.CurrentCulture
-            );
+            combined = Combine(_spec.Converter, values);
         else if (Array.IndexOf(values, DependencyProperty.UnsetValue) >= 0 || _spec.Format is null)
             combined = DependencyProperty.UnsetValue;
         else
@@ -160,6 +155,27 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         finally
         {
             _pushing = false;
+        }
+    }
+
+    object? Combine(IMultiValueConverter converter, object?[] values)
+    {
+        for (var i = 0; i < values.Length; i++)
+            values[i] = SlotConversion.Marshalled(values[i]);
+
+        try
+        {
+            return converter.Convert(
+                values,
+                _spec.TargetType ?? typeof(object),
+                _spec.ConverterParameter,
+                CultureInfo.CurrentCulture
+            );
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
+            return DependencyProperty.UnsetValue;
         }
     }
 
