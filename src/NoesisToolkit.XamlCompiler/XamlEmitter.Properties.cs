@@ -287,6 +287,16 @@ sealed partial class XamlEmitter
             if (!TryMarkup(rawValue, out var call))
                 return;
 
+            if (
+                valueType is null
+                && resolver.FindAttachedSetter(owner, propertyName) is null
+                && resolver.FindDependencyPropertyOwner(owner, propertyName) is null
+            )
+            {
+                DeadMarkup.Add($"{ownerName}.{propertyName} is not an attached property");
+                return;
+            }
+
             if (call.Name is "Binding")
             {
                 if (
@@ -298,7 +308,12 @@ sealed partial class XamlEmitter
                 var binding = EmitBindingLike(element, call, propertyName);
                 if (binding is not null)
                     _lines.Add(
-                        $"{target}.SetBinding({ownerFqn}.{propertyName}Property, {binding});"
+                        SlotBindStatement(
+                            target,
+                            type,
+                            $"{ownerFqn}.{propertyName}Property",
+                            binding
+                        )
                     );
                 return;
             }

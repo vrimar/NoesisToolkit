@@ -52,13 +52,14 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
     {
         foreach (var ns in CandidateNamespaces(namespaceUri))
         {
-            var symbol = TypeLookup.ByName(compilation, $"{ns}.{localName}");
+            var qualified = ns.Length == 0 ? localName : $"{ns}.{localName}";
+            var symbol = TypeLookup.ByName(compilation, qualified);
             if (symbol is not null)
                 return symbol;
 
             // GetTypeByMetadataName returns null when two referenced assemblies define the name.
             var matches = compilation
-                .GetTypesByMetadataName($"{ns}.{localName}")
+                .GetTypesByMetadataName(qualified)
                 .Where(t => t.DeclaredAccessibility == Accessibility.Public)
                 .ToArray();
             if (matches.Length > 0)

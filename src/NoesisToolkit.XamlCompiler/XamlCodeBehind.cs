@@ -310,7 +310,7 @@ static class XamlCodeBehind
     {
         for (var type = rootClass.BaseType; type is not null; type = type.BaseType)
         {
-            if (type.GetMembers(name).Length > 0)
+            if (type.GetMembers(name).Any(m => m.DeclaredAccessibility != Accessibility.Private))
                 return true;
         }
 

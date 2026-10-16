@@ -799,10 +799,13 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         if (attribute is null)
             return null;
 
-        var name = attribute.Value;
+        var name = attribute.Value.Trim();
         var dot = name.LastIndexOf('.');
-        return dot <= 0
+        return name.Length == 0 || dot == 0
             ? null
-            : resolver.Resolve("clr-namespace:" + name.Substring(0, dot), name.Substring(dot + 1));
+            : resolver.Resolve(
+                "clr-namespace:" + (dot < 0 ? "" : name.Substring(0, dot)),
+                name.Substring(dot + 1)
+            );
     }
 }

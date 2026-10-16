@@ -101,9 +101,13 @@ sealed partial class XamlEmitter
             case SpecialType.System_Double:
                 return NumberLiteral(text, "D");
             case SpecialType.System_Decimal:
-                return decimal.TryParse(text, Number, Invariant, out _) ? text + "M" : null;
+                return decimal.TryParse(text, Number, Invariant, out var number)
+                    ? number.ToString(Invariant) + "M"
+                    : null;
             case SpecialType.System_Char:
-                return text.Length == 1 ? Quote(text) : null;
+                return raw.Length == 1
+                    ? Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(raw[0], quote: true)
+                    : null;
             case SpecialType.System_Int32:
             case SpecialType.System_Int16:
             case SpecialType.System_Int64:
@@ -351,7 +355,9 @@ sealed partial class XamlEmitter
             "Auto" or "NaN" => suffix == "F" ? "float.NaN" : "double.NaN",
             "Infinity" => suffix == "F" ? "float.PositiveInfinity" : "double.PositiveInfinity",
             "-Infinity" => suffix == "F" ? "float.NegativeInfinity" : "double.NegativeInfinity",
-            _ => double.TryParse(text, Number, Invariant, out _) ? text + suffix : null,
+            _ => double.TryParse(text, Number, Invariant, out var value)
+                ? value.ToString("R", Invariant) + suffix
+                : null,
         };
 
     // An object slot boxes the literal's own type, and no other integer width accepts an Int32.

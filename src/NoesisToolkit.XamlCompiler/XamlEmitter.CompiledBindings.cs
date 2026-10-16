@@ -905,7 +905,7 @@ sealed partial class XamlEmitter
 
         var segments = path.Split('.');
         var first = resolver.FindProperty(type, segments[0]);
-        if (first is null || first.GetMethod is null)
+        if (first is null || first.GetMethod is null || first.IsStatic)
         {
             Note("element-has-no-such-member");
             return null;
@@ -1707,10 +1707,23 @@ sealed partial class XamlEmitter
     static bool IsOpenGeneric(INamedTypeSymbol type) =>
         type.TypeArguments.Any(a => a.TypeKind == TypeKind.TypeParameter);
 
-    ITypeSymbol? MemberType(INamedTypeSymbol owner, string name) =>
-        resolver.FindProperty(owner, name) is { GetMethod: not null } property
-            ? property.Type
-            : resolver.FindGeneratedCommand(owner, name);
+    ITypeSymbol? MemberType(INamedTypeSymbol owner, string name)
+    {
+        if (resolver.FindProperty(owner, name) is not { GetMethod: not null } property)
+            return resolver.FindGeneratedCommand(owner, name);
+
+        if (property.IsStatic || ExplicitOnly(owner, property))
+        {
+            Note("hop-not-an-instance-member");
+            return null;
+        }
+
+        return property.Type;
+    }
+
+    static bool ExplicitOnly(INamedTypeSymbol owner, IPropertySymbol property) =>
+        owner.TypeKind != TypeKind.Interface
+        && property.ContainingType.TypeKind == TypeKind.Interface;
 
     List<Hop>? ResolveHops(INamedTypeSymbol context, string path)
     {

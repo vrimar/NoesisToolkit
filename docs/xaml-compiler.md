@@ -12,9 +12,11 @@ Per assembly:
 Per document:
 
 - a `ResourceDictionary` becomes `public static class <Name> { public static ResourceDictionary Build() }`,
-  where `<Name>` is the project-relative path with every non-alphanumeric character removed, plus `Xaml` —
-  so `Views/Theme.xaml` becomes `ViewsThemexamlXaml`. The whole relative path is used, so two folders
-  holding the same file name cannot collide.
+  where `<Name>` is the project-relative path with every non-alphanumeric character removed, plus `Xaml`,
+  and a leading `_` where the path starts with a digit — so `Views/Theme.xaml` becomes
+  `ViewsThemexamlXaml` and `3D/Materials.xaml` becomes `_3DMaterialsxamlXaml`. The whole relative path
+  is used, so two folders holding the same file name get distinct names; two paths that differ only in
+  their separators, such as `Ui/Buttons.xaml` and `UiButtons.xaml`, share one, which `NTK0001` reports.
 - an `x:Class` document contributes `InitializeComponent()`, one accessor per `x:Name` in the root's own
   name scope, and — unless it wires event handlers in markup — a `BuildXamlTree()` that constructs the
   tree directly

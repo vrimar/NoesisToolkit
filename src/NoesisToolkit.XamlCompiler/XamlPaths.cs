@@ -105,6 +105,6 @@ static class XamlPaths
     {
         var relative = RelativePath(path, projectDir);
         var name = new string(relative.Where(char.IsLetterOrDigit).ToArray());
-        return name + "Xaml";
+        return (name.Length > 0 && char.IsDigit(name[0]) ? "_" : "") + name + "Xaml";
     }
 }

@@ -51,8 +51,11 @@ sealed partial class XamlEmitter(
 
     string NextName(string hint)
     {
-        var clean = new string(hint.Where(char.IsLetterOrDigit).ToArray());
-        return $"__{clean.ToLowerInvariant()}{_next++}";
+        var clean = new string(hint.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+        // Card1 then 0 would spell Card then 10.
+        var separator = clean.Length > 0 && char.IsDigit(clean[clean.Length - 1]) ? "_" : "";
+        return $"__{clean}{separator}{_next++}";
     }
 
     /// <summary>Records every x:Name in one template so a Setter TargetName resolves even when
