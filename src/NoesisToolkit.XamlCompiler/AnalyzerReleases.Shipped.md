@@ -36,3 +36,11 @@ NTK1006 | NoesisToolkit | Warning | A type the document states does not resolve
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1007 | NoesisToolkit | Hidden | A binding stays native
+
+## Release 0.5.8
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1008 | NoesisToolkit | Warning | A name the engine is handed as text does not exist
