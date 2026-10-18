@@ -34,6 +34,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    private static readonly DiagnosticDescriptor Unregistrable = new(
+        id: "NTK3003",
+        title: "Noesis cannot register this property type from managed code",
+        messageFormat: "'{0}' is a {1}, which Noesis cannot register as a managed dependency property: registering it throws, crashes or stores its default as a pointer; give it another type",
+        category: "NoesisToolkit",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     internal const string PropertiesStep = "NoesisMvvmDependencyProperties";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -69,7 +78,16 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
                     foreach (var m in group)
                     {
-                        if (m.Misrouted && !m.IsAttached && m.SetterKeyword is not null)
+                        if (m.Unregistrable)
+                            spc.ReportDiagnostic(
+                                Diagnostic.Create(
+                                    Unregistrable,
+                                    m.Location?.ToLocation(),
+                                    m.PropertyName,
+                                    m.TypeDisplay
+                                )
+                            );
+                        else if (m.Misrouted && !m.IsAttached && m.SetterKeyword is not null)
                             spc.ReportDiagnostic(
                                 Diagnostic.Create(
                                     MisroutedSetter,
@@ -153,6 +171,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             typeFqn,
             prop.Type.ToDisplayString(),
             NoesisSlots.IsMisrouted(underlying.ToDisplayString()),
+            NoesisSlots.IsUnregistrable(underlying.ToDisplayString()),
             propertyChanged,
             defaultValue,
             metadataOptions,
@@ -534,6 +553,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         string TypeFqn,
         string TypeDisplay,
         bool Misrouted,
+        bool Unregistrable,
         string? PropertyChanged,
         string? DefaultValue,
         string? MetadataOptions,

@@ -299,6 +299,35 @@ public class MvvmGeneratorTests
         await Assert.That(misrouted[0].GetMessage()).Contains("'Settable'");
     }
 
+    [Test]
+    public async Task A_Matrix_property_is_refused_whether_or_not_it_is_settable()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, MatrixOwner]
+        );
+
+        var ids = run.GeneratorDiagnostics.Select(d => d.Id).ToList();
+        await Assert.That(ids.Count(id => id == "NTK3003")).IsEqualTo(2);
+        await Assert.That(ids).DoesNotContain("NTK3002");
+    }
+
+    const string MatrixOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Plate : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial global::Noesis.Matrix Fixed { get; }
+
+            [DependencyProperty]
+            public partial global::Noesis.Matrix Settable { get; set; }
+        }
+        """;
+
     const string GridLengthOwner = """
         using NoesisToolkit.Mvvm;
 

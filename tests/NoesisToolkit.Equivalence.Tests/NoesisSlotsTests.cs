@@ -86,6 +86,38 @@ public sealed class NoesisSlotsTests
             .IsEquivalentTo(NoesisSlots.Unregistered, CollectionOrdering.Any);
     }
 
+    [Test]
+    public async Task Unregistrable_is_every_misrouted_type_Register_refuses_with_a_default()
+    {
+        NoesisRuntime.Start();
+
+        var refused = new List<string>();
+        // Registering a Matrix4 property kills the process, so it is listed without being measured.
+        foreach (var name in NoesisSlots.Misrouted.Where(n => n != "Noesis.Matrix4"))
+        {
+            var type = typeof(DependencyObject).Assembly.GetType(name)!;
+            try
+            {
+                DependencyProperty.Register(
+                    "Probe" + type.Name,
+                    type,
+                    typeof(RegistrationProbe),
+                    new PropertyMetadata(Activator.CreateInstance(type))
+                );
+            }
+            catch (ArgumentException)
+            {
+                refused.Add(name);
+            }
+        }
+
+        await Assert
+            .That(refused.Append("Noesis.Matrix4"))
+            .IsEquivalentTo(NoesisSlots.Unregistrable, CollectionOrdering.Any);
+    }
+
+    sealed class RegistrationProbe : DependencyObject { }
+
     static Type Underlying(Type type) => Nullable.GetUnderlyingType(type) ?? type;
 
     static object Read(object info, string property) =>

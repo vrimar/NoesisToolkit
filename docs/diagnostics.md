@@ -20,7 +20,8 @@
 | `NTK2101` | Warning | Noesis element event subscription is never unsubscribed |
 | `NTK2102` | Warning | a command on a Noesis control captures the control |
 | `NTK3001` | Error | `[DependencyProperty]` owner is not partial |
-| `NTK3002` | Error | a `[DependencyProperty]` of a type Noesis can only write from markup, a style or a binding (`GridLength`, `Matrix`, `Matrix3D`, `Matrix4`, `VirtualizationCacheLength`) declares a setter |
+| `NTK3002` | Error | a `[DependencyProperty]` of `GridLength`, which Noesis can only write from markup, a style or a binding, declares a setter |
+| `NTK3003` | Error | a `[DependencyProperty]` of a type Noesis cannot register from managed code (`Matrix`, `Matrix3D`, `Matrix4`, `VirtualizationCacheLength`) |
 | `NTK3101` | Error | `[DelegateCommand]` owner is not a partial class |
 | `NTK3102` | Error | `[DelegateCommand]` method returns something other than `void`/`ValueTask` |
 | `NTK3103` | Error | `[DelegateCommand]` method takes more than one parameter |

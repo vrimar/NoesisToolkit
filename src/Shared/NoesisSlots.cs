@@ -45,6 +45,15 @@ static class NoesisSlots
         "Noesis.VirtualizationCacheLength",
     };
 
+    // Register refuses a managed property of these with a default, and without one stores it as a pointer.
+    internal static readonly string[] Unregistrable =
+    {
+        "Noesis.Matrix",
+        "Noesis.Matrix3D",
+        "Noesis.Matrix4",
+        "Noesis.VirtualizationCacheLength",
+    };
+
     internal static readonly (string Owner, string Name)[] UIntRegistered =
     {
         ("Noesis.PasswordBox", "PasswordChar"),
@@ -69,4 +78,7 @@ static class NoesisSlots
     internal static bool IsTyped(string fullName) => Array.IndexOf(Typed, fullName) >= 0;
 
     internal static bool IsMisrouted(string fullName) => Array.IndexOf(Misrouted, fullName) >= 0;
+
+    internal static bool IsUnregistrable(string fullName) =>
+        Array.IndexOf(Unregistrable, fullName) >= 0;
 }
