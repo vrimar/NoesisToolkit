@@ -525,6 +525,84 @@ public partial class XamlCompilerTests
         await Assert.That(source).DoesNotContain("new global::Noesis.Binding(");
     }
 
+    static readonly Lazy<GeneratorRun> MisroutedRun = new(() =>
+        GeneratorHarness.Run(
+            [new XamlCompileGenerator(), new DependencyPropertyGenerator()],
+            ["Misrouted.xaml"],
+            [Host("MisroutedHost"), GutterControl, SampleUi, Stubs.Mvvm],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+        )
+    );
+
+    [Test]
+    public async Task A_GridLength_literal_on_a_managed_property_is_left_to_the_parser()
+    {
+        var run = MisroutedRun.Value;
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.Source("Misrouted")).Contains("Span=\\\"10\\\"");
+        await Assert.That(run.Source("Misrouted")).DoesNotContain(".Span =");
+    }
+
+    [Test]
+    public async Task A_Matrix_literal_generated_code_cannot_convert_is_left_to_the_parser()
+    {
+        var run = MisroutedRun.Value;
+
+        await Assert.That(run.GeneratorDiagnostics.Where(d => d.Id == "NTK1001")).IsEmpty();
+        await Assert.That(run.Source("Misrouted")).Contains("Matrix=\\\"1,0,0,1,5,5\\\"");
+    }
+
+    [Test]
+    public async Task A_binding_that_reads_a_GridLength_slot_stays_native()
+    {
+        var native = MisroutedRun
+            .Value.GeneratorDiagnostics.Where(d => d.Id == "NTK1007")
+            .Select(d => d.GetMessage());
+
+        await Assert
+            .That(native)
+            .IsEquivalentTo(["Misrouted.xaml :: binding stays native: slot-is-misrouted"]);
+    }
+
+    [Test]
+    public async Task A_dependency_property_with_no_CLR_property_is_left_to_the_parser()
+    {
+        var run = Run(["Wrapperless.xaml"], [Host("WrapperlessHost"), BareControl]);
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.GeneratorDiagnostics.Where(d => d.Id == "NTK1002")).IsEmpty();
+        await Assert.That(run.Source("Wrapperless")).Contains("Depth=\\\"3\\\"");
+        await Assert.That(run.Source("Wrapperless")).Contains("Property=\\\"Depth\\\"");
+    }
+
+    const string BareControl = """
+        namespace Sample.Ui;
+
+        public class Bare : global::Noesis.Control
+        {
+            public static readonly global::Noesis.DependencyProperty DepthProperty =
+                global::Noesis.DependencyProperty.Register(
+                    "Depth",
+                    typeof(double),
+                    typeof(Bare),
+                    new global::Noesis.FrameworkPropertyMetadata()
+                );
+        }
+        """;
+
+    const string GutterControl = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample.Ui;
+
+        public partial class Gutter : global::Noesis.Control
+        {
+            [DependencyProperty]
+            public partial global::Noesis.GridLength Span { get; }
+        }
+        """;
+
     [Test]
     public async Task Root_gets_InitializeComponent_and_typed_name_accessors()
     {

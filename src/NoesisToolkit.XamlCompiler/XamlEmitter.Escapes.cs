@@ -209,9 +209,11 @@ sealed partial class XamlEmitter
             );
 
     /// <summary>Noesis types a few slots as BindingExpressionBase, which no managed value can be
-    /// assigned to; that element has to stay on the XAML parser.</summary>
+    /// assigned to, and stores a few value types managed code writes as pointers; that element has
+    /// to stay on the XAML parser.</summary>
     bool HasUnassignableSlot(XElement element, INamedTypeSymbol type) =>
         Unassignable(element, type, resolver)
+        || HasMisroutedAttachedWrite(element)
         || !IsSetterLike(type)
             && element
                 .Attributes()
@@ -271,10 +273,20 @@ sealed partial class XamlEmitter
     {
         foreach (var attribute in element.Attributes())
         {
-            if (attribute.IsNamespaceDeclaration || attribute.Name.LocalName.Contains("."))
+            var ns = attribute.Name.NamespaceName;
+            if (
+                attribute.IsNamespaceDeclaration
+                || attribute.Name.LocalName.Contains(".")
+                || ns.Length > 0 && ns != element.Name.NamespaceName
+                || IsIgnorable(element, attribute)
+            )
                 continue;
 
-            if (UnassignableSlot(resolver.FindProperty(type, attribute.Name.LocalName)))
+            var name = attribute.Name.LocalName;
+            if (
+                UnassignableSlot(resolver.FindProperty(type, name), attribute.Value)
+                || Wrapperless(type, name, resolver)
+            )
                 return true;
         }
 
@@ -282,21 +294,90 @@ sealed partial class XamlEmitter
         {
             var local = child.Name.LocalName;
             var dot = local.IndexOf('.');
-            if (dot < 0 || child.HasElements)
+            if (dot < 0)
                 continue;
 
-            if (UnassignableSlot(resolver.FindProperty(type, local.Substring(dot + 1))))
+            var name = local.Substring(dot + 1);
+            var property = resolver.FindProperty(type, name);
+            if (
+                Wrapperless(type, name, resolver)
+                || (
+                    child.HasElements
+                        ? property is not null && MisroutedSetter(property.Type, property)
+                        : UnassignableSlot(property, child.Value)
+                )
+            )
                 return true;
         }
 
         return false;
     }
 
-    static bool UnassignableSlot(IPropertySymbol? property) =>
+    // Generated code types and writes a value through the CLR property, which these lack.
+    static bool Wrapperless(ITypeSymbol type, string name, XamlTypeResolver resolver) =>
+        resolver.FindProperty(type, name) is null
+        && resolver.FindEvent(type, name) is null
+        && resolver.FindDependencyPropertyOwner(type, name) is not null;
+
+    bool SetterNamesWrapperless(XElement element, INamedTypeSymbol type)
+    {
+        if (type.Name != "Setter" || element.Attribute("Property")?.Value.Trim() is not { } name)
+            return false;
+
+        var dot = name.LastIndexOf('.');
+        if (dot > 0)
+            return ResolveTypeSymbol(element, name.Substring(0, dot)) is { } owner
+                && resolver.FindAttachedSetter(owner, name.Substring(dot + 1)) is null
+                && Wrapperless(owner, name.Substring(dot + 1), resolver);
+
+        var styled = element.Attribute("TargetName")?.Value is { } named
+            ? LookupName(named)
+            : StyleTarget;
+        return styled is not null
+            && resolver.FindAttachedValueType(styled, name) is null
+            && Wrapperless(styled, name, resolver);
+    }
+
+    static bool UnassignableSlot(IPropertySymbol? property, string value) =>
         property is not null
-        && XamlTypeResolver.Fqn(property.Type)
-            is "global::Noesis.BindingExpressionBase"
-                or "global::Noesis.PathFigureCollection";
+        && (
+            XamlTypeResolver.Fqn(property.Type)
+                is "global::Noesis.BindingExpressionBase"
+                    or "global::Noesis.PathFigureCollection"
+            || MisroutedSetter(property.Type, property)
+            || !XamlMarkupParser.IsMarkup(value) && Unconvertible(property.Type)
+        );
+
+    // Any accessor but Noesis' own writes a misrouted slot through SetValue.
+    static bool MisroutedSetter(ITypeSymbol type, ISymbol owner) =>
+        Misrouted(type) && owner.ContainingAssembly?.Name != "Noesis.GUI";
+
+    static bool Unconvertible(ITypeSymbol type) =>
+        Misrouted(type) && !XamlTypeResolver.HasStringParse(Wrapped(type) ?? type);
+
+    bool HasMisroutedAttachedWrite(XElement element)
+    {
+        foreach (var attribute in element.Attributes())
+        {
+            var local = attribute.Name.LocalName;
+            var dot = local.IndexOf('.');
+            if (attribute.IsNamespaceDeclaration || dot < 0 || IsIgnorable(element, attribute))
+                continue;
+
+            if (
+                ResolveIn(element, attribute.Name.NamespaceName, local.Substring(0, dot))
+                    is { } owner
+                && resolver.FindAttachedValueType(owner, local.Substring(dot + 1)) is { } value
+                && (
+                    MisroutedSetter(value, owner)
+                    || !XamlMarkupParser.IsMarkup(attribute.Value) && Unconvertible(value)
+                )
+            )
+                return true;
+        }
+
+        return false;
+    }
 
     // The managed API cannot install a template-binding expression, so the parser builds each element
     // that carries one from those attributes alone, in a template of the same kind.

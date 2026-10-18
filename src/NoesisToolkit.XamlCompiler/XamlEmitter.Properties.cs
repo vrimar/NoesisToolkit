@@ -521,6 +521,15 @@ sealed partial class XamlEmitter
         }
 
         var property = resolver.FindProperty(type, name);
+        if (property is null && resolver.FindDependencyPropertyOwner(type, name) is not null)
+        {
+            Errors.Add(
+                $"'{name}' on {XamlTypeResolver.Fqn(type)} has no CLR property, so generated code "
+                    + "can neither type nor write its value here; declare one"
+            );
+            return;
+        }
+
         if (property is null)
         {
             // The native parser drops an unknown attribute in silence; say so and carry on.
@@ -550,17 +559,34 @@ sealed partial class XamlEmitter
         if (value is null)
             return;
 
-        if (!Settable(property, type))
-        {
-            Errors.Add($"'{name}' on {XamlTypeResolver.Fqn(type)} is read-only");
+        if (!CanWrite(property, type))
             return;
-        }
 
         _lines.Add($"{Member(target, name)} = {value};");
     }
 
     bool Settable(IPropertySymbol property, ITypeSymbol receiver) =>
         property.SetMethod is { } setter && resolver.IsAccessible(setter, _rootClass, receiver);
+
+    bool CanWrite(IPropertySymbol property, INamedTypeSymbol type)
+    {
+        if (MisroutedSetter(property.Type, property))
+        {
+            Errors.Add(
+                $"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is a {(Wrapped(property.Type) ?? property.Type).Name}, "
+                    + "which generated code can only write as a pointer; set it from a style or a binding"
+            );
+            return false;
+        }
+
+        if (!Settable(property, type))
+        {
+            Errors.Add($"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is read-only");
+            return false;
+        }
+
+        return true;
+    }
 
     void ApplyMarkup(
         XElement element,
@@ -616,11 +642,8 @@ sealed partial class XamlEmitter
                     return;
                 }
 
-                if (!Settable(property, type))
-                {
-                    Errors.Add($"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is read-only");
+                if (!CanWrite(property, type))
                     return;
-                }
 
                 AddGraphStatement(
                     Assigning(
@@ -634,11 +657,8 @@ sealed partial class XamlEmitter
             }
             default:
             {
-                if (!Settable(property, type))
-                {
-                    Errors.Add($"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is read-only");
+                if (!CanWrite(property, type))
                     return;
-                }
 
                 if (IsCustomExtension(call))
                 {

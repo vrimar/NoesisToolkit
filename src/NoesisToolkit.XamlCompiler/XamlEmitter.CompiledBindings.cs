@@ -54,57 +54,66 @@ sealed partial class XamlEmitter
         public ITypeSymbol? Registered { get; } = registered;
     }
 
-    // SetValue dispatches on the slot's declared type: an enum rides a 64-bit slot the native side
-    // rejects silently, and a GridLength has no typed route at all and crashes the process, so both
-    // are written through their own accessor instead.
+    // SetValue drops a native enum silently and takes a misrouted value for a pointer.
     static bool NeedsAccessor(ITypeSymbol type) =>
-        type.TypeKind == TypeKind.Enum || XamlTypeResolver.Fqn(type) == "global::Noesis.GridLength";
+        type.TypeKind == TypeKind.Enum || Misrouted(type);
 
-    // The CLR surface lies about the registered uint type, so a typed SetValue dies silently.
-    static readonly (string Owner, string Name)[] MismatchedNativeSlots =
-    {
-        ("global::Noesis.UniformGrid", "Rows"),
-        ("global::Noesis.UniformGrid", "Columns"),
-        ("global::Noesis.UniformGrid", "FirstColumn"),
-        ("global::Noesis.PasswordBox", "ShowLastCharacterDuration"),
-        ("global::Noesis.PasswordBox", "PasswordChar"),
-    };
+    static bool Misrouted(ITypeSymbol type) =>
+        NoesisSlots.IsMisrouted((Wrapped(type) ?? type).ToDisplayString());
 
-    // PropertyType throws for these, so the managed side can neither read nor write such a slot.
-    static readonly string[] UnregisteredNativeEnums =
+    bool MisroutedWrite(ITypeSymbol type, ISymbol owner)
     {
-        "global::Noesis.GridResizeDirection",
-        "global::Noesis.GridResizeBehavior",
-        "global::Noesis.SweepDirection",
-        "global::Noesis.BlendingMode",
-        "global::Noesis.InputScope",
-        "global::Noesis.Interactivity.ForwardChaining",
-    };
-
-    bool Unregistered(ITypeSymbol type)
-    {
-        if (Array.IndexOf(UnregisteredNativeEnums, XamlTypeResolver.Fqn(Wrapped(type) ?? type)) < 0)
+        if (!MisroutedSetter(type, owner))
             return false;
 
-        Note("native-enum-unregistered");
+        Note("slot-is-misrouted");
         return true;
     }
 
-    static bool Listed(IPropertySymbol property, (string Owner, string Name)[] table)
+    bool MisroutedRead(ITypeSymbol type)
     {
-        foreach (var (owner, name) in table)
+        if (!Misrouted(type))
+            return false;
+
+        Note("slot-is-misrouted");
+        return true;
+    }
+
+    static readonly (string Owner, string Name)[] UIntRegistered = Qualified(
+        NoesisSlots.UIntRegistered
+    );
+
+    static readonly (string Owner, string Name)[] UnregisteredSlots = Qualified(
+        NoesisSlots.Unregistered
+    );
+
+    static (string Owner, string Name)[] Qualified((string Owner, string Name)[] table) =>
+        table.Select(entry => ("global::" + entry.Owner, entry.Name)).ToArray();
+
+    bool Unregistered(INamedTypeSymbol owner, string name)
+    {
+        if (!Listed(owner, name, UnregisteredSlots))
+            return false;
+
+        Note("native-type-unregistered");
+        return true;
+    }
+
+    static bool Listed(IPropertySymbol property, (string Owner, string Name)[] table) =>
+        Listed(property.ContainingType, property.Name, table);
+
+    static bool Listed(INamedTypeSymbol owner, string name, (string Owner, string Name)[] table)
+    {
+        foreach (var (listed, member) in table)
         {
-            if (
-                property.Name == name
-                && XamlTypeResolver.DerivesFrom(property.ContainingType, owner)
-            )
+            if (name == member && XamlTypeResolver.DerivesFrom(owner, listed))
                 return true;
         }
 
         return false;
     }
 
-    static bool MismatchedSlot(IPropertySymbol property) => Listed(property, MismatchedNativeSlots);
+    static bool MismatchedSlot(IPropertySymbol property) => Listed(property, UIntRegistered);
 
     BindingSlot? PlainSlot(IPropertySymbol property)
     {
@@ -117,7 +126,10 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        if (Unregistered(property.Type))
+        if (
+            Unregistered(property.ContainingType, property.Name)
+            || MisroutedWrite(property.Type, property)
+        )
             return null;
 
         string? assign = null;
@@ -164,7 +176,7 @@ sealed partial class XamlEmitter
         if (resolver.FindDependencyPropertyOwner(owner, name) is null)
             Note("attached-target-is-not-a-dependency-property");
 
-        if (Unregistered(value))
+        if (Unregistered(owner, name) || MisroutedWrite(value, owner))
             return null;
 
         if (
@@ -937,7 +949,7 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        if (Unregistered(first.Type))
+        if (Unregistered(first.ContainingType, first.Name) || MisroutedRead(first.Type))
             return null;
 
         var slot = $"{XamlTypeResolver.Fqn(owner)}.{segments[0]}Property";
@@ -976,6 +988,9 @@ sealed partial class XamlEmitter
             Note("attached-path-is-not-a-dependency-property");
             return null;
         }
+
+        if (Unregistered(owner, part.Name) || MisroutedRead(value))
+            return null;
 
         var slot = SlotReference(owner, part.Name);
         if (part.Tail.Length == 0)
@@ -1082,6 +1097,10 @@ sealed partial class XamlEmitter
             case "OneWay":
                 return "OneWay";
             case "TwoWay":
+                // A write-back reads the target first.
+                if (MisroutedRead(slot.Type))
+                    return null;
+
                 if (writable)
                     return "TwoWay";
 
@@ -1094,6 +1113,9 @@ sealed partial class XamlEmitter
 
         string? Default()
         {
+            if (slot.TwoWayByDefault && MisroutedRead(slot.Type))
+                return null;
+
             if (writable || !slot.TwoWayByDefault)
                 return "";
 

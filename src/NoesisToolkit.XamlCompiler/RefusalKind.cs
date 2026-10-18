@@ -56,7 +56,10 @@ static class Refusals
         ["string-format-unlike-native"] = RefusalKind.Gap,
 
         // The managed side cannot read or write a slot whose type it never registered.
-        ["native-enum-unregistered"] = RefusalKind.Boundary,
+        ["native-type-unregistered"] = RefusalKind.Boundary,
+
+        // Managed code reads and writes the value as a pointer: a crash or a corrupted slot.
+        ["slot-is-misrouted"] = RefusalKind.Boundary,
 
         // The write would feed the next read its own result.
         ["target-is-the-data-context"] = RefusalKind.Boundary,

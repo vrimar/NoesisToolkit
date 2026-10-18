@@ -477,6 +477,17 @@ public struct CornerRadius
 public struct GridLength
 {
     public GridLength(float pixels) { }
+
+    public static GridLength Parse(string value) => default;
+}
+
+public struct Matrix { }
+
+public class MatrixTransform : DependencyObject
+{
+    public static readonly DependencyProperty MatrixProperty = DependencyProperty.Register("Matrix", typeof(Matrix), typeof(MatrixTransform), new FrameworkPropertyMetadata());
+
+    public Matrix Matrix { get => default; set { } }
 }
 
 public class FontFamily
