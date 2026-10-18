@@ -27,6 +27,15 @@ public sealed partial class Typed : Control
 
     [DependencyProperty("")]
     public partial string Label { get; set; }
+
+    [DependencyProperty(Tilt.Level)]
+    public partial Tilt Lean { get; set; }
+}
+
+public enum Tilt
+{
+    Down = -1,
+    Level = 0,
 }
 
 [NotInParallel("Noesis")]
@@ -55,6 +64,18 @@ public sealed class TypedWriteTests
         await Assert.That(typed.GetValue(Typed.InsetProperty)).IsEqualTo(new Thickness(1, 2, 3, 4));
         await Assert.That(typed.Count).IsEqualTo(5);
         await Assert.That(typed.Align).IsEqualTo(VerticalAlignment.Bottom);
+    }
+
+    [Test]
+    public async Task A_negative_enum_member_lands_through_the_boxed_write()
+    {
+        NoesisRuntime.Start();
+
+        var typed = new Typed();
+        NoesisRuntime.Show(typed);
+        DependencyWrite.Value(ElementHandle.Of(typed), Typed.LeanProperty, Tilt.Down);
+
+        await Assert.That(typed.Lean).IsEqualTo(Tilt.Down);
     }
 
     [Test]

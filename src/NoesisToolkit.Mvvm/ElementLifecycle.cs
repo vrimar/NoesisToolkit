@@ -46,5 +46,12 @@ sealed class ElementLifecycle : IChangeListener
         _owner.Release();
     }
 
+    internal void Stop()
+    {
+        _owner.Release();
+        Retry(false);
+        ElementEvents.UnwatchLifecycle(_target, this);
+    }
+
     void IChangeListener.Changed() => _owner.Retry();
 }

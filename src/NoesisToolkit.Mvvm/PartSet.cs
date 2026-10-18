@@ -75,6 +75,8 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
 
     internal void Unwatch() => _watched.Clear();
 
+    internal void Stop() => _life.Stop();
+
     void IChainOwner.ChainChanged() => _owner.PartsChanged();
 
     void INotifierOwner.SourceChanged(object? sender, PropertyChangedEventArgs e)

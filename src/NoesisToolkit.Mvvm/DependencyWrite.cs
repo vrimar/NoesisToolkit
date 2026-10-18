@@ -170,14 +170,7 @@ public static class DependencyWrite
         switch (SlotOf(property))
         {
             case Slot.Bits:
-                Native.UInt64(
-                    null,
-                    target,
-                    Handle(property),
-                    Convert.ToUInt64(value),
-                    false,
-                    false
-                );
+                Native.UInt64(null, target, Handle(property), Bits(value), false, false);
                 break;
             case Slot.Bool:
                 Value(target, property, (bool)value!);
@@ -254,6 +247,16 @@ public static class DependencyWrite
 
     static readonly Dictionary<DependencyProperty, Slot> Slots =
         new Dictionary<DependencyProperty, Slot>();
+
+    // A signed enum widens through Int64, as Noesis' own enum accessors do: ToUInt64 throws below zero.
+    static ulong Bits(object? value) =>
+        Convert.GetTypeCode(value)
+            is TypeCode.SByte
+                or TypeCode.Int16
+                or TypeCode.Int32
+                or TypeCode.Int64
+            ? unchecked((ulong)Convert.ToInt64(value))
+            : Convert.ToUInt64(value);
 
     static Slot SlotOf(DependencyProperty property)
     {

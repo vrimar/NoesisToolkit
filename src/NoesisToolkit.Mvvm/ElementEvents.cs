@@ -33,6 +33,9 @@ static class ElementEvents
     internal static void UnwatchLayout(ElementState element, IChangeListener listener) =>
         element.Events?.LayoutUpdatedIfAny?.Remove(listener);
 
+    internal static void UnwatchLifecycle(ElementState element, ElementLifecycle lifecycle) =>
+        element.Events?.LifecycleIfAny?.Remove(lifecycle);
+
     /// <summary>Hears Loaded, Reloaded and Unloaded for as long as the element lives.</summary>
     internal static void WatchLifecycle(ElementState element, ElementLifecycle lifecycle)
     {
@@ -234,6 +237,8 @@ static class ElementEvents
 
         internal HandlerList<ElementLifecycle> Lifecycle =>
             _lifecycle ??= new HandlerList<ElementLifecycle>();
+
+        internal HandlerList<ElementLifecycle>? LifecycleIfAny => _lifecycle;
 
         internal void OnLoaded()
         {

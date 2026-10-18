@@ -164,6 +164,12 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         _parts = new PartSet(_target, parts, this);
 
         var bound = _target.TriggerSets ??= new List<CompiledTriggerSet>();
+        foreach (var replaced in bound)
+        {
+            if (ReferenceEquals(replaced._triggers, triggers))
+                replaced.Stop();
+        }
+
         bound.RemoveAll(set => ReferenceEquals(set._triggers, triggers));
         bound.Add(this);
 
@@ -301,6 +307,28 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         {
             _pushing = false;
         }
+    }
+
+    // What a replaced set applied is its own to take back, or the set replacing it inherits it.
+    void Stop()
+    {
+        _parts.Stop();
+
+        if (_target.Alive)
+        {
+            var slots = _layout.Slots;
+            for (var i = 0; i < slots.Length; i++)
+            {
+                if (
+                    Has(_applied, i)
+                    && SetterTarget(_target.Handle, slots[i]) is var cleared
+                    && cleared != IntPtr.Zero
+                )
+                    DependencyWrite.Clear(cleared, slots[i].Property);
+            }
+        }
+
+        Array.Clear(_applied, 0, _applied.Length);
     }
 
     static bool Has(ReadOnlySpan<ulong> bits, int i) => (bits[i >> 6] & (1UL << (i & 63))) != 0;
