@@ -14,7 +14,7 @@ internal static class NoesisRuntime
 
         _started = true;
         GUI.Init();
-        GUI.SetXamlProvider(new XamlGraphDump.FileXamlProvider(XamlGraphDump.ProviderRoot()));
+        GUI.SetXamlProvider(new FixtureFiles.FileXamlProvider(FixtureFiles.ProviderRoot()));
 
         // A cross-file StaticResource resolves for neither side until a graph is installed, and the
         // root has to be rooted: every uri the parser resolves from here inherits that form.

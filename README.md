@@ -11,7 +11,7 @@ Not affiliated with or endorsed by Noesis Technologies.
 | `NoesisToolkit.XamlCompiler` | compiles XAML to C# — no runtime parse, plus `InitializeComponent` and typed `x:Name` accessors |
 | `NoesisToolkit.Analyzers` | validates binding paths, `clr-namespace` declarations, `x:Static` references, and the event and command lifetimes that pin an element |
 | `NoesisToolkit.Mvvm` | `[DependencyProperty]`, `[DelegateCommand]`, and the commands behind them |
-| `NoesisToolkit.Testing` | proves your controls are collectable, against a live renderless view |
+| `NoesisToolkit.Testing` | proves your controls are collectable and your compiled XAML builds what the parser builds, against a live renderless view |
 
 Each is independent. Take one, take all four.
 
@@ -207,6 +207,30 @@ to and no bindings to carry, so the sweep passes on controls that leak in the ru
 that ticks its own frame work, and `settleRounds` (default 16) because a native destroy can lag a
 collection by several rounds. `Unavailable()` returns null when the environment can host the probe
 and otherwise says why, so a headless machine skips instead of reporting a false pass.
+
+The same package proves the XAML compiler faithful to your own documents: every entry of a generated
+`XamlRegistry` is built by the parser and by its compiled builder, both graphs are realized with their
+templates applied, and the two are compared as text.
+
+```csharp
+[Test]
+public async Task Compiled_xaml_matches_the_parser()
+{
+    var failures = XamlParity.Check(
+        XamlGenerated.MyApp.XamlRegistry.Dictionaries,
+        XamlGenerated.MyApp.XamlResources.Flush,
+        dumps: Path.Combine(Path.GetTempPath(), "xaml-parity")
+    );
+
+    await Assert.That(string.Join("\n", failures)).IsEmpty();
+}
+```
+
+Run it on the Noesis thread with a `XamlProvider` that serves the documents and with your application
+resources installed. A merged dictionary that names another document by `Source` is compared where
+that document is, not again inside each one that merges it; `XamlParity.Compare` takes
+`expandMerged: true` for a whole application graph, and an `x:Class` root the parser filled against
+one `InitializeComponent` filled.
 
 ## Requirements
 

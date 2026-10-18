@@ -9,8 +9,34 @@ All notable changes to this project are documented here. The format follows
 
 - **`NTK1009` warns when a referenced assembly cannot be chained**: one built by an older toolkit
   whose generated namespace is this assembly's own, so its resources would be silently out of reach.
+- **`XamlParity` in `NoesisToolkit.Testing`** builds every document of a generated `XamlRegistry` with
+  the parser and with its compiled builder and compares the realized graphs, compiled triggers
+  included. A document merged in by `Source` is compared once, not inside every document that merges
+  it; `Compare` takes a whole application graph or an `x:Class` root. `NoesisToolkit.Testing` now
+  depends on `NoesisToolkit.Mvvm`.
+- **`NTK3002` refuses a settable `[DependencyProperty]` of a `GridLength`, `Matrix`, `Matrix3D`,
+  `Matrix4` or `VirtualizationCacheLength`**, which Noesis 4.0 writes from managed code as a pointer.
+
+### Changed
+
+- **A `[DependencyProperty]` of one of those five types is declared `{ get; }`** and set from markup, a
+  style or a binding; an attached one gets no `Set` accessor. The getter reads through a coerce
+  callback the registration carries, where it crashed reading a value the parser or a style had set.
 
 ### Fixed
+
+- **Managed code no longer reads or writes one of those five types as a pointer.** A literal or
+  resource on such a property leaves its element to the parser; a compiled binding or trigger that
+  would read one, or write one through anything but Noesis' own accessor, stays native; and the
+  runtime's `DependencyRead` and `DependencyWrite` read it through the capture or refuse it, where they
+  crashed or corrupted the slot. A `Matrix`-family literal on an element, which the compiler cannot
+  convert, is left to the parser instead of failing the build.
+- **A dependency property with no CLR property is set as the parser sets it**: its element, or its
+  `Setter`, is left to the parser rather than the attribute being dropped as dead markup.
+- **`Timeline.RepeatBehavior` and `ToolTipService.ScaleReferenceElement` stay native in a compiled
+  binding**, as the other properties whose registered type has no managed counterpart already did.
+- **The facts the runtime, the generator and the compiler act on are one list**, measured against the
+  shipped Noesis by a test, so an upgrade that moves one fails the suite.
 
 - **More of what the parser builds is built the same way**: text content of a `TextBox` or an item
   collection, a type's content property over a text constructor, `{}` kept literal in element text,
