@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.6.1] - 2026-10-18
 
 ### Added
 
@@ -847,6 +847,7 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.6.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.6.1
 [0.6.0]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.6.0
 [0.5.8]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.5.8
 [0.5.7]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.5.7

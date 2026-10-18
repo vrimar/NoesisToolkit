@@ -20,3 +20,11 @@ NTK3103 | NoesisToolkit | Error | [DelegateCommand] method takes too many parame
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK3002 | NoesisToolkit | Error | [DependencyProperty] of a type Noesis cannot write from managed code is settable
+
+## Release 0.6.1
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK3003 | NoesisToolkit | Error | [DependencyProperty] of a type Noesis cannot register from managed code
