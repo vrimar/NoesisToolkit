@@ -3,6 +3,32 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`NTK3003` refuses a `[DependencyProperty]` of a `Matrix`, `Matrix3D`, `Matrix4` or
+  `VirtualizationCacheLength`**, which Noesis 4.0 cannot register from managed code: the registration
+  throws, kills the process or stores the default as a pointer. 0.6.0 accepted one declared
+  `{ get; }`, and its owner's type initializer then threw. `GridLength` stays `{ get; }`.
+
+### Changed
+
+- **An `x:Static` the parser loads unset is refused wherever the parser reads it**, as `NTK1001` by
+  the compiler and `NTK2003` by the analyzer: a static of an application class, of a Noesis class
+  other than a routed command or a style key, or of a Noesis enum the parser cannot read, such as
+  `Key` or `CursorType`. The compiler refused an application class's static only where it built the
+  markup, so a subtree left to the parser or a document the loader parses loaded it silently unset,
+  and it compiled `{x:Static Colors.Red}` to a value the parser never produced. Which statics the
+  parser reads is measured against the shipped Noesis.
+
+### Fixed
+
+- **A `Setter` whose text value generated code cannot convert is left to the parser**, such as
+  `VirtualizingPanel.CacheLength` in a `Style`, instead of failing the build with `NTK1001`.
+- **`XamlParity` compares an application object by its type, not its `ToString`**, which can name
+  the instance and so differed between the parsed and compiled builds of one document.
+
 ## [0.6.0] - 2026-10-18
 
 ### Added

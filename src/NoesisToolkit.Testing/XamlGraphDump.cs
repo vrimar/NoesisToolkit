@@ -321,7 +321,7 @@ static class XamlGraphDump
         return block.ToString();
     }
 
-    static string Plain(object? value) => value?.ToString() ?? "null";
+    static string Plain(object? value) => value is null ? "null" : Text(value);
 
     static List<CompiledTriggerSet> CompiledSetsUnder(DependencyObject root)
     {
@@ -573,6 +573,19 @@ static class XamlGraphDump
             ItemsPanelTemplate => "ItemsPanelTemplate",
             Style style =>
                 $"Style({style.TargetType?.Name}, BasedOn={style.BasedOn?.TargetType?.Name ?? "-"})",
-            _ => value.ToString() ?? "",
+            _ => Text(value),
         };
+
+    // An application's ToString may name the instance, so it differs between the two builds.
+    static string Text(object value)
+    {
+        var type = value.GetType();
+        var declaring = type.GetMethod("ToString", Type.EmptyTypes)?.DeclaringType?.Assembly;
+        return
+            declaring == typeof(object).Assembly
+            || declaring == typeof(DependencyObject).Assembly
+            || declaring?.GetName().Name?.StartsWith("System.", StringComparison.Ordinal) == true
+            ? value.ToString() ?? ""
+            : type.FullName ?? type.Name;
+    }
 }

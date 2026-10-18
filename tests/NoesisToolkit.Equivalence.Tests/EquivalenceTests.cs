@@ -59,5 +59,22 @@ public sealed class EquivalenceTests
             .IsEqualTo(dictionaries);
     }
 
+    [Test]
+    public async Task An_application_value_compares_by_its_type_not_its_ToString()
+    {
+        Live();
+
+        static Border Stamped() => new() { Tag = new Stamp(), Child = new TextBlock() };
+
+        await Assert.That(XamlParity.Compare("Stamped", Stamped(), Stamped())?.ToString()).IsNull();
+    }
+
+    sealed class Stamp
+    {
+        readonly Guid _id = Guid.NewGuid();
+
+        public override string ToString() => $"Stamp[{_id}]";
+    }
+
     static string Dumps => Path.Combine(Path.GetTempPath(), "noesistoolkit-equivalence");
 }
