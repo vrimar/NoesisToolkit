@@ -34,6 +34,91 @@ public class XamlBindingAnalyzerTests
         XamlProbe.Analyze(body, XamlBindingAnalyzer.UndeclaredContextId);
 
     [Test]
+    public async Task An_identity_DataContext_keeps_the_scope_it_was_handed()
+    {
+        var diagnostics = await Document(
+            """
+            <Grid ntk:CompileBindings="True" ntk:DataType="ui:ItemDef">
+              <Grid DataContext="{Binding}">
+                <TextBlock Text="{Binding Family}" />
+              </Grid>
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_DataContext_set_as_a_property_element_leaves_the_scope_unknown()
+    {
+        var diagnostics = await Bindings(
+            "ItemViewModel",
+            """
+            <Grid>
+              <Grid.DataContext><ui:ItemDef /></Grid.DataContext>
+              <TextBlock Text="{Binding Family}" />
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_stated_type_is_what_its_own_element_holds_after_its_redirect()
+    {
+        var diagnostics = await Bindings(
+            "ItemViewModel",
+            """
+            <Grid ntk:DataType="ui:ItemDef" DataContext="{Binding Def}">
+              <TextBlock Text="{Binding Nope}" />
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("'ItemDef'");
+    }
+
+    [Test]
+    public async Task A_design_time_binding_is_not_checked_against_the_real_context()
+    {
+        var diagnostics = await Bindings(
+            "ItemViewModel",
+            """
+            <Grid
+              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+              mc:Ignorable="d">
+              <TextBlock d:Text="{Binding Nope}" />
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task An_ancestor_level_skips_the_nearer_matches()
+    {
+        var diagnostics = await Bindings(
+            "ItemViewModel",
+            """
+            <Grid>
+              <Grid DataContext="{Binding Def}">
+                <TextBlock
+                  Text="{Binding DataContext.DefIdInt,
+                                 RelativeSource={RelativeSource AncestorType=Grid, AncestorLevel=2}}" />
+              </Grid>
+            </Grid>
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
     public async Task An_ancestor_type_matches_a_subclass_of_it()
     {
         var diagnostics = await AnalyzerHarness.Analyze(

@@ -108,7 +108,10 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             if (!IsTrue(options, EnabledProperty))
                 return;
 
-            var subtypes = Subtypes(start.Compilation);
+            // Built once a document needs it: most compilations carry no XAML at all.
+            var subtypes = new Lazy<Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>>(() =>
+                Subtypes(start.Compilation)
+            );
             var extensions = XamlFiles.Extensions(options);
 
             start.RegisterAdditionalFileAction(ctx =>
@@ -122,28 +125,21 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
 
                 var content = text.ToString();
 
-                var namespaces = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    [""] = BindingScanner.PresentationNamespace,
-                };
                 foreach (var declaration in BindingScanner.ScanNamespaces(content))
-                {
-                    namespaces[declaration.Prefix] = declaration.Namespace;
                     VerifyNamespace(ctx, declaration, text);
-                }
 
                 foreach (var reference in BindingScanner.ScanStaticReferences(content))
-                    VerifyStatic(ctx, reference, namespaces, text);
+                    VerifyStatic(ctx, reference, text);
 
                 foreach (var reference in TokenScanner.Scan(content))
-                    VerifyEnumValue(ctx, reference, namespaces, text);
+                    VerifyEnumValue(ctx, reference, text);
 
                 var scan = BindingScanner.ScanAll(
                     content,
                     (candidate, wanted) => DerivesFrom(ctx.Compilation, candidate, wanted)
                 );
                 foreach (var check in scan.Checks)
-                    Verify(ctx, check, text, subtypes);
+                    Verify(ctx, check, text, subtypes.Value);
 
                 if (!scan.CompileBindings)
                     return;
@@ -198,13 +194,10 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     private static void VerifyStatic(
         AdditionalFileAnalysisContext context,
         StaticReference reference,
-        Dictionary<string, string> namespaces,
         SourceText text
     )
     {
-        if (!namespaces.TryGetValue(reference.Prefix, out var @namespace))
-            return;
-
+        var @namespace = reference.Namespace;
         if (!Resolves(context.Compilation.GlobalNamespace, @namespace))
             return;
 
@@ -224,27 +217,34 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     private static void VerifyEnumValue(
         AdditionalFileAnalysisContext context,
         TokenReference reference,
-        Dictionary<string, string> namespaces,
         SourceText text
     )
     {
-        if (!namespaces.TryGetValue(reference.Prefix, out var @namespace))
-            return;
-
-        var type = TypeLookup.ByName(context.Compilation, $"{@namespace}.{reference.TypeName}");
+        var type = TypeLookup.ByName(
+            context.Compilation,
+            $"{reference.Namespace}.{reference.TypeName}"
+        );
         if (type is null)
             return;
 
-        var enumType = reference.IsExtension
-            ? FirstEnumProperty(type)
-            : (FindMember(type, reference.Member) as IPropertySymbol)?.Type as INamedTypeSymbol;
+        var enumType =
+            (
+                FindMember(
+                    type,
+                    reference.IsExtension ? ContentProperty(type) ?? "" : reference.Member
+                ) as IPropertySymbol
+            )?.Type as INamedTypeSymbol;
 
         if (enumType is not { TypeKind: TypeKind.Enum } || IsNoesisOwn(enumType))
             return;
 
         foreach (var member in enumType.GetMembers())
         {
-            if (member is IFieldSymbol { HasConstantValue: true } && member.Name == reference.Value)
+            // The parser matches a member name in any case.
+            if (
+                member is IFieldSymbol { HasConstantValue: true }
+                && string.Equals(member.Name, reference.Value, StringComparison.OrdinalIgnoreCase)
+            )
                 return;
         }
 
@@ -270,18 +270,23 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static INamedTypeSymbol? FirstEnumProperty(ITypeSymbol type)
+    // A positional argument sets the extension's content property, as the parser assigns it.
+    private static string? ContentProperty(ITypeSymbol type)
     {
         for (var current = type; current is not null; current = current.BaseType)
         {
-            foreach (var property in current.GetMembers().OfType<IPropertySymbol>())
-            {
-                if (
-                    property.SetMethod is not null
-                    && property.Type is INamedTypeSymbol { TypeKind: TypeKind.Enum } @enum
-                )
-                    return @enum;
-            }
+            if (
+                current
+                    .GetAttributes()
+                    .FirstOrDefault(a =>
+                        a.AttributeClass?.Name == "ContentPropertyAttribute"
+                        && a.ConstructorArguments.Length == 1
+                    )
+                    ?.ConstructorArguments[0]
+                    .Value
+                is string name
+            )
+                return name;
         }
 
         return null;

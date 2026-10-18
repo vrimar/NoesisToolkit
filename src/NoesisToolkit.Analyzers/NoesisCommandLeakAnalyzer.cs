@@ -95,8 +95,11 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
         if (!creation.Arguments.Any(argument => InstanceCapture.Captures(argument.Value)))
             return;
 
-        // Only a command the element keeps can be reached from its own template.
-        if (StoredMember(creation) is not { } member)
+        // Only a command the element keeps or hands out can be reached from its own template.
+        if (
+            (StoredMember(creation) ?? ReturnedBy(creation, context.ContainingSymbol))
+            is not { } member
+        )
             return;
 
         context.ReportDiagnostic(
@@ -152,6 +155,24 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
                 property.InitializedProperties.FirstOrDefault(),
             _ => null,
         };
+    }
+
+    private static ISymbol? ReturnedBy(IOperation creation, ISymbol containing)
+    {
+        var node = creation;
+        while (node.Parent is IConversionOperation conversion)
+            node = conversion;
+
+        return
+            node.Parent is IReturnOperation
+            && containing
+                is IMethodSymbol
+                {
+                    MethodKind: MethodKind.PropertyGet,
+                    AssociatedSymbol: IPropertySymbol property,
+                }
+            ? property
+            : null;
     }
 
     private static ISymbol? OwnMember(IOperation target) =>

@@ -71,6 +71,7 @@ public class NoesisCommandLeakAnalyzerTests
         "DelegateCommand? _next; public DelegateCommand Next => _next ??= new DelegateCommand(Turn);",
         1
     )]
+    [Arguments("public DelegateCommand Next => new DelegateCommand(Turn);", 1)]
     [Arguments(
         "public DelegateCommand Next { get; } public Pager() { Next = new DelegateCommand(() => Turn(), () => _page > 0); }",
         1

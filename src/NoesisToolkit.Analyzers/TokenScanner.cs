@@ -58,7 +58,7 @@ internal static class TokenScanner
                             or "ItemsPanelTemplate"
                     && !reader.IsEmptyElement
                 )
-                    scopes.Add(new TargetScope(depth, null));
+                    scopes.Add(new TargetScope(depth, null, ""));
 
                 if (!reader.HasAttributes)
                     continue;
@@ -73,7 +73,11 @@ internal static class TokenScanner
                     var name = reader.LocalName;
                     var raw = reader.Value;
 
-                    if (TryScanExtensions(raw, lineInfo, references))
+                    // A directive or a design-time value is no property of the element.
+                    if (reader.NamespaceURI.Length > 0)
+                        continue;
+
+                    if (TryScanExtensions(reader, raw, lineInfo, references))
                         continue;
 
                     if (isTargetHost && name == "TargetType")
@@ -90,14 +94,17 @@ internal static class TokenScanner
                         continue;
                     }
 
-                    if (!IsIdentifier(raw))
+                    if (
+                        !IsIdentifier(raw)
+                        || BindingScanner.NamespaceOf(reader, elementPrefix) is not { } owner
+                    )
                         continue;
 
                     references.Add(
                         new TokenReference(
                             lineInfo.LineNumber,
                             lineInfo.LinePosition,
-                            elementPrefix,
+                            owner,
                             elementName,
                             name,
                             raw
@@ -108,6 +115,7 @@ internal static class TokenScanner
 
                 if (isSetter && property is not null && value is not null && IsIdentifier(value))
                     AddSetter(
+                        reader,
                         references,
                         scopes,
                         property,
@@ -118,7 +126,18 @@ internal static class TokenScanner
                     );
 
                 if (isTargetHost && targetType is not null && !reader.IsEmptyElement)
-                    scopes.Add(new TargetScope(depth, targetType));
+                {
+                    SplitQualified(targetType, out var prefix, out var typeName);
+                    scopes.Add(
+                        new TargetScope(
+                            depth,
+                            IsIdentifier(typeName)
+                                ? BindingScanner.NamespaceOf(reader, prefix)
+                                : null,
+                            typeName
+                        )
+                    );
+                }
             }
         }
         catch (XmlException)
@@ -130,6 +149,7 @@ internal static class TokenScanner
     }
 
     static void AddSetter(
+        XmlReader reader,
         List<TokenReference> references,
         List<TargetScope> scopes,
         string property,
@@ -139,34 +159,34 @@ internal static class TokenScanner
         int column
     )
     {
-        string owner;
+        string? ns;
+        string typeName;
         string member;
 
         var dot = property.LastIndexOf('.');
         if (dot > 0)
         {
-            owner = property.Substring(0, dot);
+            SplitQualified(property.Substring(0, dot), out var prefix, out typeName);
+            ns = IsIdentifier(typeName) ? BindingScanner.NamespaceOf(reader, prefix) : null;
             member = property.Substring(dot + 1);
         }
         else
         {
-            if (hasTargetName || scopes.Count == 0 || scopes[scopes.Count - 1].TargetType is null)
+            if (hasTargetName || scopes.Count == 0)
                 return;
-            owner = scopes[scopes.Count - 1].TargetType!;
+            ns = scopes[scopes.Count - 1].Namespace;
+            typeName = scopes[scopes.Count - 1].TypeName;
             member = property;
         }
 
-        if (!IsIdentifier(member))
+        if (ns is null || !IsIdentifier(member))
             return;
 
-        SplitQualified(owner, out var prefix, out var typeName);
-        if (!IsIdentifier(typeName))
-            return;
-
-        references.Add(new TokenReference(line, column, prefix, typeName, member, value));
+        references.Add(new TokenReference(line, column, ns, typeName, member, value));
     }
 
     static bool TryScanExtensions(
+        XmlReader reader,
         string raw,
         IXmlLineInfo lineInfo,
         List<TokenReference> references
@@ -190,14 +210,14 @@ internal static class TokenScanner
             return true;
 
         SplitQualified(keyword, out var prefix, out var name);
-        if (!IsIdentifier(name))
+        if (!IsIdentifier(name) || BindingScanner.NamespaceOf(reader, prefix) is not { } ns)
             return true;
 
         references.Add(
             new TokenReference(
                 lineInfo.LineNumber,
                 lineInfo.LinePosition,
-                prefix,
+                ns,
                 name + "Extension",
                 "",
                 argument
@@ -242,14 +262,18 @@ internal static class TokenScanner
 
     readonly struct TargetScope
     {
-        public TargetScope(int depth, string? targetType)
+        public TargetScope(int depth, string? @namespace, string typeName)
         {
             Depth = depth;
-            TargetType = targetType;
+            Namespace = @namespace;
+            TypeName = typeName;
         }
 
         public int Depth { get; }
-        public string? TargetType { get; }
+
+        public string? Namespace { get; }
+
+        public string TypeName { get; }
     }
 }
 
@@ -261,7 +285,7 @@ internal readonly struct TokenReference
     public TokenReference(
         int line,
         int column,
-        string prefix,
+        string @namespace,
         string typeName,
         string member,
         string value
@@ -269,7 +293,7 @@ internal readonly struct TokenReference
     {
         Line = line;
         Column = column;
-        Prefix = prefix;
+        Namespace = @namespace;
         TypeName = typeName;
         Member = member;
         Value = value;
@@ -278,8 +302,7 @@ internal readonly struct TokenReference
     public int Line { get; }
     public int Column { get; }
 
-    /// <summary>Empty when unprefixed, which means the presentation namespace.</summary>
-    public string Prefix { get; }
+    public string Namespace { get; }
 
     public string TypeName { get; }
 

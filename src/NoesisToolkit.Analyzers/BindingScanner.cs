@@ -45,6 +45,9 @@ internal static class BindingScanner
         /// every later pass reads them whatever the document order was.</summary>
         public Dictionary<int, Dictionary<string, string>> ElementSources =
             new Dictionary<int, Dictionary<string, string>>();
+
+        // Read off a later element than the one it rebinds, so it is collected ahead too.
+        public HashSet<int> Rebound = new HashSet<int>();
     }
 
     /// <summary>Both halves of the scan: the bindings whose DataContext is known, and the ones a
@@ -54,26 +57,41 @@ internal static class BindingScanner
         if (string.IsNullOrWhiteSpace(content))
             return ScanResult.Empty;
 
-        var prefixes = new Dictionary<string, string>(StringComparer.Ordinal);
         var namedElements = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (!CollectDeclarations(content!, prefixes, namedElements))
+        if (!CollectDeclarations(content!, namedElements))
             return ScanResult.Empty;
 
         var nameToScope = new Dictionary<string, DataScope?>(StringComparer.Ordinal);
         var elementSources = new Dictionary<int, Dictionary<string, string>>();
-        var discard = new Walked { Derives = derives, ElementSources = elementSources };
-        if (!Walk(content!, prefixes, namedElements, discard, nameToScope, true))
+        var rebound = new HashSet<int>();
+        var discard = new Walked
+        {
+            Derives = derives,
+            ElementSources = elementSources,
+            Rebound = rebound,
+        };
+        if (!Walk(content!, namedElements, discard, nameToScope, true))
             return ScanResult.Empty;
 
         // A template can precede the property element that sources it, so a name declared inside
         // one recorded a scope the first pass could not see. Rebuild them now.
         nameToScope.Clear();
-        var named = new Walked { Derives = derives, ElementSources = elementSources };
-        if (!Walk(content!, prefixes, namedElements, named, nameToScope, true))
+        var named = new Walked
+        {
+            Derives = derives,
+            ElementSources = elementSources,
+            Rebound = rebound,
+        };
+        if (!Walk(content!, namedElements, named, nameToScope, true))
             return ScanResult.Empty;
 
-        var walked = new Walked { Derives = derives, ElementSources = elementSources };
-        return Walk(content!, prefixes, namedElements, walked, nameToScope, false)
+        var walked = new Walked
+        {
+            Derives = derives,
+            ElementSources = elementSources,
+            Rebound = rebound,
+        };
+        return Walk(content!, namedElements, walked, nameToScope, false)
             ? new ScanResult(walked.Checks, walked.Unresolved, walked.CompileBindings)
             : ScanResult.Empty;
     }
@@ -103,11 +121,14 @@ internal static class BindingScanner
                 if (!XamlMarkup.IsIdentifier(type) || !XamlMarkup.IsIdentifier(member))
                     return;
 
+                if (NamespaceOf(reader, colon < 0 ? "" : body.Substring(0, colon)) is not { } ns)
+                    return;
+
                 references.Add(
                     new StaticReference(
                         lineInfo.LineNumber,
                         lineInfo.LinePosition,
-                        colon < 0 ? "" : body.Substring(0, colon),
+                        ns,
                         type,
                         member
                     )
@@ -151,7 +172,7 @@ internal static class BindingScanner
 
     /// <summary>Visits every attribute of every element. Returns false when the document is not
     /// well-formed, which a scanner treats as nothing to say rather than as an error.</summary>
-    static bool ForEachAttribute(string content, Action<XmlReader, IXmlLineInfo, string> visit)
+    static bool ForEachAttribute(string content, Action<XmlReader, IXmlLineInfo, string?> visit)
     {
         try
         {
@@ -163,7 +184,7 @@ internal static class BindingScanner
                     continue;
 
                 // Read before the loop moves the reader onto an attribute, where it names that.
-                var tag = QualifiedTag(reader);
+                var tag = ResolveTag(reader);
                 while (reader.MoveToNextAttribute())
                     visit(reader, lineInfo, tag);
 
@@ -188,36 +209,58 @@ internal static class BindingScanner
         return semi < 0 ? body : body.Substring(0, semi);
     }
 
-    static bool CollectDeclarations(
-        string content,
-        Dictionary<string, string> prefixes,
-        Dictionary<string, string> namedElements
-    ) =>
+    // A prefix can be redeclared further in, so it resolves where the reader stands.
+    internal static string? NamespaceOf(XmlReader reader, string prefix) =>
+        reader.LookupNamespace(prefix) switch
+        {
+            null => prefix.Length == 0 ? PresentationNamespace : null,
+            "" or PresentationUri => PresentationNamespace,
+            var uri when uri.StartsWith(ClrNamespace, StringComparison.Ordinal) => ClrNamespaceOf(
+                uri
+            ),
+            _ => null,
+        };
+
+    const string PresentationUri = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+
+    const string CompatibilityUri = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+    static HashSet<string>? Ignorable(XmlReader reader, HashSet<string>? inherited)
+    {
+        if (reader.GetAttribute("Ignorable", CompatibilityUri) is not { } listed)
+            return inherited;
+
+        var ignorable = inherited is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(inherited, StringComparer.Ordinal);
+        foreach (var prefix in listed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (reader.LookupNamespace(prefix) is { } uri)
+                ignorable.Add(uri);
+        }
+
+        return ignorable;
+    }
+
+    static bool CollectDeclarations(string content, Dictionary<string, string> namedElements) =>
         ForEachAttribute(
             content,
             (reader, _, tag) =>
             {
-                if (
-                    reader.Prefix == "xmlns"
-                    && reader.Value.StartsWith(ClrNamespace, StringComparison.Ordinal)
-                )
-                {
-                    prefixes[reader.LocalName] = ClrNamespaceOf(reader.Value);
-                }
-                else if (reader.Name == "x:Name" || reader.Name == "Name")
-                {
-                    // Each template is its own name scope, so a name can repeat within a file.
-                    namedElements[reader.Value] =
-                        namedElements.TryGetValue(reader.Value, out var seen) && seen != tag
-                            ? ""
-                            : tag;
-                }
+                if (reader.Name != "x:Name" && reader.Name != "Name")
+                    return;
+
+                // Each template is its own name scope, so a name can repeat within a file.
+                var type = tag ?? "";
+                namedElements[reader.Value] =
+                    namedElements.TryGetValue(reader.Value, out var seen) && seen != type
+                        ? ""
+                        : type;
             }
         );
 
     static bool Walk(
         string content,
-        Dictionary<string, string> prefixes,
         Dictionary<string, string> namedElements,
         Walked walked,
         Dictionary<string, DataScope?> nameToScope,
@@ -245,18 +288,13 @@ internal static class BindingScanner
 
                 var isEmpty = reader.IsEmptyElement;
                 var parent = stack[stack.Count - 1];
-                var frame = BuildFrame(
-                    reader,
-                    parent,
-                    stack,
-                    prefixes,
-                    namedElements,
-                    walked,
-                    ordinal++
-                );
+                var frame = BuildFrame(reader, parent, stack, namedElements, walked, ordinal++);
 
                 if (collect && stack.Count >= 2)
                     RecordElementSource(reader, parent, stack[stack.Count - 2], walked);
+
+                if (collect && reader.LocalName.EndsWith(".DataContext", StringComparison.Ordinal))
+                    walked.Rebound.Add(parent.Ordinal);
 
                 if (walked.ElementSources.TryGetValue(frame.Ordinal, out var written))
                 {
@@ -285,7 +323,6 @@ internal static class BindingScanner
                     lineInfo,
                     ref frame,
                     stack,
-                    prefixes,
                     namedElements,
                     nameToScope,
                     collect,
@@ -307,7 +344,6 @@ internal static class BindingScanner
         XmlReader reader,
         Frame parent,
         List<Frame> stack,
-        Dictionary<string, string> prefixes,
         Dictionary<string, string> namedElements,
         Walked walked,
         int ordinal
@@ -322,10 +358,9 @@ internal static class BindingScanner
             Data = parent.Data,
             ParentData = parent.Data,
             Compile = parent.Compile,
+            Ignorable = Ignorable(reader, parent.Ignorable),
             TargetType = parent.TargetType,
-            SelfType = triggerLike
-                ? parent.TargetType
-                : ResolveTag(reader.Prefix, reader.LocalName, prefixes),
+            SelfType = triggerLike ? parent.TargetType : ResolveTag(reader),
         };
 
         if (triggerLike)
@@ -333,8 +368,7 @@ internal static class BindingScanner
             var redirect = reader.GetAttribute("TargetName") ?? reader.GetAttribute("SourceName");
             frame.PropertyOwner =
                 redirect is null ? parent.TargetType
-                : namedElements.TryGetValue(redirect, out var tag) && tag.Length > 0
-                    ? ResolveQualified(tag, prefixes)
+                : namedElements.TryGetValue(redirect, out var tag) && tag.Length > 0 ? tag
                 : null;
         }
 
@@ -358,14 +392,13 @@ internal static class BindingScanner
             // Content of any template but a ControlTemplate is templated by whatever presents it.
             case "DataTemplate":
             case "HierarchicalDataTemplate":
-                frame.Data = ResolveDataTemplateScope(reader, parent, prefixes);
+                frame.Data = ResolveDataTemplateScope(reader, parent);
                 frame.TargetType = null;
                 break;
             case "Style":
             case "ControlTemplate":
                 frame.Data = TemplatedScope(reader, parent);
-                frame.TargetType =
-                    ResolveTypeAttribute(reader, "TargetType", prefixes) ?? parent.TargetType;
+                frame.TargetType = ResolveTypeAttribute(reader, "TargetType") ?? parent.TargetType;
                 break;
             case "ItemsPanelTemplate":
                 frame.Data = TemplatedScope(reader, parent);
@@ -373,41 +406,39 @@ internal static class BindingScanner
                 break;
         }
 
+        // Stated on the element, it names what its own DataContext resolves to, redirect and all.
         if (reader.GetAttribute("DataType", ToolkitNamespace) is { } annotated)
-        {
-            frame.Data = ResolveTypeReference(annotated, prefixes) is { } resolved
+            frame.Data = ResolveTypeReference(reader, annotated) is { } resolved
                 ? new DataScope(resolved)
                 : null;
-        }
-
-        if (reader.GetAttribute("DataContext") is { } explicitContext)
-        {
-            var binding = XamlBindingMarkup.TryGetExtension(
-                explicitContext,
-                "Binding",
-                out var explicitBody
-            )
-                ? XamlBindingMarkup.ParseBinding(explicitBody)
-                : null;
-            frame.Data =
-                binding is not null
-                && binding.IsPlainDataContext
-                && frame.Data is not null
-                && XamlBindingMarkup.IsValidPath(binding.Path)
-                    ? frame.Data.Extend(binding.Path!, false)
-                    : null;
-        }
+        else if (walked.Rebound.Contains(ordinal))
+            frame.Data = null;
+        else if (reader.GetAttribute("DataContext") is { } explicitContext)
+            frame.Data = Redirected(frame.Data, explicitContext);
 
         return frame;
     }
 
-    static DataScope? ResolveDataTemplateScope(
-        XmlReader reader,
-        Frame parent,
-        Dictionary<string, string> prefixes
-    )
+    static DataScope? Redirected(DataScope? scope, string written)
     {
-        if (ResolveTypeAttribute(reader, "DataType", prefixes) is { } declared)
+        if (
+            scope is null
+            || !XamlBindingMarkup.TryGetExtension(written, "Binding", out var body)
+            || XamlBindingMarkup.ParseBinding(body) is not { RedirectsTyped: true } binding
+        )
+            return null;
+
+        if (binding.IsIdentity)
+            return scope;
+
+        return XamlBindingMarkup.IsValidPath(binding.Path)
+            ? scope.Extend(binding.Path!, false)
+            : null;
+    }
+
+    static DataScope? ResolveDataTemplateScope(XmlReader reader, Frame parent)
+    {
+        if (ResolveTypeAttribute(reader, "DataType") is { } declared)
             return new DataScope(declared);
 
         return reader.GetAttribute("x:Key") is null ? parent.PendingHost : null;
@@ -452,7 +483,6 @@ internal static class BindingScanner
         IXmlLineInfo lineInfo,
         ref Frame frame,
         List<Frame> stack,
-        Dictionary<string, string> prefixes,
         Dictionary<string, string> namedElements,
         Dictionary<string, DataScope?> nameToScope,
         bool collect,
@@ -468,6 +498,13 @@ internal static class BindingScanner
         while (reader.MoveToNextAttribute())
         {
             if (reader.Name.StartsWith("xmlns", StringComparison.Ordinal))
+                continue;
+
+            // A design-time value binds against the designer's DataContext, not the real one.
+            if (
+                reader.NamespaceURI == CompatibilityUri
+                || frame.Ignorable?.Contains(reader.NamespaceURI) == true
+            )
                 continue;
 
             var value = reader.Value;
@@ -527,13 +564,13 @@ internal static class BindingScanner
                 continue;
 
             EmitCheck(
+                reader,
                 XamlBindingMarkup.ParseBinding(body),
                 line,
                 column,
                 frame,
                 stack,
                 reader.LocalName == "DataContext",
-                prefixes,
                 namedElements,
                 nameToScope,
                 walked
@@ -552,13 +589,13 @@ internal static class BindingScanner
     }
 
     static void EmitCheck(
+        XmlReader reader,
         BindingExpression binding,
         int line,
         int column,
         Frame frame,
         List<Frame> stack,
         bool isDataContext,
-        Dictionary<string, string> prefixes,
         Dictionary<string, string> namedElements,
         Dictionary<string, DataScope?> nameToScope,
         Walked walked
@@ -594,12 +631,13 @@ internal static class BindingScanner
             else if (TrySplitDataContextHop(raw, out var ancestorTail))
             {
                 if (
-                    AncestorTypeName(relative, prefixes) is { } target
-                    && AncestorScope(stack, target, walked.Derives) is { } ancestorScope
+                    AncestorTypeName(reader, relative) is { } target
+                    && AncestorScope(stack, target, AncestorLevel(relative), walked.Derives)
+                        is { } ancestorScope
                 )
                     walked.Checks.Add(new BindingCheck(line, column, ancestorScope, ancestorTail));
             }
-            else if (AncestorTypeName(relative, prefixes) is { } ancestor)
+            else if (AncestorTypeName(reader, relative) is { } ancestor)
             {
                 walked.Checks.Add(new BindingCheck(line, column, new DataScope(ancestor), path));
             }
@@ -616,13 +654,9 @@ internal static class BindingScanner
                 )
                     walked.Checks.Add(new BindingCheck(line, column, namedScope, elementTail));
             }
-            else if (
-                namedElements.TryGetValue(binding.ElementName, out var tag)
-                && tag.Length > 0
-                && ResolveQualified(tag, prefixes) is { } elementType
-            )
+            else if (namedElements.TryGetValue(binding.ElementName, out var tag) && tag.Length > 0)
             {
-                walked.Checks.Add(new BindingCheck(line, column, new DataScope(elementType), path));
+                walked.Checks.Add(new BindingCheck(line, column, new DataScope(tag), path));
             }
             return;
         }
@@ -658,10 +692,11 @@ internal static class BindingScanner
     static DataScope? AncestorScope(
         List<Frame> stack,
         string targetType,
+        int level,
         Func<string, string, bool>? derives
     )
     {
-        for (var i = stack.Count - 1; i >= 0; i--)
+        for (var i = stack.Count - 1; i >= 0 && level > 0; i--)
         {
             if (stack[i].Breaks)
                 return null;
@@ -669,10 +704,34 @@ internal static class BindingScanner
             if (stack[i].SelfType is not { } self)
                 continue;
 
-            if (self == targetType || derives?.Invoke(self, targetType) == true)
+            if ((self == targetType || derives?.Invoke(self, targetType) == true) && --level == 0)
                 return stack[i].Data;
         }
         return null;
+    }
+
+    // Zero for anything the engine would refuse, which leaves the binding unchecked.
+    static int AncestorLevel(string relativeSource)
+    {
+        if (XamlMarkupParser.Parse(relativeSource) is not { } call)
+            return 0;
+
+        foreach (var argument in call.Named)
+        {
+            if (argument.Key == "AncestorLevel")
+                return
+                    argument.Value is string text
+                    && int.TryParse(
+                        text.Trim(),
+                        System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out var level
+                    )
+                    ? level
+                    : 0;
+        }
+
+        return 1;
     }
 
     static bool IsSourceProperty(string name) => name is "Content" or "ItemsSource" or "Header";
@@ -727,7 +786,7 @@ internal static class BindingScanner
     }
 
     // Re-parsed rather than scraped: AncestorType is as often {x:Type ui:Thing} as a bare name.
-    static string? AncestorTypeName(string relativeSource, Dictionary<string, string> prefixes)
+    static string? AncestorTypeName(XmlReader reader, string relativeSource)
     {
         if (XamlMarkupParser.Parse(relativeSource) is not { } call)
             return null;
@@ -745,57 +804,46 @@ internal static class BindingScanner
                         : null
                 );
 
-            return reference is null ? null : ResolveTypeReference(reference, prefixes);
+            return reference is null ? null : ResolveTypeReference(reader, reference);
         }
 
         return null;
     }
 
-    static string? ResolveTypeAttribute(
-        XmlReader reader,
-        string attribute,
-        Dictionary<string, string> prefixes
-    ) => reader.GetAttribute(attribute) is { } raw ? ResolveTypeReference(raw, prefixes) : null;
+    static string? ResolveTypeAttribute(XmlReader reader, string attribute) =>
+        reader.GetAttribute(attribute) is { } raw ? ResolveTypeReference(reader, raw) : null;
 
-    static string? ResolveTypeReference(string raw, Dictionary<string, string> prefixes)
+    static string? ResolveTypeReference(XmlReader reader, string raw)
     {
         var value = raw.Trim();
         if (XamlBindingMarkup.TryGetExtension(value, "x:Type", out var inner))
             value = inner.Trim();
 
-        return value.IndexOf('{') >= 0 ? null : ResolveQualified(value, prefixes);
+        return value.IndexOf('{') >= 0 ? null : ResolveQualified(reader, value);
     }
 
-    static string? ResolveQualified(string qualified, Dictionary<string, string> prefixes)
+    static string? ResolveQualified(XmlReader reader, string qualified)
     {
         var colon = qualified.IndexOf(':');
-        if (colon < 0)
-        {
-            return XamlMarkup.IsIdentifier(qualified)
-                ? PresentationNamespace + "." + qualified
-                : null;
-        }
-
-        var prefix = qualified.Substring(0, colon);
-        var name = qualified.Substring(colon + 1);
-        if (!XamlMarkup.IsIdentifier(name) || !prefixes.TryGetValue(prefix, out var ns))
+        var name = colon < 0 ? qualified : qualified.Substring(colon + 1);
+        if (
+            !XamlMarkup.IsIdentifier(name)
+            || NamespaceOf(reader, colon < 0 ? "" : qualified.Substring(0, colon)) is not { } ns
+        )
             return null;
 
-        return ns + "." + name;
+        return ns.Length == 0 ? name : ns + "." + name;
     }
 
-    static string? ResolveTag(string prefix, string localName, Dictionary<string, string> prefixes)
-    {
-        if (localName.IndexOf('.') >= 0)
-            return null;
-        return ResolveQualified(
-            prefix.Length == 0 ? localName : prefix + ":" + localName,
-            prefixes
-        );
-    }
-
-    static string QualifiedTag(XmlReader reader) =>
-        reader.Prefix.Length == 0 ? reader.LocalName : reader.Prefix + ":" + reader.LocalName;
+    static string? ResolveTag(XmlReader reader) =>
+        reader.LocalName.IndexOf('.') >= 0
+            ? null
+            : ResolveQualified(
+                reader,
+                reader.Prefix.Length == 0
+                    ? reader.LocalName
+                    : reader.Prefix + ":" + reader.LocalName
+            );
 
     static XmlReader CreateReader(string content) =>
         XmlReader.Create(
@@ -812,6 +860,7 @@ internal static class BindingScanner
         public string? PropertyOwner;
         public DataScope? PendingHost;
         public Dictionary<string, string>? Sources;
+        public HashSet<string>? Ignorable;
         public int Ordinal;
         public string? PropertyName;
         public bool Transparent;
@@ -863,11 +912,17 @@ internal sealed class DataScope
 /// <summary>One <c>{x:Static prefix:Type.Member}</c> reference and where it sits in the file.</summary>
 internal readonly struct StaticReference
 {
-    public StaticReference(int line, int column, string prefix, string typeName, string memberName)
+    public StaticReference(
+        int line,
+        int column,
+        string @namespace,
+        string typeName,
+        string memberName
+    )
     {
         Line = line;
         Column = column;
-        Prefix = prefix;
+        Namespace = @namespace;
         TypeName = typeName;
         MemberName = memberName;
     }
@@ -875,8 +930,7 @@ internal readonly struct StaticReference
     public int Line { get; }
     public int Column { get; }
 
-    /// <summary>Empty when the reference is unprefixed, which means the presentation namespace.</summary>
-    public string Prefix { get; }
+    public string Namespace { get; }
 
     public string TypeName { get; }
     public string MemberName { get; }

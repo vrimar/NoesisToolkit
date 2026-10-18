@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -103,10 +102,10 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
                 // Only Noesis element events route through the leaking static handler store.
                 if (
                     evt.ContainingType is null
-                    || evt.ContainingType.ContainingAssembly?.Name.StartsWith(
-                        "Noesis",
-                        StringComparison.Ordinal
-                    ) != true
+                    || !SymbolEqualityComparer.Default.Equals(
+                        evt.ContainingType.ContainingAssembly,
+                        dependencyObject.ContainingAssembly
+                    )
                     || !IsOrInheritsFrom(evt.ContainingType, dependencyObject)
                 )
                     return;

@@ -42,7 +42,7 @@ internal static class XamlBindingMarkup
         return false;
     }
 
-    /// <summary>The four members of a binding this analyzer judges, off the shared markup parse.</summary>
+    /// <summary>The members of a binding this analyzer judges, off the shared markup parse.</summary>
     public static BindingExpression ParseBinding(string body)
     {
         var result = new BindingExpression();
@@ -52,6 +52,7 @@ internal static class XamlBindingMarkup
         if (call.Positional.Count > 0)
             result.Path = call.Positional[0];
 
+        result.PositionalCalls = call.PositionalCalls.Count > 0;
         foreach (var argument in call.Named)
         {
             // Raw rather than the parsed tree: RelativeSource is judged as the text it was written as.
@@ -69,6 +70,14 @@ internal static class XamlBindingMarkup
                     break;
                 case "Source":
                     result.HasSource = true;
+                    break;
+                case "Mode":
+                    result.WritesSourceOnly = text.Trim() == "OneWayToSource";
+                    break;
+                case "UpdateSourceTrigger":
+                    break;
+                default:
+                    result.ShapesValue = true;
                     break;
             }
         }
@@ -97,6 +106,23 @@ internal sealed class BindingExpression
     public string? ElementName;
     public bool HasSource;
 
+    public bool PositionalCalls;
+
+    public bool WritesSourceOnly;
+
+    public bool ShapesValue;
+
     public bool IsPlainDataContext =>
         Path is not null && RelativeSource is null && ElementName is null && !HasSource;
+
+    // The rule the compiler types a redirected DataContext by.
+    public bool RedirectsTyped =>
+        RelativeSource is null
+        && ElementName is null
+        && !HasSource
+        && !PositionalCalls
+        && !WritesSourceOnly
+        && !ShapesValue;
+
+    public bool IsIdentity => Path is null || Path.Trim() is "" or ".";
 }

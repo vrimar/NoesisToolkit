@@ -89,9 +89,22 @@ namespace Sample.Ui
         public string Label { get; set; } = "";
     }
 
+    [global::Noesis.ContentProperty("Token")]
     public class BrushExtension
     {
         public BadgeTone Token { get; set; }
+    }
+
+    [global::Noesis.ContentProperty("Key")]
+    public class LabelExtension
+    {
+        public string Key { get; set; } = "";
+        public BadgeTone Tone { get; set; }
+    }
+
+    public class Shortcut
+    {
+        public BadgeTone Key { get; set; }
     }
 
     public class ListHost { }

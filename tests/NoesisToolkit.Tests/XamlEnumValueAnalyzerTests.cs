@@ -30,6 +30,12 @@ public class XamlEnumValueAnalyzerTests
     }
 
     [Test]
+    public async Task AMemberInAnotherCase_IsNotReported()
+    {
+        await Assert.That(await Values("""<ui:Badge Tone="muted" />""")).IsEmpty();
+    }
+
+    [Test]
     public async Task NonEnumProperty_IsNotReported()
     {
         await Assert
@@ -60,6 +66,31 @@ public class XamlEnumValueAnalyzerTests
 
         await Assert.That(diagnostics.Length).IsEqualTo(1);
         await Assert.That(diagnostics[0].GetMessage()).Contains("Dangerr");
+    }
+
+    [Test]
+    public async Task MarkupExtensionArgument_IsCheckedAgainstItsContentProperty()
+    {
+        await Assert.That(await Values("""<ui:Badge Label="{ui:Label Greeting}" />""")).IsEmpty();
+    }
+
+    [Test]
+    public async Task ADirective_IsNotCheckedAsTheElementsOwnProperty()
+    {
+        await Assert.That(await Values("""<ui:Shortcut x:Key="save" Key="Muted" />""")).IsEmpty();
+    }
+
+    [Test]
+    public async Task APrefix_ResolvesAgainstTheDeclarationInScope()
+    {
+        var diagnostics = await Values(
+            """
+            <StackPanel xmlns:ui="clr-namespace:Sample.Social" />
+            <ui:Badge Tone="Mutedd" />
+            """
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
     }
 
     [Test]
