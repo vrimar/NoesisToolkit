@@ -1,0 +1,11 @@
+<UserControl
+  x:Class="Sample.StaticLoaderHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+>
+  <StackPanel>
+    <Button Click="OnGo" Tag="{x:Static ui:Mode.On}" />
+    <TextBlock Text="{x:Static ui:Hints.Hint}" />
+  </StackPanel>
+</UserControl>

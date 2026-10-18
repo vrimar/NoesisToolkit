@@ -41,6 +41,15 @@ public class XamlStaticAnalyzerTests
     }
 
     [Test]
+    public async Task ManagedStatic_IsReported()
+    {
+        var diagnostics = await Statics("""<Border Tag="{x:Static ui:Hints.Hint}" />""");
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("parser cannot read");
+    }
+
+    [Test]
     public async Task RenamedType_IsReported()
     {
         var diagnostics = await Statics(

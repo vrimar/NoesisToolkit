@@ -7,5 +7,7 @@
   <StackPanel>
     <TextBlock Text="{x:Static ui:Hints.Hint}" />
     <TextBlock Tag="{x:Static ui:Mode.On}" />
+    <TextBlock Tag="{x:Static Colors.Red}" />
+    <TextBlock Tag="{x:Static ApplicationCommands.Copy}" />
   </StackPanel>
 </UserControl>

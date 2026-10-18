@@ -59,14 +59,9 @@ sealed partial class XamlEmitter
                     return Fail($"{{x:Static {reference}}} names no member");
                 }
 
-                if (
-                    owner.TypeKind != TypeKind.Enum
-                    && owner.ContainingAssembly?.Name != "Noesis.GUI"
-                )
+                if (ParserReadsUnset(owner, member))
                 {
-                    return Fail(
-                        $"{{x:Static {reference}}} names a managed static, which Noesis' parser cannot read; bind it instead"
-                    );
+                    return Fail(UnreadStatic(reference));
                 }
 
                 return $"{XamlTypeResolver.Fqn(owner)}.{member}";
@@ -89,6 +84,23 @@ sealed partial class XamlEmitter
                     : null;
         }
     }
+
+    static bool ParserReadsUnset(INamedTypeSymbol owner, string member) =>
+        !NoesisSlots.ParserReadsStatic(
+            owner.ToDisplayString(),
+            owner.TypeKind == TypeKind.Enum,
+            owner.ContainingAssembly?.Name,
+            member,
+            owner
+                .GetMembers(member)
+                .Any(m =>
+                    ((m as IPropertySymbol)?.Type ?? (m as IFieldSymbol)?.Type) is { } type
+                    && XamlTypeResolver.DerivesFrom(type, "global::Noesis.RoutedCommand")
+                )
+        );
+
+    static string UnreadStatic(string reference) =>
+        $"{{x:Static {reference}}} names a static Noesis' parser cannot read; bind it instead";
 
     static bool IsCustomExtension(MarkupCall call) =>
         call.Name

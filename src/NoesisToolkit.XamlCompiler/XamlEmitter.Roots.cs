@@ -1055,13 +1055,15 @@ sealed partial class XamlEmitter
                 if (ResolveTypeSymbol(element, call.Positional.FirstOrDefault() ?? "") is { } type)
                     RootNamedType(type);
                 return;
+            case "x:Static":
+            case "Static":
+                ReportParsedStatic(element, call);
+                return;
             case "TemplateBinding":
             case "StaticResource":
             case "DynamicResource":
             case "x:Null":
             case "Null":
-            case "x:Static":
-            case "Static":
                 return;
         }
 
@@ -1219,6 +1221,24 @@ sealed partial class XamlEmitter
             return;
 
         LeftNative.Add(SiteOf(element, $"binding stays native: {_parsedBy}"));
+    }
+
+    void ReportParsedStatic(XElement element, MarkupCall call)
+    {
+        if (_parsedBy is null || (_attribute is { } attribute && _heldBack.Contains(attribute)))
+            return;
+
+        var reference = call.Positional.FirstOrDefault() ?? "";
+        var dot = reference.LastIndexOf('.');
+        if (
+            dot > 0
+            && ResolveTypeSymbol(element, reference.Substring(0, dot)) is { } owner
+            && ParserReadsUnset(owner, reference.Substring(dot + 1))
+        )
+        {
+            var site = SiteOf(element, UnreadStatic(reference));
+            Errors.Add(site.Message, (site.Line, site.Column));
+        }
     }
 
     MarkupSite SiteOf(XElement element, string message)

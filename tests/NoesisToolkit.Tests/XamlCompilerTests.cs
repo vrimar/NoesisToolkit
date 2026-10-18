@@ -1266,15 +1266,54 @@ public partial class XamlCompilerTests
         """;
 
     [Test]
-    public async Task An_x_Static_naming_a_managed_static_is_refused_and_an_enum_member_is_not()
+    public async Task An_x_Static_the_parser_reads_unset_is_refused_and_one_it_reads_is_not()
     {
         var run = Run(["StaticManaged.xaml"], [Host("StaticManagedHost"), StaticOwners]);
 
-        var refused = run
+        var refused = RefusedStatics(run);
+        await Assert.That(refused.Count).IsEqualTo(2);
+        await Assert.That(refused.Any(m => m.Contains("ui:Hints.Hint"))).IsTrue();
+        await Assert.That(refused.Any(m => m.Contains("Colors.Red"))).IsTrue();
+    }
+
+    static List<string> RefusedStatics(GeneratorRun run) =>
+        run
             .GeneratorDiagnostics.Where(d => d.Id == "NTK1001")
             .Select(d => d.GetMessage())
             .Where(m => m.Contains("x:Static"))
             .ToList();
+
+    [Test]
+    public async Task A_managed_x_Static_in_an_element_left_to_the_parser_is_refused()
+    {
+        var run = Run(["StaticParsed.xaml"], [Host("StaticParsedHost"), StaticOwners, BareControl]);
+
+        var refused = RefusedStatics(run);
+        await Assert.That(refused).HasSingleItem();
+        await Assert.That(refused[0]).Contains("ui:Hints.Hint");
+    }
+
+    [Test]
+    public async Task A_managed_x_Static_in_a_document_the_loader_parses_is_refused()
+    {
+        var run = Run(
+            ["StaticLoader.xaml"],
+            [
+                """
+                namespace Sample;
+
+                public partial class StaticLoaderHost : global::Noesis.UserControl
+                {
+                    public StaticLoaderHost() => InitializeComponent();
+
+                    void OnGo(object sender, System.EventArgs e) { }
+                }
+                """,
+                StaticOwners,
+            ]
+        );
+
+        var refused = RefusedStatics(run);
         await Assert.That(refused).HasSingleItem();
         await Assert.That(refused[0]).Contains("ui:Hints.Hint");
     }

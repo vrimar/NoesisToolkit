@@ -297,10 +297,12 @@ sealed class ErrorList(Func<(int Line, int Column)> site) : IEnumerable<string>
 
     public IReadOnlyList<(int Line, int Column)> Sites => _sites;
 
-    public void Add(string message)
+    public void Add(string message) => Add(message, site());
+
+    public void Add(string message, (int Line, int Column) at)
     {
         _messages.Add(message);
-        _sites.Add(site());
+        _sites.Add(at);
     }
 
     public void AddRange(IEnumerable<string> messages)

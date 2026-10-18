@@ -13,6 +13,11 @@ namespace Sample.Social
 namespace Sample.Ui
 {
 
+    public static class Hints
+    {
+        public static string Hint => "hint";
+    }
+
     public class ItemDef
     {
         public string Family { get; set; } = "";

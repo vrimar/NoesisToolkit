@@ -73,7 +73,9 @@ The generated surface, resource timing, trimming and the event-handler fallback 
 
 Noesis resolves binding paths, namespaces and `x:Static` references reflectively at load and only
 logs when it misses, so a rename that skips the XAML renders nothing and leaves no trace. These
-rules move that failure to the build.
+rules move that failure to the build. The parser reads an `x:Static` only on an enum, a Noesis
+routed command or a Noesis style key, and not every Noesis enum; a static of an application class,
+or of `Colors` or `FontWeights`, loads unset, so `NTK2003` reports it too.
 
 A binding is only checkable where the type its DataContext resolves to is known. A `DataTemplate`
 carrying a `DataType` states it; a keyed template, a bare `Style` or a template with no host does

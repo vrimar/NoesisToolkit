@@ -56,13 +56,14 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
 
     private static readonly DiagnosticDescriptor UnresolvedStaticRule = new(
         UnresolvedStaticId,
-        title: "x:Static does not resolve",
-        messageFormat: "'{0}' does not resolve; the target receives null instead",
+        title: "x:Static loads null",
+        messageFormat: "'{0}' {1}; the target receives null instead",
         category: "Reliability",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Noesis resolves x:Static reflectively at load time and only logs when it misses, "
-            + "so a renamed member leaves the target holding null rather than failing the build."
+        description: "Noesis resolves x:Static at load time and only logs when it misses, so a renamed "
+            + "member, or a static of a managed type, which the parser cannot read, leaves the "
+            + "target holding null rather than failing the build."
     );
 
     private static readonly DiagnosticDescriptor UndeclaredContextRule = new(
@@ -202,16 +203,37 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             return;
 
         var type = TypeLookup.ByName(context.Compilation, $"{@namespace}.{reference.TypeName}");
-        if (type is not null && FindStatic(type, reference.MemberName) is not null)
+        var member = type is null ? null : FindStatic(type, reference.MemberName);
+        if (
+            member is not null
+            && NoesisSlots.ParserReadsStatic(
+                type!.ToDisplayString(),
+                type.TypeKind == TypeKind.Enum,
+                type.ContainingAssembly?.Name,
+                reference.MemberName,
+                IsCommand(context.Compilation, member)
+            )
+        )
             return;
 
         context.ReportDiagnostic(
             Diagnostic.Create(
                 UnresolvedStaticRule,
                 LocationOf(context.AdditionalFile.Path, reference.Line, reference.Column, text),
-                $"{@namespace}.{reference.TypeName}.{reference.MemberName}"
+                $"{@namespace}.{reference.TypeName}.{reference.MemberName}",
+                member is not null
+                    ? "names a static Noesis' parser cannot read; bind it instead"
+                    : "does not resolve"
             )
         );
+    }
+
+    private static bool IsCommand(Compilation compilation, ISymbol member)
+    {
+        var type = (member as IPropertySymbol)?.Type ?? (member as IFieldSymbol)?.Type;
+        return type is not null
+            && TypeLookup.ByName(compilation, "Noesis.RoutedCommand") is { } command
+            && TypeWalk.InheritsFrom(type, command);
     }
 
     private static void VerifyEnumValue(

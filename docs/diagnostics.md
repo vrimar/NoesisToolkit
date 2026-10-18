@@ -14,7 +14,7 @@
 | `NTK1009` | Warning | a referenced assembly built by an older toolkit shares this assembly's generated namespace, so its resources are not chained |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
-| `NTK2003` | Error | `x:Static` does not resolve |
+| `NTK2003` | Error | `x:Static` does not resolve, or names a static Noesis' parser loads unset |
 | `NTK2004` | Error | binding has no declared DataContext type, in a document marked `ntk:CompileBindings` |
 | `NTK2005` | Error | enum-valued attribute names a member the enum does not declare |
 | `NTK2101` | Warning | Noesis element event subscription is never unsubscribed |

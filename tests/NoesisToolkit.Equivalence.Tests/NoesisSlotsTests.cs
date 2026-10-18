@@ -6,6 +6,17 @@ using TUnit.Assertions.Enums;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
+public static class ParserStatics
+{
+    public static string Hint => "hint";
+}
+
+public enum ParserEnum
+{
+    First,
+    Second,
+}
+
 // Facts about one Noesis build: an upgrade that moves one fails here.
 [NotInParallel("Noesis")]
 public sealed class NoesisSlotsTests
@@ -117,6 +128,66 @@ public sealed class NoesisSlotsTests
     }
 
     sealed class RegistrationProbe : DependencyObject { }
+
+    [Test]
+    public async Task ParserReadsStatic_is_every_x_Static_the_parser_loads()
+    {
+        NoesisRuntime.Start();
+
+        var noesis = typeof(DependencyObject).Assembly;
+        var statics = noesis
+            .GetExportedTypes()
+            .Where(t => t.Namespace == "Noesis" && !t.IsNested)
+            .Append(typeof(ParserStatics))
+            .Append(typeof(ParserEnum))
+            .SelectMany(owner =>
+                owner
+                    .GetMembers(
+                        BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly
+                    )
+                    .Where(m =>
+                        m is FieldInfo or PropertyInfo { GetMethod: not null } && !IsIndexer(m)
+                    )
+                    .Select(m =>
+                        (
+                            Owner: owner,
+                            m.Name,
+                            Type: (m as FieldInfo)?.FieldType ?? ((PropertyInfo)m).PropertyType
+                        )
+                    )
+            )
+            .Where(s => !s.Name.Contains("value__", StringComparison.Ordinal))
+            .ToList();
+
+        var wrong = new List<string>();
+        foreach (var (owner, member, type) in statics)
+        {
+            var prefix = owner.Assembly == noesis ? "" : "t:";
+            var border = (Border)
+                GUI.ParseXaml(
+                    "<Border xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' "
+                        + "xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' "
+                        + $"xmlns:t='clr-namespace:{owner.Namespace};assembly={owner.Assembly.GetName().Name}' "
+                        + $"Tag='{{x:Static {prefix}{owner.Name}.{member}}}' />"
+                );
+
+            var expected = NoesisSlots.ParserReadsStatic(
+                owner.FullName!,
+                owner.IsEnum,
+                owner.Assembly.GetName().Name,
+                member,
+                typeof(RoutedCommand).IsAssignableFrom(type)
+            );
+            if (border.Tag is not null != expected)
+                wrong.Add($"{owner.Name}.{member}");
+        }
+
+        await Assert.That(statics.Count(s => s.Owner.IsEnum)).IsGreaterThan(0);
+        await Assert.That(wrong).IsEmpty();
+    }
+
+    static bool IsIndexer(MemberInfo member) =>
+        member is PropertyInfo property && property.GetIndexParameters().Length > 0;
 
     static Type Underlying(Type type) => Nullable.GetUnderlyingType(type) ?? type;
 

@@ -81,4 +81,69 @@ static class NoesisSlots
 
     internal static bool IsUnregistrable(string fullName) =>
         Array.IndexOf(Unregistrable, fullName) >= 0;
+
+    // An x:Static the parser loads unset, logging nothing: every member of a type, or one member.
+    internal static readonly string[] UnreadStatics =
+    {
+        "Noesis.BeforeSetAction",
+        "Noesis.BlendMode",
+        "Noesis.CaptureMode",
+        "Noesis.ClockState.Finished",
+        "Noesis.ClockState.Paused",
+        "Noesis.CursorType",
+        "Noesis.DispatcherPriority",
+        "Noesis.DragAction",
+        "Noesis.DragDropEffects",
+        "Noesis.DragDropKeyStates",
+        "Noesis.FocusNavigationDirection",
+        "Noesis.FrameworkPropertyMetadataOptions",
+        "Noesis.GeneratorDirection",
+        "Noesis.GeneratorStatus",
+        "Noesis.GridUnitType",
+        "Noesis.HitTestFilterBehavior",
+        "Noesis.HitTestResultBehavior",
+        "Noesis.HoldingState",
+        "Noesis.Key",
+        "Noesis.KeyStates",
+        "Noesis.KeyTimeType",
+        "Noesis.LogLevel",
+        "Noesis.MinMagFilter",
+        "Noesis.MipFilter",
+        "Noesis.MouseButton",
+        "Noesis.MouseButtonState",
+        "Noesis.PlatformID",
+        "Noesis.PropertyAccess",
+        "Noesis.RenderFlags",
+        "Noesis.RiveSourceInputType",
+        "Noesis.RoutingStrategy",
+        "Noesis.ScrollEventType",
+        "Noesis.Slider",
+        "Noesis.StencilMode",
+        "Noesis.TextureFormat",
+        "Noesis.WrapMode",
+        "Noesis.XamlDependencyType",
+    };
+
+    // Members of a type listed unread that the parser reads all the same.
+    internal static readonly string[] ReadStatics = { "Noesis.Key.None" };
+
+    internal static bool ParserReadsStatic(
+        string owner,
+        bool ownerIsEnum,
+        string? ownerAssembly,
+        string member,
+        bool memberIsCommand
+    )
+    {
+        var full = owner + "." + member;
+        if (Array.IndexOf(ReadStatics, full) >= 0)
+            return true;
+
+        if (Array.IndexOf(UnreadStatics, owner) >= 0 || Array.IndexOf(UnreadStatics, full) >= 0)
+            return false;
+
+        return ownerIsEnum
+            || ownerAssembly == "Noesis.GUI"
+                && (memberIsCommand || member.EndsWith("StyleKey", StringComparison.Ordinal));
+    }
 }
