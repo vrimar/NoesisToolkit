@@ -551,6 +551,7 @@ public partial class XamlCompilerTests
 
         await Assert.That(run.GeneratorDiagnostics.Where(d => d.Id == "NTK1001")).IsEmpty();
         await Assert.That(run.Source("Misrouted")).Contains("Matrix=\\\"1,0,0,1,5,5\\\"");
+        await Assert.That(run.Source("Misrouted")).Contains("Value=\\\"1,2\\\"");
     }
 
     [Test]

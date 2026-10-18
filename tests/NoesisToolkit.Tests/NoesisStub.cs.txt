@@ -490,6 +490,17 @@ public class MatrixTransform : DependencyObject
     public Matrix Matrix { get => default; set { } }
 }
 
+public struct VirtualizationCacheLength { }
+
+public abstract class VirtualizingPanel : Panel
+{
+    public static readonly DependencyProperty CacheLengthProperty = DependencyProperty.RegisterAttached("CacheLength", typeof(VirtualizationCacheLength), typeof(VirtualizingPanel), new FrameworkPropertyMetadata());
+
+    public static VirtualizationCacheLength GetCacheLength(DependencyObject element) => default;
+
+    public static void SetCacheLength(DependencyObject element, VirtualizationCacheLength value) { }
+}
+
 public class FontFamily
 {
     public FontFamily() { }

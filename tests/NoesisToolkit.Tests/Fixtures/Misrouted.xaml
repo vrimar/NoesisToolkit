@@ -9,6 +9,9 @@
 >
   <UserControl.Resources>
     <MatrixTransform x:Key="Shifted" Matrix="1,0,0,1,5,5" />
+    <Style x:Key="Cached" TargetType="ui:Gutter">
+      <Setter Property="VirtualizingPanel.CacheLength" Value="1,2" />
+    </Style>
   </UserControl.Resources>
   <StackPanel>
     <ui:Gutter x:Name="Spaced" Span="10" />

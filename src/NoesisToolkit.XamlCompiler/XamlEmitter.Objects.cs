@@ -81,7 +81,11 @@ sealed partial class XamlEmitter
         if (HasUnassignableSlot(element, symbol) || HoldsLiveReference(element, symbol))
             return EmitParserFallback(element, expected);
 
-        if (NeedsParsedSetter(element, symbol) || SetterNamesWrapperless(element, symbol))
+        if (
+            NeedsParsedSetter(element, symbol)
+            || SetterNamesWrapperless(element, symbol)
+            || SetterValueUnconvertible(element, symbol)
+        )
             return EmitSetterProbe(element);
 
         if (

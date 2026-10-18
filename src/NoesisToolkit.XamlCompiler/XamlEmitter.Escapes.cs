@@ -330,12 +330,50 @@ sealed partial class XamlEmitter
                 && resolver.FindAttachedSetter(owner, name.Substring(dot + 1)) is null
                 && Wrapperless(owner, name.Substring(dot + 1), resolver);
 
-        var styled = element.Attribute("TargetName")?.Value is { } named
-            ? LookupName(named)
-            : StyleTarget;
+        var styled = StyledBy(element);
         return styled is not null
             && resolver.FindAttachedValueType(styled, name) is null
             && Wrapperless(styled, name, resolver);
+    }
+
+    INamedTypeSymbol? StyledBy(XElement setter) =>
+        setter.Attribute("TargetName")?.Value is { } named ? LookupName(named) : StyleTarget;
+
+    bool SetterValueUnconvertible(XElement element, INamedTypeSymbol type) =>
+        type.Name == "Setter"
+        && SetterLiteral(element) is not null
+        && SetterValueType(element) is { } valueType
+        && Unconvertible(valueType);
+
+    static string? SetterLiteral(XElement setter)
+    {
+        if (setter.Attribute("Value")?.Value is { } value)
+            return XamlMarkupParser.IsMarkup(value) ? null : value;
+
+        return
+            setter
+                .Elements()
+                .FirstOrDefault(e => e.Name.LocalName.EndsWith(".Value", StringComparison.Ordinal))
+                is { HasElements: false } child
+            ? child.Value
+            : null;
+    }
+
+    ITypeSymbol? SetterValueType(XElement setter)
+    {
+        if (setter.Attribute("Property")?.Value.Trim() is not { } name)
+            return null;
+
+        var dot = name.LastIndexOf('.');
+        if (dot > 0)
+            return ResolveTypeSymbol(setter, name.Substring(0, dot)) is { } owner
+                ? AttachedValueTypeOf(owner, name.Substring(dot + 1))
+                : null;
+
+        return StyledBy(setter) is { } styled
+            ? resolver.FindProperty(styled, name)?.Type
+                ?? resolver.FindAttachedValueType(styled, name)
+            : null;
     }
 
     static bool UnassignableSlot(IPropertySymbol? property, string value) =>

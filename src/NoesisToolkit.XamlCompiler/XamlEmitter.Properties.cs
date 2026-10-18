@@ -283,14 +283,7 @@ sealed partial class XamlEmitter
                 return Fail($"could not resolve Setter owner '{ownerReference}'");
             }
 
-            var setter = resolver.FindAttachedSetter(owner, propertyName);
-            valueType = setter?.Parameters[1].Type;
-
-            if (setter is null)
-            {
-                var instance = resolver.FindProperty(owner, propertyName);
-                valueType = instance?.Type;
-            }
+            valueType = AttachedValueTypeOf(owner, propertyName);
 
             if (resolver.FindDependencyPropertyOwner(owner, propertyName) is not { } slotOwner)
             {
@@ -326,6 +319,10 @@ sealed partial class XamlEmitter
             resolver.FindDependencyPropertyOwner(styled, name) ?? property.ContainingType;
         return SlotReference(declaring, name);
     }
+
+    ITypeSymbol? AttachedValueTypeOf(ITypeSymbol owner, string property) =>
+        resolver.FindAttachedSetter(owner, property)?.Parameters[1].Type
+        ?? resolver.FindProperty(owner, property)?.Type;
 
     void ApplyAttachedAttribute(
         XElement element,
