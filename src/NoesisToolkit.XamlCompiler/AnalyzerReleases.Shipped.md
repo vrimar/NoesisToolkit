@@ -44,3 +44,11 @@ NTK1007 | NoesisToolkit | Hidden | A binding stays native
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1008 | NoesisToolkit | Warning | A name the engine is handed as text does not exist
+
+## Release 0.6.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1009 | NoesisToolkit | Warning | A referenced assembly's resources cannot be chained
