@@ -5,4 +5,4 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
-NTK1008 | NoesisToolkit | Warning | A name the engine is handed as text does not exist
+NTK1009 | NoesisToolkit | Warning | A referenced assembly's resources cannot be chained

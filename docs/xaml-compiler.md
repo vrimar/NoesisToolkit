@@ -19,10 +19,14 @@ Per document:
   their separators, such as `Ui/Buttons.xaml` and `UiButtons.xaml`, share one, which `NTK0001` reports.
 - an `x:Class` document contributes `InitializeComponent()`, one accessor per `x:Name` in the root's own
   name scope, and — unless it wires event handlers in markup — a `BuildXamlTree()` that constructs the
-  tree directly
+  tree directly. An accessor is `public` unless `x:FieldModifier` narrows it or the element's type is
+  less visible than the class. A `Style` opens no name scope of its own: a name inside one belongs to
+  the scope around it, as the engine registers it
 
-Referenced assemblies that also ran the compiler are discovered through their `XamlResources` type and
-chained, so `Resolve`, `SharedByKey` and `Flush` reach across assembly boundaries.
+Referenced assemblies that also ran the compiler are discovered through the
+`XamlGenerated.Links.A_<assembly>` type each one declares, its assembly name spelled out in full, and
+chained, so `Resolve`, `SharedByKey` and `Flush` reach across assembly boundaries even where two
+assembly names share one generated namespace.
 
 ## Resource timing
 

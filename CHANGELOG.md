@@ -3,6 +3,70 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`NTK1009` warns when a referenced assembly cannot be chained**: one built by an older toolkit
+  whose generated namespace is this assembly's own, so its resources would be silently out of reach.
+
+### Fixed
+
+- **More of what the parser builds is built the same way**: text content of a `TextBox` or an item
+  collection, a type's content property over a text constructor, `{}` kept literal in element text,
+  an image's `UriSource` resolved against the document, `1,5` read as no number, an unkeyed
+  `ControlTemplate` dropped, a resource of another type leaving a slot unset instead of throwing, a
+  missing `StaticResource` in an `x:Class` root skipped, a `DynamicResource` on a brush kept live by
+  leaving its element to the parser, and a pack uri handed to the provider as written.
+- **An ancestor binding is typed by the `AncestorType` it states**, since the walk can land on a
+  container the markup never shows.
+- **A linked XAML file is named by its `Link`**, two files whose paths differ only in case both
+  generate, and an `x:Name` or hand-written `InitializeComponent` that collides with the class is
+  reported instead of failing in generated code.
+- **Design-time elements and unknown-namespace attributes are dropped as the parser drops them**, and
+  the binding analyzer no longer checks design-time bindings or rejects an enum member written in
+  another case.
+
+- **Design-time markup stays design-time.** An attribute in a namespace `mc:Ignorable` lists, such as
+  `d:DataContext` or `d:Width`, is dropped as the parser drops it, rather than applied as the real
+  property or failing the build; an attribute in any other foreign namespace is reported as dead markup.
+- **An enum written as an element, `<Visibility>Collapsed</Visibility>`, holds its member** rather than
+  the enum's zero value; a value that does not convert in an element or property-element form is an
+  error, as the attribute form is.
+- **A compiled binding no longer steps through a dependency object**, whose properties raise nothing it
+  can watch: `{Binding Accent.Opacity}` through a brush stays native and keeps updating.
+- **An app whose name differs from a referenced library's only in punctuation starts**: the two shared
+  one generated namespace, and the app's resource chain called itself until the stack ran out.
+- **Generated code-behind compiles** for an `x:Name` on an internal control, a name that hides an
+  inherited member such as `Content`, names `ok` and `_ok` side by side, and a file name holding `"`.
+  `x:FieldModifier` narrows an accessor, and an `x:ClassModifier` that disagrees with the class is an
+  error. An `x:Class` `ResourceDictionary` builds its entries into itself.
+- **An element left to the parser keeps its resource attributes and template triggers**, a resource
+  keyed by markup carries the declarations it names, and an unresolved element's plain values no longer
+  read as event handlers.
+- **`<StaticResource>` written as an element resolves like the attribute form**, and a struct in a
+  `Setter.Value` keeps a member read from a resource settled later.
+- **Values the compiler emitted as C# that did not compile are converted or refused**: infinities and
+  out-of-range floats, cursor names and cursor files, user routed events, setters naming an attached
+  property that does not exist, a type another assembly keeps internal, and a generic type written
+  without arguments. A `DateTime` parses in the invariant culture.
+- **A compiled binding refuses a getter it cannot reach, a ref struct and a C# keyword it would have
+  misspelled**, and an attached enum target whose setter takes a narrower element.
+- **An Interactivity `DataTrigger` binds its `Value`**, and an `ntk:CompileBindings="False"` on a Style
+  keeps that style's triggers native.
+- **A negative enum member writes through a compiled binding** instead of throwing, and binding a
+  template's compiled triggers again stops the set they replace.
+- **NTK1001 points at the markup and names the project-relative file**; an `x:Class` that does not
+  resolve says so; two documents claiming one class are reported. An unresolved stated type hides only
+  the diagnostics that depend on it, and the coverage survey files every refusal and trigger under its
+  real reason.
+- **The binding analyzer answers as the compiler does**: an identity `DataContext="{Binding}"` keeps its
+  scope, a property-element `DataContext` leaves it unknown, `ntk:DataType` states its own element's
+  context, a prefix resolves where it is declared, `AncestorLevel` is counted, a markup extension's
+  argument is checked against its content property, and a directive such as `x:Key` is not an enum value.
+- **`NTK2101` judges only the Noesis runtime's own events**, and `NTK2102` reports a command a getter
+  hands out as well as one the control stores.
+
 ## [0.5.8] - 2026-10-16
 
 ### Added

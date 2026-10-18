@@ -91,6 +91,18 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             + "one to the engine, with the reason, for an audit of what is left."
     );
 
+    static readonly DiagnosticDescriptor Unchained = new(
+        "NTK1009",
+        "A referenced assembly's resources cannot be chained",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A referenced assembly compiled its XAML into the generated namespace this one "
+            + "uses, with a toolkit too old to declare the link that tells the two apart, so its "
+            + "Resolve, SharedByKey and Flush cannot be reached from here."
+    );
+
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
     static readonly DiagnosticDescriptor Crashed = new(
         "NTK1003",
@@ -116,16 +128,25 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         var files = context
             .AdditionalTextsProvider.Combine(options)
             .Where(pair => pair.Right.Matches(pair.Left.Path))
-            .Select((pair, ct) => (pair.Left.Path, Text: pair.Left.GetText(ct)?.ToString()))
+            .Select((pair, _) => pair.Left)
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .Select(
+                (pair, ct) =>
+                    (
+                        pair.Left.Path,
+                        Text: pair.Left.GetText(ct)?.ToString(),
+                        Link: LinkOf(pair.Right.GetOptions(pair.Left))
+                    )
+            )
             .WithTrackingName(DocumentsStep);
 
         var compiled = files
             .Combine(context.CompilationProvider)
             .Combine(options)
             .Select(
-                (pair, _) =>
+                (pair, ct) =>
                 {
-                    var (((path, text), compilation), opts) = pair;
+                    var (((path, text, link), compilation), opts) = pair;
                     if (
                         string.IsNullOrWhiteSpace(text)
                         || compilation.GetTypeByMetadataName("Noesis.GUI") is null
@@ -143,7 +164,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
                     return Guarded(
                         path,
-                        () => CompileDocument(path, text!, compilation, opts, runtime)
+                        () => CompileDocument(path, link, text!, compilation, opts, runtime, ct)
                     );
                 }
             );
@@ -208,9 +229,13 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 Diagnostic.Create(Survey, null, $"DEAD {document.File} :: {dead}")
             );
 
-        foreach (var error in document.Errors)
+        for (var i = 0; i < document.Errors.Count; i++)
             spc.ReportDiagnostic(
-                Diagnostic.Create(Unsupported, null, $"{document.File} :: {error}")
+                Diagnostic.Create(
+                    Unsupported,
+                    i < document.ErrorSites.Count ? document.ErrorSites[i]?.ToLocation() : null,
+                    $"{document.File} :: {document.Errors[i]}"
+                )
             );
 
         foreach (var unrooted in document.Unrooted)
@@ -242,6 +267,9 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     $"{document.File} :: {unresolved.Message}"
                 )
             );
+
+        foreach (var unchained in document.Unchained)
+            spc.ReportDiagnostic(Diagnostic.Create(Unchained, null, unchained));
 
         foreach (var native in document.LeftNative)
             spc.ReportDiagnostic(
@@ -280,6 +308,23 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         var tally = new BindingTally();
 
         var dictionaries = new List<string>();
+        var errors = new List<string>();
+        var errorSites = new List<LocationInfo?>();
+        foreach (var claimed in all.Where(d => d.RootClass is not null).GroupBy(d => d.RootClass))
+        {
+            if (claimed.Count() < 2)
+                continue;
+
+            errors.Add(
+                $"x:Class '{claimed.Key}' is declared by "
+                    + string.Join(" and ", claimed.Select(d => d.File))
+                    + "; each partial class takes one document"
+            );
+            errorSites.Add(claimed.Skip(1).First().ClassSite);
+        }
+
+        var unchained = new List<string>();
+
         var keyOwners = new Dictionary<string, string>(StringComparer.Ordinal);
         var keyLeaves = new Dictionary<string, string>(StringComparer.Ordinal);
         var ambiguousKeys = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -372,14 +417,50 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         foreach (var row in rows)
             w.Line("// " + row.Replace("\r", " ").Replace("\n", " "));
         var chain = new List<string>();
+        var own = GeneratedNamespace(compilation) + ".XamlResources";
         foreach (var reference in compilation.SourceModule.ReferencedAssemblySymbols)
         {
+            var linked = LinkName(reference.Name);
+            if (compilation.GetTypeByMetadataName(linked) is not null)
+            {
+                chain.Add("global::" + linked);
+                continue;
+            }
+
             var candidate = GeneratedNamespace(reference.Name) + ".XamlResources";
             var link = "global::" + candidate;
+            if (compilation.GetTypeByMetadataName(candidate) is null || chain.Contains(link))
+                continue;
 
-            // Two assembly names differing only in punctuation share one generated namespace.
-            if (compilation.GetTypeByMetadataName(candidate) is not null && !chain.Contains(link))
+            // This assembly's own type would shadow the reference's, so the name reaches neither.
+            if (candidate == own)
+                unchained.Add(
+                    $"'{reference.Name}' compiled its XAML into {GeneratedNamespace(compilation)}, as this assembly does, "
+                        + "with a toolkit too old to link the two; rebuild it with this version or rename one of them"
+                );
+            else
                 chain.Add(link);
+        }
+
+        var self = LinkName(compilation.AssemblyName ?? "Assembly");
+        var dot = self.LastIndexOf('.');
+        using (w.Block($"namespace {self.Substring(0, dot)}"))
+        {
+            w.Line(
+                "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]"
+            );
+            using (w.Block($"public static class {self.Substring(dot + 1)}"))
+            {
+                w.Line(
+                    $"public static void Flush(global::Noesis.ResourceDictionary root) => global::{own}.Flush(root);"
+                );
+                w.Line(
+                    $"public static global::Noesis.ResourceDictionary Resolve(string logical) => global::{own}.Resolve(logical);"
+                );
+                w.Line(
+                    $"public static object SharedByKey(object key) => global::{own}.SharedByKey(key);"
+                );
+            }
         }
 
         using (w.Block($"namespace {GeneratedNamespace(compilation)}"))
@@ -469,7 +550,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             using (w.Block("", "};"))
             {
                 foreach (var owner in keyOwners)
-                    w.Line($"[{owner.Key}] = @\"{owner.Value}\",");
+                    w.Line($"[{owner.Key}] = {XamlEmitter.Quote(owner.Value)},");
             }
 
             w.Line(
@@ -565,20 +646,36 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         {
             HintName = "XamlCompileSurvey.g.cs",
             Source = survey.ToString(),
+            Errors = errors,
+            ErrorSites = errorSites,
+            Unchained = unchained,
         };
     }
 
     /// <summary>Runs the emitter over one document and renders whatever it earned the right to
     /// emit. Called once per document; both source outputs read the result.</summary>
+    static string LinkOf(Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions options) =>
+        options.TryGetValue("build_metadata.AdditionalFiles.Link", out var link)
+        && !string.IsNullOrWhiteSpace(link)
+            ? link.Trim()
+            : "";
+
     static CompiledDocument CompileDocument(
         string path,
+        string link,
         string text,
         Compilation compilation,
         XamlCompilerOptions options,
-        bool runtime
+        bool runtime,
+        System.Threading.CancellationToken cancellation
     )
     {
-        var document = new CompiledDocument(System.IO.Path.GetFileName(path));
+        // A linked file is named by where the project places it, not by where it lives on disk.
+        var placed =
+            link.Length > 0 && options.ProjectDir.Length > 0
+                ? options.ProjectDir.TrimEnd('/', '\\') + "/" + link
+                : path;
+        var document = new CompiledDocument(XamlPaths.RelativePath(placed, options.ProjectDir));
 
         XDocument parsed;
         try
@@ -591,6 +688,8 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         catch (Exception ex)
         {
             document.Errors = [$"XML parse failed: {ex.Message}"];
+            if (ex is XmlException { LineNumber: > 0 } xml)
+                document.ErrorSites = [LocationIn(path, text, xml.LineNumber, xml.LinePosition)];
             return document;
         }
 
@@ -599,21 +698,36 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         var prefix = options.PrefixFor(compilation);
         var resolver = new XamlTypeResolver(compilation, options);
-        var emitter = new XamlEmitter(resolver, prefix, options.ProjectDir, path)
+        var emitter = new XamlEmitter(resolver, prefix, options.ProjectDir, placed)
         {
             CompiledBindingsAvailable = runtime,
+            Cancellation = cancellation,
         };
-        var typeName = XamlPaths.TypeNameFor(path, options.ProjectDir);
+        var typeName = XamlPaths.TypeNameFor(placed, options.ProjectDir);
 
         var (isDictionary, rootClass) = Classify(resolver, root);
         if (!isDictionary && rootClass is null)
         {
-            document.Errors = [NoRootClass];
+            var declared = root.Attribute(XName.Get("Class", XamlTypeResolver.DirectiveNs));
+            document.Errors =
+            [
+                declared is null
+                    ? NoRootClass
+                    : $"x:Class '{declared.Value.Trim()}' does not resolve; declare it as a partial class",
+            ];
+            document.ErrorSites = [LocationIn(path, text, (IXmlLineInfo?)declared ?? root)];
             return document;
         }
 
-        document.HintName = typeName + ".g.cs";
-        document.Logical = XamlPaths.LogicalName(path, prefix, options.ProjectDir);
+        document.RootClass = rootClass is null ? null : XamlTypeResolver.Fqn(rootClass);
+        document.ClassSite = LocationIn(
+            path,
+            text,
+            root.Attribute(XName.Get("Class", XamlTypeResolver.DirectiveNs)) ?? (IXmlLineInfo)root
+        );
+
+        document.HintName = XamlPaths.HintNameFor(typeName);
+        document.Logical = XamlPaths.LogicalName(placed, prefix, options.ProjectDir);
 
         var w = new CodeWriter();
         Output.Header(w, nullable: false);
@@ -662,7 +776,10 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         document.Source = w.ToString();
         document.Tally = emitter.Tally;
-        document.Errors = emitter.Errors;
+        document.Errors = emitter.Errors.Messages;
+        document.ErrorSites = emitter
+            .Errors.Sites.Select(s => LocationIn(path, text, s.Line, s.Column))
+            .ToList();
         document.DeadMarkup = emitter.DeadMarkup;
         document.UnresolvedTypes = emitter
             .UnresolvedTypes.Distinct()
@@ -701,7 +818,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         if (isDictionary && emitter.Errors.Count == 0)
         {
             document.DictionaryRow =
-                $"(@\"{XamlPaths.RelativePath(path, options.ProjectDir)}\", @\"{document.Logical}\", "
+                $"({XamlEmitter.Quote(XamlPaths.RelativePath(placed, options.ProjectDir))}, {XamlEmitter.Quote(document.Logical!)}, "
                 + $"() => {typeName}.Build())";
             document.DeclaredKeys = emitter.DeclaredKeys(root).ToList();
         }
@@ -738,17 +855,25 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         CompiledDocument document
     )
     {
-        var scan = XamlCodeBehind.Read(root, resolver);
+        var scan = XamlCodeBehind.Read(root, rootClass, resolver);
+        var collisions = XamlCodeBehind.Collisions(scan, rootClass).ToList();
         if (XamlCodeBehind.NameConflict(scan, rootClass) is { } conflict)
+            collisions.Insert(0, conflict);
+
+        if (collisions.Count > 0)
         {
-            emitter.Errors.Add(conflict);
+            emitter.Errors.AddRange(collisions);
             document.Gated = true;
             return null;
         }
 
         emitter.Errors.AddRange(XamlCodeBehind.Unwired(scan));
+        emitter.Errors.AddRange(scan.Problems);
 
         var compiled = !scan.NeedsLoader;
+        emitter.HideRootMembers(
+            scan.Names.Select(n => n.Name).Where(n => XamlCodeBehind.Inherits(rootClass, n))
+        );
         var body = compiled ? emitter.EmitRoot(root, rootClass) : null;
         if (!compiled)
             emitter.RootLoaded(root, rootClass, scan.Events.Count > 0);
@@ -830,6 +955,25 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
     {
         var name = new string(assemblyName.Where(char.IsLetterOrDigit).ToArray());
         return "XamlGenerated." + (name.Length == 0 || char.IsDigit(name[0]) ? "_" + name : name);
+    }
+
+    // Spelling out every other character keeps two assembly names from sharing one link.
+    static string LinkName(string assemblyName)
+    {
+        var name = new System.Text.StringBuilder("XamlGenerated.Links.A_");
+        foreach (var c in assemblyName)
+        {
+            if (c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9')
+                name.Append(c);
+            else
+                name.Append("_x")
+                    .Append(
+                        ((int)c).ToString("X4", System.Globalization.CultureInfo.InvariantCulture)
+                    )
+                    .Append('_');
+        }
+
+        return name.ToString();
     }
 
     static INamedTypeSymbol? ClassType(XamlTypeResolver resolver, XElement root)

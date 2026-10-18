@@ -59,6 +59,9 @@ public sealed class CompiledResourceParityTests
 
     static string? ColorOf(object? brush) => (brush as SolidColorBrush)?.Color.ToString();
 
+    static Thickness SetterValue(object style) =>
+        (Thickness)((Setter)((Style)style).Setters[0]).Value;
+
     [Test]
     public async Task A_sourced_dictionary_keeps_the_entries_written_inside_it()
     {
@@ -359,6 +362,11 @@ public sealed class CompiledResourceParityTests
             var compiledOutside = (Thickness)compiled["Res.PadOutside"];
             await Assert.That(parsedOutside.Left).IsEqualTo(5f);
             await Assert.That(compiledOutside).IsEqualTo(parsedOutside);
+
+            var parsedSetter = SetterValue(parsed["Res.PadSetter"]);
+            var compiledSetter = SetterValue(compiled["Res.PadSetter"]);
+            await Assert.That(parsedSetter.Left).IsEqualTo(5f);
+            await Assert.That(compiledSetter).IsEqualTo(parsedSetter);
         }
         finally
         {

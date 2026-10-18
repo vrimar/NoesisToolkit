@@ -45,11 +45,19 @@ sealed partial class XamlEmitter
         return ns is null ? null : resolver.Resolve(ns, localName);
     }
 
-    string? ResolveTypeReference(XElement scope, string reference)
-    {
-        var symbol = ResolveTypeSymbol(scope, reference);
-        return symbol is null ? null : XamlTypeResolver.Fqn(symbol);
-    }
+    // typeof cannot name an unbound generic the way XAML writes it, with no arguments at all.
+    string? ResolveTypeReference(XElement scope, string reference) =>
+        ResolveTypeSymbol(scope, reference) switch
+        {
+            null => null,
+            var symbol when XamlTypeResolver.IsGenericDefinition(symbol) => Fail(
+                $"'{reference.Trim()}' names {symbol.Name}`{symbol.Arity}, which markup cannot close"
+            ),
+            var symbol when !resolver.IsAccessible(symbol, _rootClass) => Fail(
+                $"'{reference.Trim()}' names a type generated code cannot reach"
+            ),
+            var symbol => XamlTypeResolver.Fqn(symbol),
+        };
 
     static string DefaultNamespace(XElement scope) =>
         scope.GetDefaultNamespace().NamespaceName is { Length: > 0 } ns
@@ -145,9 +153,18 @@ sealed partial class XamlEmitter
             }
             case "global::System.Uri":
             case "global::Noesis.Uri":
-                return $"new {typeFqn}({Quote(text)}, global::System.UriKind.RelativeOrAbsolute)";
+            {
+                // An image's own uri resolves against the document, as its Source does.
+                var uri =
+                    resolver.SymbolOf(scope) is { } owner
+                    && XamlTypeResolver.DerivesFrom(owner, "global::Noesis.ImageSource")
+                    && ImageUri(text) is { } joined
+                        ? joined
+                        : text;
+                return $"new {typeFqn}({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute)";
+            }
             case "global::Noesis.Cursor":
-                return $"global::Noesis.Cursors.{text}";
+                return CursorLiteral(text);
             case "global::Noesis.PropertyPath":
                 RootPropertyPath(scope, text);
                 return $"new global::Noesis.PropertyPath({Quote(NativePath(scope, text))})";
@@ -180,7 +197,9 @@ sealed partial class XamlEmitter
             return StaticMemberReference(scope, text);
 
         if (XamlTypeResolver.HasStringParse(type))
-            return $"{typeFqn}.Parse({Quote(text)})";
+            return XamlTypeResolver.HasCulturedParse(type)
+                ? $"{typeFqn}.Parse({Quote(text)}, global::System.Globalization.CultureInfo.InvariantCulture)"
+                : $"{typeFqn}.Parse({Quote(text)})";
 
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.Brush"))
             return $"({typeFqn})global::Noesis.Brush.Parse({Quote(text)})";
@@ -242,20 +261,48 @@ sealed partial class XamlEmitter
         var dot = text.LastIndexOf('.');
         if (dot > 0)
         {
-            var owner = ResolveTypeReference(scope, text.Substring(0, dot));
-            if (owner is not null)
-                return $"{owner}.{text.Substring(dot + 1)}Event";
+            var name = text.Substring(dot + 1);
+            if (
+                ResolveTypeSymbol(scope, text.Substring(0, dot)) is { } owner
+                && XamlTypeResolver.DeclaresRoutedEvent(owner, name)
+            )
+                return $"{XamlTypeResolver.Fqn(owner)}.{name}Event";
+
+            return Fail($"'{text}' names no routed event");
         }
 
         var styled = StyleTarget;
         for (var t = (ITypeSymbol?)styled; t is not null; t = t.BaseType)
         {
-            if (resolver.FindProperty(t, text + "Event") is not null)
+            if (
+                t.GetMembers(text + "Event")
+                    .Any(m =>
+                        m is IPropertySymbol { IsStatic: true } or IFieldSymbol { IsStatic: true }
+                    )
+            )
                 return $"{XamlTypeResolver.Fqn(t)}.{text}Event";
         }
 
-        return $"global::Noesis.FrameworkElement.{text}Event";
+        return
+            resolver.Resolve(XamlTypeResolver.PresentationNs, "FrameworkElement") is { } element
+            && XamlTypeResolver.DeclaresRoutedEvent(element, text)
+            ? $"global::Noesis.FrameworkElement.{text}Event"
+            : Fail($"'{text}' names no routed event the styled element has");
     }
+
+    string? CursorLiteral(string text) =>
+        resolver
+            .Resolve(XamlTypeResolver.PresentationNs, "Cursors")
+            ?.GetMembers()
+            .FirstOrDefault(m =>
+                m is IPropertySymbol { IsStatic: true } or IFieldSymbol { IsStatic: true }
+                && m.Name == text
+            )
+            ?.Name
+            is { } named
+            ? $"global::Noesis.Cursors.{named}"
+        : XamlMarkup.IsIdentifier(text) ? Fail($"'{text}' is not a cursor name")
+        : $"new global::Noesis.Cursor(new global::System.Uri({Quote(text)}, global::System.UriKind.RelativeOrAbsolute))";
 
     string? StaticMemberReference(XElement scope, string text)
     {
@@ -358,20 +405,29 @@ sealed partial class XamlEmitter
             )
             ?.Name;
 
-    const NumberStyles Number = NumberStyles.Float | NumberStyles.AllowThousands;
+    // No thousands separator: the parser reads "1,5" as no number at all, not as fifteen.
+    const NumberStyles Number = NumberStyles.Float;
 
     static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
-    static string? NumberLiteral(string text, string suffix) =>
-        text switch
-        {
-            "Auto" or "NaN" => suffix == "F" ? "float.NaN" : "double.NaN",
-            "Infinity" => suffix == "F" ? "float.PositiveInfinity" : "double.PositiveInfinity",
-            "-Infinity" => suffix == "F" ? "float.NegativeInfinity" : "double.NegativeInfinity",
-            _ => double.TryParse(text, Number, Invariant, out var value)
-                ? value.ToString("R", Invariant) + suffix
-                : null,
-        };
+    static string? NumberLiteral(string text, string suffix)
+    {
+        var type = suffix == "F" ? "float" : "double";
+        if (text == "Auto")
+            return type + ".NaN";
+
+        if (!double.TryParse(text, Number, Invariant, out var value))
+            return null;
+
+        // Past float's range the cast is infinity, which no literal suffix can spell.
+        if (suffix == "F" && !double.IsInfinity(value) && Math.Abs(value) > float.MaxValue)
+            value = value > 0 ? double.PositiveInfinity : double.NegativeInfinity;
+
+        return double.IsNaN(value) ? type + ".NaN"
+            : double.IsPositiveInfinity(value) ? type + ".PositiveInfinity"
+            : double.IsNegativeInfinity(value) ? type + ".NegativeInfinity"
+            : value.ToString("R", Invariant) + suffix;
+    }
 
     // An object slot boxes the literal's own type, and no other integer width accepts an Int32.
     static string? IntegerLiteral(SpecialType type, string text)
@@ -426,7 +482,7 @@ sealed partial class XamlEmitter
             : Quote(raw);
     }
 
-    static string Quote(string value)
+    internal static string Quote(string value)
     {
         var builder = new System.Text.StringBuilder(value.Length + 2).Append('"');
         foreach (var c in value)

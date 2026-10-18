@@ -18,6 +18,8 @@ sealed partial class XamlEmitter
         ("global::Noesis.ItemsControl", "Items"),
         ("global::Noesis.Decorator", "Child"),
         ("global::Noesis.GradientBrush", "GradientStops"),
+        ("global::Noesis.PathGeometry", "Figures"),
+        ("global::Noesis.PathFigure", "Segments"),
         ("global::Noesis.TimelineGroup", "Children"),
         ("global::Noesis.VisualStateGroup", "States"),
         ("global::Noesis.VisualState", "Storyboard"),
@@ -26,6 +28,7 @@ sealed partial class XamlEmitter
         ("global::Noesis.BeginStoryboard", "Storyboard"),
         ("global::Noesis.MultiBinding", "Bindings"),
         ("global::Noesis.ContentControl", "Content"),
+        ("global::Noesis.TextBox", "Text"),
     };
 
     static readonly string[] ContentProbes =
@@ -60,6 +63,9 @@ sealed partial class XamlEmitter
         {
             foreach (var child in element.Elements())
             {
+                if (IsIgnorable(child))
+                    continue;
+
                 var local = child.Name.LocalName;
                 if (!local.Contains("."))
                 {
@@ -84,6 +90,19 @@ sealed partial class XamlEmitter
             }
 
             var (contentProperty, property) = ContentSlot(type);
+            if (property is null && XamlTypeResolver.IsCollection(type))
+            {
+                var itemType = CollectionItemType(type);
+                foreach (var child in content)
+                {
+                    var item = EmitObject(child, itemType);
+                    if (item is not null)
+                        _lines.Add($"{target}.Add({item});");
+                }
+
+                return;
+            }
+
             if (property is null)
             {
                 Errors.Add(
@@ -97,7 +116,7 @@ sealed partial class XamlEmitter
                 contentProperty!,
                 property.Type,
                 content,
-                property.SetMethod is not null,
+                Settable(property, type),
                 type
             );
         }
@@ -126,7 +145,7 @@ sealed partial class XamlEmitter
         {
             if (ContentNodes(element, type).OfType<string>().LastOrDefault() is { } run)
                 _lines.Add(
-                    $"{target}.{contentProperty}.Add(new global::Noesis.Run({Quote(run)}));"
+                    $"{Member(target, contentProperty!)}.Add(new global::Noesis.Run({Quote(run)}));"
                 );
             return;
         }
@@ -134,9 +153,21 @@ sealed partial class XamlEmitter
         if (TextOf(element) is not { } value)
             return;
 
-        var converted = property?.SetMethod is null
-            ? null
-            : ConvertValue(element, value, property.Type);
+        if (property is not null && XamlTypeResolver.IsCollection(property.Type))
+        {
+            if (CollectionItemType(property.Type) is { } item && TakesText(item))
+                _lines.Add($"{Member(target, contentProperty!)}.Add({Quote(value)});");
+            else
+                DeadMarkup.Add(
+                    $"<{element.Name.LocalName}> text content '{value}' has nowhere to go"
+                );
+            return;
+        }
+
+        var converted =
+            property is null || !Settable(property, type)
+                ? null
+                : ConvertValue(element, value, property.Type);
 
         if (converted is null)
         {
@@ -144,8 +175,30 @@ sealed partial class XamlEmitter
             return;
         }
 
-        _lines.Add($"{target}.{contentProperty} = {converted};");
+        _lines.Add($"{Member(target, contentProperty!)} = {converted};");
     }
+
+    static bool HasSettableIndexer(ITypeSymbol collection)
+    {
+        for (var t = collection; t is not null; t = t.BaseType)
+        {
+            if (
+                t.GetMembers()
+                    .OfType<IPropertySymbol>()
+                    .Any(p =>
+                        p is { IsIndexer: true, SetMethod: not null }
+                        && p.Parameters.Length == 1
+                        && p.Parameters[0].Type.SpecialType == SpecialType.System_Int32
+                    )
+            )
+                return true;
+        }
+
+        return false;
+    }
+
+    static bool TakesText(ITypeSymbol item) =>
+        item.SpecialType is SpecialType.System_Object or SpecialType.System_String;
 
     static bool IsInlineCollection(ITypeSymbol type) =>
         XamlTypeResolver.IsCollection(type)
@@ -161,7 +214,12 @@ sealed partial class XamlEmitter
         INamedTypeSymbol owner
     )
     {
-        if (XamlTypeResolver.IsCollection(propertyType))
+        var explicitCollection =
+            content.Count == 1
+            && resolver.SymbolOf(content[0]) is { } written
+            && XamlTypeResolver.DerivesFrom(written, XamlTypeResolver.Fqn(propertyType));
+
+        if (XamlTypeResolver.IsCollection(propertyType) && !(explicitCollection && settable))
         {
             var itemType = CollectionItemType(propertyType);
             var inlines =
@@ -176,14 +234,59 @@ sealed partial class XamlEmitter
                 if (node is string run)
                 {
                     _lines.Add(
-                        $"{target}.{propertyName}.Add(new global::Noesis.Run({Quote(run)}));"
+                        $"{Member(target, propertyName)}.Add(new global::Noesis.Run({Quote(run)}));"
                     );
                     continue;
                 }
 
-                var name = EmitObject((XElement)node, itemType);
-                if (name is not null)
-                    _lines.Add($"{target}.{propertyName}.Add({name});");
+                var element = (XElement)node;
+                if (
+                    itemType is not null
+                    && element.Name.LocalName is not ("StaticResource" or "DynamicResource")
+                    && resolver.SymbolOf(element) is { } item
+                    && !resolver.Converts(item, itemType)
+                )
+                {
+                    // Unlike WPF, the parser drops an element written straight into a run of text.
+                    if (inlines && XamlTypeResolver.DerivesFrom(item, "global::Noesis.UIElement"))
+                        DeadMarkup.Add(
+                            $"<{element.Name.LocalName}> in '{propertyName}' is dropped; wrap it in an InlineUIContainer"
+                        );
+                    else
+                        Errors.Add(
+                            $"<{element.Name.LocalName}> cannot be added to '{propertyName}', which holds {XamlTypeResolver.Fqn(itemType)}"
+                        );
+                    continue;
+                }
+
+                var deferred = _deferredGlobal.Count;
+                var name = EmitObject(element, itemType);
+                if (name is null)
+                    continue;
+
+                var collection = Member(target, propertyName);
+                if (
+                    _deferredGlobal.Count == deferred
+                    || resolver.SymbolOf(element) is not { TypeKind: TypeKind.Struct }
+                )
+                {
+                    _lines.Add($"{collection}.Add({name});");
+                    continue;
+                }
+
+                // Add boxed a copy, so a member settled later goes back in at the same position.
+                if (!HasSettableIndexer(propertyType))
+                {
+                    Errors.Add(
+                        $"<{element.Name.LocalName}> reads a resource settled after it is added to '{propertyName}', which cannot store it again"
+                    );
+                    continue;
+                }
+
+                var index = NextName("index");
+                _lines.Add($"var {index} = {collection}.Count;");
+                _lines.Add($"{collection}.Add({name});");
+                _deferredGlobal.Add($"{collection}[{index}] = {name};");
             }
 
             return;
@@ -201,9 +304,23 @@ sealed partial class XamlEmitter
             return;
         }
 
-        var only = EmitObject(content[0], propertyType);
-        if (only is not null)
-            _lines.Add($"{target}.{propertyName} = {only};");
+        StoreValue(content[0], propertyType, only => $"{Member(target, propertyName)} = {only};");
+    }
+
+    // Assigning boxes a copy, so a struct member settled later has to be stored again.
+    void StoreValue(XElement value, ITypeSymbol? expected, Func<string, string> store)
+    {
+        var deferred = _deferredGlobal.Count;
+        var name = EmitObject(value, expected);
+        if (name is null)
+            return;
+
+        _lines.Add(store(name));
+        if (
+            _deferredGlobal.Count > deferred
+            && resolver.SymbolOf(value) is { TypeKind: TypeKind.Struct }
+        )
+            _deferredGlobal.Add(store(name));
     }
 
     // A null owner shapes text as a plain value, not inlines.
@@ -226,7 +343,7 @@ sealed partial class XamlEmitter
                 continue;
             }
 
-            if (node is not XElement element)
+            if (node is not XElement element || IsIgnorable(element))
                 continue;
 
             if (pending && ShapeRun(text.ToString(), previous, element) is { } shaped)
@@ -359,7 +476,7 @@ sealed partial class XamlEmitter
 
             if (XamlTypeResolver.IsCollection(getter.ReturnType))
             {
-                foreach (var value in child.Elements())
+                foreach (var value in child.Elements().Where(e => !IsIgnorable(e)))
                 {
                     var name = EmitObject(value);
                     if (name is not null)
@@ -369,16 +486,18 @@ sealed partial class XamlEmitter
                 return;
             }
 
-            var values = child.Elements().ToArray();
+            var values = child.Elements().Where(e => !IsIgnorable(e)).ToArray();
             if (values.Length != 1)
             {
                 Errors.Add($"<{local}> must contain exactly one element");
                 return;
             }
 
-            var single = EmitObject(values[0]);
-            if (single is not null)
-                _lines.Add($"{declaringFqn}.Set{propertyName}({target}, {single});");
+            StoreValue(
+                values[0],
+                null,
+                single => $"{declaringFqn}.Set{propertyName}({target}, {single});"
+            );
             return;
         }
 
@@ -389,7 +508,7 @@ sealed partial class XamlEmitter
             return;
         }
 
-        var elements = child.Elements().ToArray();
+        var elements = child.Elements().Where(e => !IsIgnorable(e)).ToArray();
 
         if (
             propertyName == "Style"
@@ -432,27 +551,29 @@ sealed partial class XamlEmitter
                 // Bare entries join the dictionary the element already holds rather than replace it.
                 _lines.Add(
                     property.SetMethod is null
-                        ? $"var {dictionary} = {target}.{propertyName};"
-                        : $"var {dictionary} = {target}.{propertyName} ?? ({target}.{propertyName} = new global::Noesis.ResourceDictionary());"
+                        ? $"var {dictionary} = {Member(target, propertyName)};"
+                        : $"var {dictionary} = {Member(target, propertyName)} ?? ({Member(target, propertyName)} = new global::Noesis.ResourceDictionary());"
                 );
                 _dictionaries.Add(dictionary);
                 EmitDictionaryBody(child, dictionary);
                 return;
             }
 
-            _lines.Add($"{target}.{propertyName} = {dictionary};");
+            _lines.Add($"{Member(target, propertyName)} = {dictionary};");
             return;
         }
 
         if (
             elements.Length == 1
-            && elements[0].Name.LocalName == "DynamicResource"
-            && elements[0].Attribute("ResourceKey")?.Value is { } resourceKey
+            && (
+                elements[0].Name.LocalName == "DynamicResource"
+                || elements[0].Name.LocalName == "StaticResource"
+                    && !XamlTypeResolver.IsCollection(property.Type)
+            )
         )
         {
-            var reference = new MarkupCall { Name = "DynamicResource" };
-            reference.Positional.Add(resourceKey);
-            ApplyMarkup(owner, target, type, property, reference);
+            if (ResourceElementCall(elements[0]) is { } reference)
+                ApplyMarkup(owner, target, type, property, reference);
             return;
         }
 
@@ -485,7 +606,7 @@ sealed partial class XamlEmitter
             {
                 if (ContentNodes(child, type).OfType<string>().LastOrDefault() is { } run)
                     _lines.Add(
-                        $"{target}.{propertyName}.Add(new global::Noesis.Run({Quote(run)}));"
+                        $"{Member(target, propertyName)}.Add(new global::Noesis.Run({Quote(run)}));"
                     );
 
                 return;
@@ -497,16 +618,23 @@ sealed partial class XamlEmitter
             RootNamedByText(owner, type, propertyName, text);
 
             // Converted against the type Property names, as the attribute form is.
-            if (IsSetterLike(type) && propertyName == "Value" && !XamlMarkupParser.IsMarkup(text))
+            if (IsSetterLike(type) && propertyName == "Value")
             {
-                ApplySetterValue(child, target, text);
+                ApplySetterValue(child, target, text, text: true);
                 return;
             }
 
-            var converted = ConvertValue(child, text, property.Type);
-            if (converted is not null)
-                _lines.Add($"{target}.{propertyName} = {converted};");
+            var converted = ConvertOrFail(child, text, property.Type, propertyName);
+            if (converted is null)
+                return;
 
+            if (!Settable(property, type))
+            {
+                Errors.Add($"'{propertyName}' on {XamlTypeResolver.Fqn(type)} is read-only");
+                return;
+            }
+
+            _lines.Add($"{Member(target, propertyName)} = {converted};");
             return;
         }
 
@@ -515,7 +643,7 @@ sealed partial class XamlEmitter
             propertyName,
             property.Type,
             elements.ToList(),
-            property.SetMethod is not null,
+            Settable(property, type),
             type
         );
     }

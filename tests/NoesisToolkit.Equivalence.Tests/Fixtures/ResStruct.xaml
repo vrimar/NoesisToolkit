@@ -6,4 +6,11 @@
   <sys:Single x:Key="Res.PadLeft">7</sys:Single>
   <Thickness x:Key="Res.Pad" Left="{StaticResource Res.PadLeft}" Top="2" />
   <Thickness x:Key="Res.PadOutside" Left="{StaticResource Res.OutsideLeft}" Top="3" />
+  <Style x:Key="Res.PadSetter" TargetType="Border">
+    <Setter Property="Margin">
+      <Setter.Value>
+        <Thickness Left="{StaticResource Res.OutsideLeft}" Top="4" />
+      </Setter.Value>
+    </Setter>
+  </Style>
 </ResourceDictionary>

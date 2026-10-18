@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 
@@ -19,7 +20,22 @@ sealed partial class XamlEmitter(
     /// compiled binding impossible rather than merely unresolvable.</summary>
     public bool CompiledBindingsAvailable { get; init; } = true;
 
-    public readonly List<string> Errors = new List<string>();
+    public System.Threading.CancellationToken Cancellation { get; init; }
+
+    ErrorList? _errors;
+
+    public ErrorList Errors => _errors ??= new ErrorList(CurrentSite);
+
+    XElement? _element;
+
+    (int Line, int Column) CurrentSite()
+    {
+        IXmlLineInfo? at =
+            _attribute is { } attribute && ((IXmlLineInfo)attribute).HasLineInfo()
+                ? attribute
+                : _element;
+        return at is { } info && info.HasLineInfo() ? (info.LineNumber, info.LinePosition) : (0, 0);
+    }
 
     public readonly List<string> DeadMarkup = new List<string>();
 
@@ -38,6 +54,16 @@ sealed partial class XamlEmitter(
     readonly List<string> _templates = new List<string>();
 
     INamedTypeSymbol? _rootClass;
+
+    readonly HashSet<string> _hidden = new HashSet<string>(StringComparer.Ordinal);
+
+    public void HideRootMembers(IEnumerable<string> names) => _hidden.UnionWith(names);
+
+    // The accessor is get-only and typed as the element, so the root's own member is reached past it.
+    string Member(string target, string name) =>
+        target == "this" && _hidden.Contains(name) && _rootClass?.BaseType is { } inherited
+            ? $"(({XamlTypeResolver.Fqn(inherited)})this).{name}"
+            : $"{target}.{name}";
 
     readonly List<Dictionary<string, XElement>> _nameScopes =
         new List<Dictionary<string, XElement>>();
@@ -93,9 +119,9 @@ sealed partial class XamlEmitter(
         }
     }
 
-    static bool PushesNameScope(INamedTypeSymbol symbol) =>
-        XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style")
-        || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
+    // A Style opens none: the engine registers a name inside one into the scope around it.
+    internal static bool PushesNameScope(INamedTypeSymbol symbol) =>
+        XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
 
     XElement? LookupNamed(string name)
     {
@@ -117,16 +143,27 @@ sealed partial class XamlEmitter(
         _rootClass = rootType;
         PushNameScope(root);
 
+        // A dictionary is no DependencyObject, so it cannot hold a name scope.
+        var dictionary = XamlTypeResolver.DerivesFrom(
+            rootType,
+            "global::Noesis.ResourceDictionary"
+        );
+
         // Cleared first: a hot reload runs this again over a root whose names point at the old elements.
-        _lines.Add("global::Noesis.NameScope.SetNameScope(this, null);");
+        if (!dictionary)
+            _lines.Add("global::Noesis.NameScope.SetNameScope(this, null);");
         _lines.Add($"var {RootScope} = new global::Noesis.NameScope();");
-        _lines.Add($"global::Noesis.NameScope.SetNameScope(this, {RootScope});");
+        if (!dictionary)
+            _lines.Add($"global::Noesis.NameScope.SetNameScope(this, {RootScope});");
         PlanTemplateBindings(root, null);
 
         foreach (var attribute in root.Attributes())
             ApplyAttribute(root, "this", rootType, attribute);
 
-        ApplyChildren(root, "this", rootType);
+        if (dictionary)
+            EmitScopedDictionaryBody(root, "this");
+        else
+            ApplyChildren(root, "this", rootType);
 
         Finish();
         return _lines;
@@ -246,4 +283,40 @@ sealed partial class XamlEmitter(
             _emitter.RestoreRoots(_roots);
         }
     }
+}
+
+sealed class ErrorList(Func<(int Line, int Column)> site) : IEnumerable<string>
+{
+    readonly List<string> _messages = new List<string>();
+
+    readonly List<(int Line, int Column)> _sites = new List<(int Line, int Column)>();
+
+    public int Count => _messages.Count;
+
+    public IReadOnlyList<string> Messages => _messages;
+
+    public IReadOnlyList<(int Line, int Column)> Sites => _sites;
+
+    public void Add(string message)
+    {
+        _messages.Add(message);
+        _sites.Add(site());
+    }
+
+    public void AddRange(IEnumerable<string> messages)
+    {
+        foreach (var message in messages)
+            Add(message);
+    }
+
+    public void RemoveRange(int index, int count)
+    {
+        _messages.RemoveRange(index, count);
+        _sites.RemoveRange(index, count);
+    }
+
+    public IEnumerator<string> GetEnumerator() => _messages.GetEnumerator();
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+        GetEnumerator();
 }

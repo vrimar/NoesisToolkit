@@ -13,6 +13,22 @@ sealed partial class XamlEmitter
 
     public string? EmitObject(XElement element, ITypeSymbol? expected)
     {
+        Cancellation.ThrowIfCancellationRequested();
+
+        var outer = _element;
+        _element = element;
+        try
+        {
+            return EmitObjectCore(element, expected);
+        }
+        finally
+        {
+            _element = outer;
+        }
+    }
+
+    string? EmitObjectCore(XElement element, ITypeSymbol? expected)
+    {
         if (_suppressed.Remove(element))
             return null;
 
@@ -39,16 +55,13 @@ sealed partial class XamlEmitter
 
         if (element.Name.LocalName is "StaticResource" or "DynamicResource")
         {
-            var resourceKey = element.Attribute("ResourceKey")?.Value;
-            if (resourceKey is null)
-            {
-                return Fail($"<{element.Name.LocalName}> has no ResourceKey");
-            }
+            if (ResourceElementKey(element) is not { } key)
+                return null;
 
             var resolved = NextName("resource");
             var cast = CastPrefix(expected);
 
-            _lines.Add($"var {resolved} = {cast}{ResolveExpression(Quote(resourceKey))};");
+            _lines.Add($"var {resolved} = {cast}{ResolveExpression(key)};");
             return resolved;
         }
 
@@ -56,7 +69,16 @@ sealed partial class XamlEmitter
         if (symbol is null)
             return EmitParserFallback(element, expected);
 
-        if (HasUnassignableSlot(element, symbol))
+        if (XamlTypeResolver.IsGenericDefinition(symbol))
+            return Fail(
+                $"<{element.Name.LocalName}> names {symbol.Name}`{symbol.Arity}, which markup cannot close"
+            );
+
+        // The parser reaches what generated code cannot name.
+        if (!resolver.IsAccessible(symbol, _rootClass))
+            return EmitParserFallback(element, expected);
+
+        if (HasUnassignableSlot(element, symbol) || HoldsLiveReference(element, symbol))
             return EmitParserFallback(element, expected);
 
         if (NeedsParsedSetter(element, symbol))
@@ -64,17 +86,22 @@ sealed partial class XamlEmitter
 
         if (
             !element.HasElements
-            && (symbol.SpecialType != SpecialType.None || symbol.TypeKind == TypeKind.Struct)
+            && IsLiteralType(symbol)
             && LiteralOf(element, symbol) is { } literal
         )
         {
+            var errors = Errors.Count;
             var converted =
                 symbol.SpecialType == SpecialType.System_Double
                     ? NumberLiteral(literal, "F")
                     : ConvertValue(element, literal, symbol);
 
             if (converted is null)
-                return null;
+                return Errors.Count == errors
+                    ? Fail(
+                        $"<{element.Name.LocalName}> cannot hold '{literal}': it does not convert to {XamlTypeResolver.Fqn(symbol)}"
+                    )
+                    : null;
 
             var boxed = NextName(symbol.Name);
             _lines.Add($"var {boxed} = {converted};");
@@ -127,7 +154,7 @@ sealed partial class XamlEmitter
 
         var pushed = PushStyleTarget(element, symbol);
         var isTemplate = XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate");
-        if (pushed)
+        if (isTemplate)
             PushNameScope(element);
 
         // A template's own name belongs to the scope around it, not the one it opens.
@@ -170,12 +197,12 @@ sealed partial class XamlEmitter
         FlushWires(name);
 
         if (pushed)
-        {
             _styleTargets.RemoveAt(_styleTargets.Count - 1);
-            _nameScopes.RemoveAt(_nameScopes.Count - 1);
-        }
         if (isTemplate)
+        {
+            _nameScopes.RemoveAt(_nameScopes.Count - 1);
             _templates.RemoveAt(_templates.Count - 1);
+        }
 
         return name;
     }
@@ -193,8 +220,8 @@ sealed partial class XamlEmitter
         if (element.HasElements || TextOf(element) is null)
             return TextConstructor.None;
 
-        // The parser turns the text into an inline, which a Style's Text setter adds to, not replaces.
-        if (ContentSlot(symbol).Property is { } content && IsInlineCollection(content.Type))
+        // Text goes to the content property where there is one, as the parser assigns it.
+        if (ContentSlot(symbol).Property is not null)
             return TextConstructor.None;
 
         if (filePath.Length > 0 && resolver.HasConstructor(symbol, "System.Uri", "System.String"))
@@ -208,6 +235,10 @@ sealed partial class XamlEmitter
     // Text a property element splits keeps only its last run, as the parser reads it.
     string? TextOf(XElement element) =>
         ContentNodes(element, null).OfType<string>().LastOrDefault();
+
+    static bool IsLiteralType(INamedTypeSymbol symbol) =>
+        symbol.SpecialType != SpecialType.None
+        || symbol.TypeKind is TypeKind.Struct or TypeKind.Enum;
 
     // Whitespace alone still makes an empty string, where every other type has nothing to convert.
     string? LiteralOf(XElement element, INamedTypeSymbol symbol) =>
@@ -228,7 +259,7 @@ sealed partial class XamlEmitter
     // A relative source only means anything against the file that wrote it, named the way the
     // parser names a document it reached through the graph: rooted, not as the caller spelled it.
     string BaseUri() =>
-        $"new global::System.Uri(\"/{XamlPaths.LogicalName(filePath, packPrefix, projectDir)}\", global::System.UriKind.RelativeOrAbsolute)";
+        $"new global::System.Uri({Quote("/" + XamlPaths.LogicalName(filePath, packPrefix, projectDir))}, global::System.UriKind.RelativeOrAbsolute)";
 
     string StringArgument(XElement element, INamedTypeSymbol symbol) =>
         TextConstructorOf(element, symbol) switch

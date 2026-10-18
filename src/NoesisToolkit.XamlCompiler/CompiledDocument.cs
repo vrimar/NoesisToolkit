@@ -25,6 +25,14 @@ sealed class CompiledDocument(string file)
 
     public IReadOnlyList<string> Errors { get; set; } = [];
 
+    public IReadOnlyList<LocationInfo?> ErrorSites { get; set; } = [];
+
+    public string? RootClass { get; set; }
+
+    public LocationInfo? ClassSite { get; set; }
+
+    public IReadOnlyList<string> Unchained { get; set; } = [];
+
     public IReadOnlyList<string> DeadMarkup { get; set; } = [];
 
     public IReadOnlyList<MarkupDiagnostic> Unrooted { get; set; } = [];

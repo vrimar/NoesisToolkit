@@ -69,6 +69,8 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         return null;
     }
 
+    public bool Maps(string namespaceUri) => CandidateNamespaces(namespaceUri).Any();
+
     IEnumerable<string> CandidateNamespaces(string namespaceUri)
     {
         if (namespaceUri.StartsWith("clr-namespace:", StringComparison.Ordinal))
@@ -92,26 +94,19 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         );
 
     /// <summary>Whether the type declares a public constructor taking these parameter types.</summary>
-    public bool HasConstructor(INamedTypeSymbol type, params string[] parameterTypes)
-    {
-        var wanted = new INamedTypeSymbol[parameterTypes.Length];
-        for (var i = 0; i < parameterTypes.Length; i++)
-        {
-            if (compilation.GetTypeByMetadataName(parameterTypes[i]) is not { } resolved)
-                return false;
-
-            wanted[i] = resolved;
-        }
-
-        return type.InstanceConstructors.Any(c =>
+    // Compared by name: a reference set that defines one of these twice resolves it to nothing.
+    public bool HasConstructor(INamedTypeSymbol type, params string[] parameterTypes) =>
+        type.InstanceConstructors.Any(c =>
             c.DeclaredAccessibility == Accessibility.Public
-            && c.Parameters.Length == wanted.Length
-            && c.Parameters.Select(
-                    (p, i) => SymbolEqualityComparer.Default.Equals(p.Type, wanted[i])
-                )
+            && c.Parameters.Length == parameterTypes.Length
+            && c.Parameters.Select((p, i) => MetadataName(p.Type) == parameterTypes[i])
                 .All(match => match)
         );
-    }
+
+    static string MetadataName(ITypeSymbol type) =>
+        type.ContainingNamespace is { IsGlobalNamespace: false } ns
+            ? ns.ToDisplayString() + "." + type.MetadataName
+            : type.MetadataName;
 
     /// <summary>Whether the type declares a static <c>Parse(string)</c> returning itself.</summary>
     public static bool HasStringParse(ITypeSymbol type) =>
@@ -121,6 +116,17 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
                 m.IsStatic
                 && m.Parameters.Length == 1
                 && m.Parameters[0].Type.SpecialType == SpecialType.System_String
+                && SymbolEqualityComparer.Default.Equals(m.ReturnType, type)
+            );
+
+    public static bool HasCulturedParse(ITypeSymbol type) =>
+        type.GetMembers("Parse")
+            .OfType<IMethodSymbol>()
+            .Any(m =>
+                m.IsStatic
+                && m.Parameters.Length == 2
+                && m.Parameters[0].Type.SpecialType == SpecialType.System_String
+                && m.Parameters[1].Type.ToDisplayString() == "System.IFormatProvider"
                 && SymbolEqualityComparer.Default.Equals(m.ReturnType, type)
             );
 
@@ -138,6 +144,50 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             .FirstOrDefault(m =>
                 m is { IsStatic: true, DeclaredAccessibility: Accessibility.Public }
                 && m.Parameters.Length == 1
+            );
+
+    // From the code-behind class where there is one, else from a generated type of this assembly.
+    public bool IsAccessible(
+        ISymbol member,
+        INamedTypeSymbol? within,
+        ITypeSymbol? through = null
+    ) =>
+        within is null
+            ? compilation.IsSymbolAccessibleWithin(member, compilation.Assembly)
+            : compilation.IsSymbolAccessibleWithin(member, within, through);
+
+    public INamedTypeSymbol Nameable(INamedTypeSymbol type, INamedTypeSymbol? within)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (IsAccessible(current, within))
+                return current;
+        }
+
+        return (INamedTypeSymbol)ObjectType;
+    }
+
+    public bool Converts(ITypeSymbol from, ITypeSymbol to) =>
+        compilation.ClassifyCommonConversion(from, to) is { Exists: true, IsImplicit: true };
+
+    public static bool IsGenericDefinition(INamedTypeSymbol type) =>
+        type.TypeArguments.Any(a => a.TypeKind == TypeKind.TypeParameter);
+
+    public static bool DeclaresRoutedEvent(ITypeSymbol type, string name) =>
+        BaseChain(type)
+            .SelectMany(t => t.GetMembers(name + "Event"))
+            .Any(m =>
+                m
+                    is IPropertySymbol
+                        {
+                            IsStatic: true,
+                            DeclaredAccessibility: Accessibility.Public
+                        }
+                        or IFieldSymbol
+                        {
+                            IsStatic: true,
+                            DeclaredAccessibility: Accessibility.Public
+                        }
             );
 
     public IEventSymbol? FindEvent(ITypeSymbol type, string name) =>
@@ -399,13 +449,17 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             ?.ConstructorArguments[0]
             .Value as string;
 
-    List<INamedTypeSymbol>? _applicationTypes;
+    // Each document builds its own resolver, and every one of them walks the same compilation.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<
+        Compilation,
+        List<INamedTypeSymbol>
+    > Applications = new();
 
-    public IReadOnlyList<INamedTypeSymbol> ApplicationTypes()
+    public IReadOnlyList<INamedTypeSymbol> ApplicationTypes() =>
+        Applications.GetValue(compilation, CollectApplicationTypes);
+
+    static List<INamedTypeSymbol> CollectApplicationTypes(Compilation compilation)
     {
-        if (_applicationTypes is not null)
-            return _applicationTypes;
-
         var types = new List<INamedTypeSymbol>();
         Collect(compilation.Assembly.GlobalNamespace);
         foreach (var reference in compilation.SourceModule.ReferencedAssemblySymbols)
@@ -414,7 +468,7 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
                 Collect(reference.GlobalNamespace);
         }
 
-        return _applicationTypes = types;
+        return types;
 
         void Collect(INamespaceOrTypeSymbol container)
         {

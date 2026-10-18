@@ -15,5 +15,6 @@
     <CompilerVisibleProperty Include="IsTrimmable" />
     <CompilerVisibleProperty Include="IsAotCompatible" />
     <CompilerVisibleProperty Include="EnableTrimAnalyzer" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="Link" />
   </ItemGroup>
 </Project>

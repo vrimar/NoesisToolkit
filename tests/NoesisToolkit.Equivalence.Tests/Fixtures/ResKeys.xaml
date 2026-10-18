@@ -26,4 +26,8 @@
   <DataTemplate DataType="{x:Type sys:Object}">
     <TextBlock Text="res-object" />
   </DataTemplate>
+  <SolidColorBrush x:Key="Res.KeyInk" Color="#FF102030" />
+  <Style x:Key="{x:Static ToolBar.ButtonStyleKey}" TargetType="Button">
+    <Setter Property="Background" Value="{StaticResource Res.KeyInk}" />
+  </Style>
 </ResourceDictionary>

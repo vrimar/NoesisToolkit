@@ -1,0 +1,12 @@
+<UserControl
+  x:Class="Sample.AccessorHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:local="clr-namespace:Sample"
+>
+  <StackPanel x:Name="Content">
+    <local:Gauge x:Name="Speed" />
+    <Button x:Name="ok" />
+    <Button x:Name="_ok" />
+  </StackPanel>
+</UserControl>

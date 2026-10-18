@@ -1165,25 +1165,53 @@ sealed partial class XamlEmitter
 
     void ReportUnrooted(XElement element, string message)
     {
-        if (!UnderUnresolvedStatedType(element))
+        if (!UnderUnresolvedStatedType(element, message))
             Unrooted.Add(SiteOf(element, message));
     }
 
     void ReportAbsent(XElement element, string message)
     {
-        if (!UnderUnresolvedStatedType(element))
+        if (!UnderUnresolvedStatedType(element, message))
             Absent.Add(SiteOf(element, message));
     }
 
-    // NTK1006 already names the stated type every name under it depends on.
-    bool UnderUnresolvedStatedType(XElement element) =>
-        element
-            .AncestorsAndSelf()
-            .Any(scope =>
-                scope
-                    .Attributes()
-                    .Any(a => IsStatedType(a.Name) && ResolveTypeSymbol(scope, a.Value) is null)
-            );
+    // NTK1006 already names the stated type a name depends on; a member it misses depends on none.
+    bool UnderUnresolvedStatedType(XElement element, string message)
+    {
+        if (!message.Contains("whose type is not declared"))
+            return false;
+
+        var kind =
+            message.EndsWith(ContextUndeclared, StringComparison.Ordinal)
+            || message.EndsWith(ElementContextUndeclared, StringComparison.Ordinal)
+                ? "DataType"
+            : message.EndsWith(AncestorContextUndeclared, StringComparison.Ordinal)
+                ? "AncestorDataType"
+            : message.EndsWith(RowUndeclared, StringComparison.Ordinal)
+            || message.EndsWith(ItemsUndeclared, StringComparison.Ordinal)
+                ? ItemTypeAttribute
+            : null;
+
+        foreach (var scope in element.AncestorsAndSelf())
+        {
+            foreach (var attribute in scope.Attributes())
+            {
+                if (
+                    !IsStatedType(attribute.Name)
+                    || kind is not null && attribute.Name.LocalName != kind
+                )
+                    continue;
+
+                if (ResolveTypeSymbol(scope, attribute.Value) is null)
+                    return true;
+
+                if (kind is not null)
+                    return false;
+            }
+        }
+
+        return false;
+    }
 
     void ReportParsedBinding(XElement element)
     {

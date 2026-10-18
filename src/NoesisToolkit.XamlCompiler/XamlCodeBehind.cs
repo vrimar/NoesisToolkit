@@ -13,7 +13,7 @@ namespace NoesisToolkit.Xaml;
 /// </summary>
 static class XamlCodeBehind
 {
-    internal readonly record struct NamedElement(string Name, string TypeFqn);
+    internal readonly record struct NamedElement(string Name, string TypeFqn, string Modifier);
 
     internal readonly record struct EventHook(
         string EventName,
@@ -32,6 +32,8 @@ static class XamlCodeBehind
 
         public readonly List<XAttribute> Unwireable = new List<XAttribute>();
 
+        public readonly List<string> Problems = new List<string>();
+
         public XAttribute? LoaderAttribute;
 
         public bool NeedsLoader => Events.Count > 0 || UnresolvedHandlers;
@@ -41,9 +43,23 @@ static class XamlCodeBehind
     /// Types every <c>x:Name</c> against the compilation rather than its XML tag: <c>&lt;MenuItem&gt;</c>
     /// is <c>Noesis.MenuItem</c>, which the tag name alone would resolve in the code-behind's namespace.
     /// </summary>
-    public static Scan Read(XElement root, XamlTypeResolver resolver)
+    public static Scan Read(XElement root, INamedTypeSymbol rootClass, XamlTypeResolver resolver)
     {
         var scan = new Scan();
+
+        if (
+            root.Attribute(XName.Get("ClassModifier", XamlTypeResolver.DirectiveNs)) is { } modifier
+        )
+        {
+            if (Stated(modifier.Value) is not { } stated)
+                scan.Problems.Add(
+                    $"x:ClassModifier='{modifier.Value}' is not an accessibility C# can declare"
+                );
+            else if (stated != rootClass.DeclaredAccessibility)
+                scan.Problems.Add(
+                    $"x:ClassModifier='{modifier.Value}' disagrees with how {rootClass.Name} is declared"
+                );
+        }
 
         foreach (var element in root.DescendantsAndSelf())
         {
@@ -56,7 +72,8 @@ static class XamlCodeBehind
                     element
                         .Attributes()
                         .FirstOrDefault(a =>
-                            IsHandlerShaped(a) || AttachedEvent(element, a, resolver) is not null
+                            IsHandlerShaped(a) && DeclaresMethod(rootClass, a.Value)
+                            || AttachedEvent(element, a, resolver) is not null
                         ) is
                     { } suspected
                 )
@@ -79,7 +96,16 @@ static class XamlCodeBehind
                     // A template registers into its own scope, which a field could never read.
                     if (local == "Name" && !inTemplate)
                         scan.Names.Add(
-                            new NamedElement(attribute.Value, XamlTypeResolver.Fqn(type))
+                            new NamedElement(
+                                attribute.Value,
+                                XamlTypeResolver.Fqn(resolver.Nameable(type, rootClass)),
+                                Modifier(
+                                    element,
+                                    resolver.Nameable(type, rootClass),
+                                    rootClass,
+                                    scan
+                                )
+                            )
                         );
                     continue;
                 }
@@ -117,11 +143,7 @@ static class XamlCodeBehind
     {
         for (var parent = element.Parent; parent is not null; parent = parent.Parent)
         {
-            var type = resolver.SymbolOf(parent);
-            if (
-                type is not null
-                && XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkTemplate")
-            )
+            if (resolver.SymbolOf(parent) is { } type && XamlEmitter.PushesNameScope(type))
                 return true;
         }
 
@@ -222,6 +244,18 @@ static class XamlCodeBehind
         return null;
     }
 
+    // A value naming no method of the class is a plain value, whatever type it is written on.
+    static bool DeclaresMethod(INamedTypeSymbol rootClass, string name)
+    {
+        for (var type = rootClass; type is not null; type = type.BaseType)
+        {
+            if (type.GetMembers(name.Trim()).OfType<IMethodSymbol>().Any())
+                return true;
+        }
+
+        return false;
+    }
+
     static bool IsHandlerShaped(XAttribute attribute) =>
         !attribute.IsNamespaceDeclaration
         && attribute.Name.NamespaceName != XamlTypeResolver.DirectiveNs
@@ -252,21 +286,23 @@ static class XamlCodeBehind
             {
                 // A reload rebuilds the tree, so a cached element would be the detached one.
                 foreach (var name in Distinct(scan.Names))
-                    w.Line($"_{name.Name} = null;");
+                    w.Line($"{Field(name.Name)} = null;");
 
-                w.Line($"global::Noesis.GUI.LoadComponent(this, \"{logicalName}\");");
+                w.Line(
+                    $"global::Noesis.GUI.LoadComponent(this, {XamlEmitter.Quote(logicalName)});"
+                );
             }
         }
 
         foreach (var name in Distinct(scan.Names))
         {
             var member = Escape(name.Name);
-            var field = "_" + name.Name;
+            var field = Field(name.Name);
             var hiding = Inherits(rootClass, name.Name) ? "new " : "";
 
             w.Line();
             w.Line($"private {name.TypeFqn} {field};");
-            w.Line($"public {hiding}{name.TypeFqn} {member}");
+            w.Line($"{name.Modifier} {hiding}{name.TypeFqn} {member}");
             using (w.Indented())
             {
                 // Assigned during the build, so a constructor can read it before the first layout pass.
@@ -313,7 +349,82 @@ static class XamlCodeBehind
         }
     }
 
-    static bool Inherits(INamedTypeSymbol rootClass, string name)
+    // Two underscores: one would collide with an x:Name that starts with one.
+    internal static string Field(string name) => "__" + name;
+
+    // The accessor can be no more visible than its type, and x:FieldModifier only narrows it.
+    static string Modifier(
+        XElement element,
+        INamedTypeSymbol type,
+        INamedTypeSymbol rootClass,
+        Scan scan
+    )
+    {
+        var accessibility = Accessibility.Public;
+        if (
+            element.Attribute(XName.Get("FieldModifier", XamlTypeResolver.DirectiveNs)) is
+            { } written
+        )
+        {
+            if (Stated(written.Value) is { } stated)
+                accessibility = stated;
+            else
+                scan.Problems.Add(
+                    $"x:FieldModifier='{written.Value}' is not an accessibility C# can declare"
+                );
+        }
+
+        if (Rank(Effective(type)) < Rank(Effective(rootClass)))
+            accessibility = Narrowest(accessibility, Effective(type));
+
+        return accessibility switch
+        {
+            Accessibility.Public => "public",
+            Accessibility.ProtectedOrInternal => "protected internal",
+            Accessibility.Internal => "internal",
+            Accessibility.Protected => "protected",
+            Accessibility.ProtectedAndInternal => "private protected",
+            _ => "private",
+        };
+    }
+
+    static Accessibility? Stated(string modifier) =>
+        modifier.Trim() switch
+        {
+            "public" or "Public" => Accessibility.Public,
+            "internal" or "Friend" or "NotPublic" => Accessibility.Internal,
+            "protected internal" => Accessibility.ProtectedOrInternal,
+            "protected" => Accessibility.Protected,
+            "private protected" => Accessibility.ProtectedAndInternal,
+            "private" or "Private" => Accessibility.Private,
+            _ => null,
+        };
+
+    static Accessibility Effective(INamedTypeSymbol type)
+    {
+        var effective = Accessibility.Public;
+        for (var current = type; current is not null; current = current.ContainingType)
+            effective = Narrowest(effective, current.DeclaredAccessibility);
+
+        return effective;
+    }
+
+    static Accessibility Narrowest(Accessibility a, Accessibility b) =>
+        a == b ? a
+        : Rank(a) != Rank(b) ? (Rank(a) < Rank(b) ? a : b)
+        : Accessibility.ProtectedAndInternal;
+
+    static int Rank(Accessibility accessibility) =>
+        accessibility switch
+        {
+            Accessibility.Public => 5,
+            Accessibility.ProtectedOrInternal => 4,
+            Accessibility.Internal or Accessibility.Protected => 3,
+            Accessibility.ProtectedAndInternal => 2,
+            _ => 1,
+        };
+
+    internal static bool Inherits(INamedTypeSymbol rootClass, string name)
     {
         for (var type = rootClass.BaseType; type is not null; type = type.BaseType)
         {
@@ -324,7 +435,7 @@ static class XamlCodeBehind
         return false;
     }
 
-    static string Escape(string name) =>
+    internal static string Escape(string name) =>
         Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetKeywordKind(name)
         == Microsoft.CodeAnalysis.CSharp.SyntaxKind.None
             ? name
@@ -345,6 +456,28 @@ static class XamlCodeBehind
                 + "the compiler cannot resolve, so the generated ConnectEvent cannot wire it"
             );
 
+    // The class's own source, before any generator adds to it.
+    internal static IEnumerable<string> Collisions(Scan scan, INamedTypeSymbol rootClass)
+    {
+        var generated = scan.NeedsLoader
+            ? new[] { "InitializeComponent" }
+            : new[] { "InitializeComponent", "BuildXamlTree" };
+        if (scan.NeedsLoader && scan.Events.Count > 0)
+            generated = [.. generated, "ConnectEvent"];
+
+        foreach (var member in generated)
+        {
+            if (!rootClass.GetMembers(member).IsEmpty)
+                yield return $"{rootClass.Name} declares {member}, which the compiler generates; remove it";
+        }
+
+        foreach (var name in scan.Names.Select(n => n.Name).Distinct(StringComparer.Ordinal))
+        {
+            if (!rootClass.GetMembers(name).IsEmpty || !rootClass.GetMembers(Field(name)).IsEmpty)
+                yield return $"x:Name='{name}' collides with a member {rootClass.Name} declares";
+        }
+    }
+
     internal static string? NameConflict(Scan scan, INamedTypeSymbol rootClass)
     {
         foreach (var group in scan.Names.GroupBy(n => n.Name))
@@ -357,6 +490,9 @@ static class XamlCodeBehind
 
             if (group.Key == rootClass.Name)
                 return $"x:Name='{group.Key}' is the name of its own class";
+
+            if (scan.Names.Any(n => Field(n.Name) == group.Key))
+                return $"x:Name='{group.Key}' is the field generated for another x:Name";
         }
 
         return null;

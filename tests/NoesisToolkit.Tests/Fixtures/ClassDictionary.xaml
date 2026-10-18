@@ -1,0 +1,10 @@
+<ResourceDictionary
+  x:Class="Sample.ClassTheme"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <SolidColorBrush x:Key="Accent" Color="Red" />
+  <Style x:Key="Accented" TargetType="Button">
+    <Setter Property="Background" Value="{StaticResource Accent}" />
+  </Style>
+</ResourceDictionary>

@@ -123,7 +123,7 @@ sealed partial class XamlEmitter
         string? assign = null;
         if (NeedsAccessor(property.Type) || MismatchedSlot(property))
         {
-            if (property.SetMethod is null)
+            if (!Settable(property, property.ContainingType))
             {
                 Note("accessor-slot-has-no-setter");
                 return null;
@@ -167,6 +167,16 @@ sealed partial class XamlEmitter
         if (Unregistered(value))
             return null;
 
+        if (
+            NeedsAccessor(value)
+            && resolver.FindAttachedSetter(owner, name) is { } setter
+            && !AcceptsElement(setter.Parameters[0].Type)
+        )
+        {
+            Note("attached-setter-takes-a-narrower-target");
+            return null;
+        }
+
         return resolver.FindDependencyPropertyOwner(owner, name) is not null
             ? new BindingSlot(
                 SlotReference(owner, name),
@@ -183,6 +193,11 @@ sealed partial class XamlEmitter
             )
             : null;
     }
+
+    bool AcceptsElement(ITypeSymbol parameter) =>
+        parameter.SpecialType == SpecialType.System_Object
+        || resolver.Resolve(XamlTypeResolver.PresentationNs, "FrameworkElement") is { } element
+            && XamlTypeResolver.DerivesFrom(element, XamlTypeResolver.Fqn(parameter));
 
     readonly Dictionary<XElement, string> _elementVars = new Dictionary<XElement, string>();
 
@@ -262,6 +277,8 @@ sealed partial class XamlEmitter
     static string SlotReference(ITypeSymbol owner, string name) =>
         $"{XamlTypeResolver.Fqn(owner)}.{name}Property";
 
+    static string Id(string name) => XamlCodeBehind.Escape(name);
+
     static object? NamedValue(MarkupCall call, string key) =>
         call.Named.FirstOrDefault(p => p.Key == key).Value;
 
@@ -334,7 +351,10 @@ sealed partial class XamlEmitter
             && source.Resolver is null
             && slot.Type.SpecialType == SpecialType.System_Object
         )
+        {
             walked = new ResolvedPath(null, new List<Hop>(), resolver.ObjectType);
+            _refusal = null;
+        }
 
         if (walked is not { } resolved)
             return No("path-unresolved");
@@ -492,12 +512,12 @@ sealed partial class XamlEmitter
         var slotFqn = XamlTypeResolver.Fqn(slot.Type);
         var convert = exact ? "__t" : CastTo(slot.Type, from, "__t");
         var writeBack = writes
-            ? $"static (__o, __w) => __o.{last.Name} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
+            ? $"static (__o, __w) => __o.{Id(last.Name)} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
             : "null";
         var guarded = resolved.Hops.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Of<{owner}, {fromFqn}, {slotFqn}>("
-            + $"static __o => __o.{last.Name}, static __t => {convert}, {writeBack}, {guarded})";
+            + $"static __o => __o.{Id(last.Name)}, static __t => {convert}, {writeBack}, {guarded})";
     }
 
     const string BindingLaneFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingLane";
@@ -580,7 +600,7 @@ sealed partial class XamlEmitter
         var guarded = resolved.Hops.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Text<{owner}, {fromFqn}>("
-            + $"static __o => __o.{last.Name}, "
+            + $"static __o => __o.{Id(last.Name)}, "
             + $"static ({fromFqn} __t, global::System.Span<char> __d, out int __w) => "
             + $"{{ var __s = new {SlotTextFqn}(__d); {string.Join(" ", pieces.ToArray())} "
             + "return __s.Done(out __w); }, "
@@ -995,7 +1015,7 @@ sealed partial class XamlEmitter
 
             var inFqn = XamlTypeResolver.Fqn(Wrapped(incoming) ?? incoming);
             var outFqn = XamlTypeResolver.Fqn(last.Type);
-            return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{last.Name} = "
+            return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{Id(last.Name)} = "
                 + $"__v is {inFqn} __w ? {CastTo(last.Type, last.Type, "__w")} : default({outFqn})";
         }
 
@@ -1009,7 +1029,7 @@ sealed partial class XamlEmitter
         )
             return null;
 
-        return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{last.Name} = "
+        return $"(__o, __v) => (({XamlTypeResolver.Fqn(last.Owner)})__o).{Id(last.Name)} = "
             + NarrowBack(last.Type, "__v", "__w");
     }
 
@@ -1176,7 +1196,9 @@ sealed partial class XamlEmitter
             );
 
         // A compiled root assigns its names to fields and registers none, so nothing else answers.
-        return _rootClass is null ? null : new BindingSource($"__s => this._{name}", scope);
+        return _rootClass is null
+            ? null
+            : new BindingSource($"__s => this.{XamlCodeBehind.Field(name)}", scope);
     }
 
     // The templated parent is not an element the document wrote, so what it is comes from the type
@@ -1217,8 +1239,9 @@ sealed partial class XamlEmitter
         var walk = AttachedTo(element) is null ? "FindAncestor" : "FindAncestorOrSelf";
         var lookup =
             $"__s => {CompiledBindingFqn}.{walk}(__s, typeof({XamlTypeResolver.Fqn(type)}))";
+        // Typed as the walk states it: a container the markup never shows can be what it lands on.
         if (AncestorScope(element, type) is { } scope)
-            return new BindingSource(lookup, scope);
+            return new BindingSource(lookup, scope, type);
 
         // Past a style or template the XML ancestry says nothing, so the type comes from the attribute
         // alone and the run-time walk retries off LayoutUpdated until the tree connects. What that
@@ -1295,20 +1318,20 @@ sealed partial class XamlEmitter
 
         if (hop.Type.SpecialType == SpecialType.System_Boolean)
             return check is not null
-                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{hop.Name})"
-                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{hop.Name})";
+                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{Id(hop.Name)})"
+                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{Id(hop.Name)})";
 
         if (BoxesOnRead(hop.Type))
         {
             var value = XamlTypeResolver.Fqn(hop.Type);
             return check is not null
-                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{hop.Name})"
-                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{hop.Name})";
+                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{Id(hop.Name)})"
+                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{Id(hop.Name)})";
         }
 
         return check is not null
-            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{hop.Name})"
-            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{hop.Name})";
+            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{Id(hop.Name)})"
+            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{Id(hop.Name)})";
     }
 
     // A nullable already boxes to its value or null, and a ref struct cannot be a type argument.
@@ -1725,8 +1748,33 @@ sealed partial class XamlEmitter
             return null;
         }
 
+        if (!resolver.IsAccessible(property.GetMethod, _rootClass, owner))
+        {
+            Note("hop-getter-inaccessible");
+            return null;
+        }
+
+        if (
+            property.Type.IsRefLikeType
+            || property.Type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer
+        )
+        {
+            Note("hop-is-ref-like");
+            return null;
+        }
+
         return property.Type;
     }
+
+    // Change notification is all a compiled hop watches, and a dependency property raises none.
+    bool UnwatchedOwner(INamedTypeSymbol owner, string name) =>
+        XamlTypeResolver.DerivesFrom(owner, "global::Noesis.DependencyObject")
+        && (
+            resolver.FindDependencyPropertyOwner(owner, name) is not null
+            || !owner.AllInterfaces.Any(i =>
+                XamlTypeResolver.Fqn(i) == "global::System.ComponentModel.INotifyPropertyChanged"
+            )
+        );
 
     static bool ExplicitOnly(INamedTypeSymbol owner, IPropertySymbol property) =>
         owner.TypeKind != TypeKind.Interface
@@ -1749,6 +1797,12 @@ sealed partial class XamlEmitter
             if (MemberType(current, segment) is not { } member)
             {
                 Note("hop-missing");
+                return null;
+            }
+
+            if (UnwatchedOwner(current, segment))
+            {
+                Note("hop-off-a-dependency-object");
                 return null;
             }
 
@@ -2346,7 +2400,7 @@ sealed partial class XamlEmitter
         }
 
         if (slot.TwoWayByDefault && !oneWay)
-            return No("direction-unsupported");
+            return No("multi-binding-is-one-way-only");
 
         if (format is not null && slot.Type.SpecialType != SpecialType.System_String)
             return No("string-format-into-a-non-string-slot");

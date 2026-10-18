@@ -92,6 +92,10 @@ public class NameScope
 {
     public static void SetNameScope(DependencyObject target, NameScope? scope) { }
 
+    public static NameScope? GetNameScope(DependencyObject target) => null;
+
+    public object? FindName(string name) => null;
+
     public void RegisterName(string name, object element) { }
 }
 
@@ -246,6 +250,8 @@ public class ResourceDictionary
     }
 
     public void Add(object key, object? value) => _entries[key] = value;
+
+    public void Remove(object key) => _entries.Remove(key);
 }
 
 public class SolidColorBrush : Brush

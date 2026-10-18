@@ -1,0 +1,8 @@
+<UserControl
+  x:Class="Sample.InaccessibleHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:lib="clr-namespace:Lib;assembly=Lib"
+>
+  <lib:Badge x:Name="Badge" />
+</UserControl>

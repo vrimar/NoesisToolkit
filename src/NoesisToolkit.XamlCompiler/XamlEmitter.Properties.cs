@@ -36,7 +36,7 @@ sealed partial class XamlEmitter
         XAttribute attribute
     )
     {
-        if (attribute.IsNamespaceDeclaration)
+        if (attribute.IsNamespaceDeclaration || IsIgnorable(element, attribute))
             return;
 
         if (IsTemplateBinding(attribute))
@@ -81,6 +81,14 @@ sealed partial class XamlEmitter
         if (local.Contains("."))
         {
             ApplyAttachedAttribute(element, target, type, attribute.Value, local, ns);
+            return;
+        }
+
+        if (ns.Length > 0 && ns != element.Name.NamespaceName)
+        {
+            DeadMarkup.Add(
+                $"<{element.Name.LocalName} {attribute.Name}=...> — an attribute in another xmlns is not a property"
+            );
             return;
         }
 
@@ -129,13 +137,54 @@ sealed partial class XamlEmitter
         if (_rootClass is not null)
         {
             if (field)
-                _lines.Add($"this._{name} = {target};");
+                _lines.Add($"this.{XamlCodeBehind.Field(name)} = {target};");
             _lines.Add($"{RootScope}.RegisterName({Quote(name)}, {target});");
         }
     }
 
+    internal static bool IsIgnorable(XElement element, XAttribute attribute) =>
+        IsIgnorable(element, attribute.Name.NamespaceName);
+
+    internal static bool IsIgnorable(XElement element) =>
+        element.Parent is { } parent && IsIgnorable(parent, element.Name.NamespaceName);
+
+    static bool IsIgnorable(XElement element, string ns)
+    {
+        if (ns.Length == 0)
+            return false;
+
+        if (ns == XamlTypeResolver.CompatibilityNs)
+            return true;
+
+        foreach (var scope in element.AncestorsAndSelf())
+        {
+            if (
+                scope.Attribute(XName.Get("Ignorable", XamlTypeResolver.CompatibilityNs))
+                is not { } ignorable
+            )
+                continue;
+
+            foreach (
+                var prefix in ignorable.Value.Split(
+                    (char[]?)null,
+                    StringSplitOptions.RemoveEmptyEntries
+                )
+            )
+            {
+                if (scope.GetNamespaceOfPrefix(prefix)?.NamespaceName == ns)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     static bool IsSetterLike(INamedTypeSymbol type) =>
-        type.Name is "Setter" or "Trigger" or "Condition" or "DataTrigger";
+        XamlTypeResolver.Fqn(type)
+            is "global::Noesis.Setter"
+                or "global::Noesis.Trigger"
+                or "global::Noesis.Condition"
+                or "global::Noesis.DataTrigger";
 
     /// <summary>The DependencyProperty a Setter/Trigger names, resolved against the styled type.</summary>
     /// <summary>Parses a markup extension, recording the failure the callers all reported the
@@ -172,11 +221,12 @@ sealed partial class XamlEmitter
         ITypeSymbol?
     >(StringComparer.Ordinal);
 
-    void ApplySetterValue(XElement element, string target, string raw)
+    // Element text is never markup and keeps its braces: only an attribute value escapes.
+    void ApplySetterValue(XElement element, string target, string raw, bool text = false)
     {
         _pendingValueTypes.TryGetValue(target, out var valueType);
 
-        if (XamlMarkupParser.IsMarkup(raw))
+        if (!text && XamlMarkupParser.IsMarkup(raw))
         {
             if (!TryMarkup(raw, out var call))
                 return;
@@ -200,14 +250,14 @@ sealed partial class XamlEmitter
             return;
         }
 
-        var text = XamlMarkupParser.Unescape(raw);
+        var literal = text ? raw : XamlMarkupParser.Unescape(raw);
         var setter = BindingHost(element);
         if (setter.Attribute("Property")?.Value.Trim() is { } property)
-            RootSetterValue(setter, property, text);
+            RootSetterValue(setter, property, literal);
 
         var value = valueType is null
-            ? Quote(text)
-            : ConvertValue(element, text, valueType) ?? Quote(text);
+            ? Quote(literal)
+            : ConvertValue(element, literal, valueType) ?? Quote(literal);
 
         _lines.Add($"{target}.Value = {value};");
     }
@@ -242,7 +292,14 @@ sealed partial class XamlEmitter
                 valueType = instance?.Type;
             }
 
-            return SlotReference(owner, propertyName);
+            if (resolver.FindDependencyPropertyOwner(owner, propertyName) is not { } slotOwner)
+            {
+                return Fail(
+                    $"'{name}' names no dependency property of {XamlTypeResolver.Fqn(owner)}"
+                );
+            }
+
+            return SlotReference(slotOwner, propertyName);
         }
 
         var styled = scoped ?? StyleTarget;
@@ -286,7 +343,11 @@ sealed partial class XamlEmitter
         var owner = ResolveIn(element, ns, ownerName);
         if (owner is null)
         {
-            Errors.Add($"could not resolve attached-property owner '{ownerName}'");
+            // The parser drops an attribute in an xmlns it knows nothing of.
+            if (ns.Length > 0 && !resolver.Maps(ns))
+                DeadMarkup.Add($"<{element.Name.LocalName} {local}=...> is in an unknown xmlns");
+            else
+                Errors.Add($"could not resolve attached-property owner '{ownerName}'");
             return;
         }
 
@@ -417,8 +478,24 @@ sealed partial class XamlEmitter
         }
 
         var ownerFqn = XamlTypeResolver.Fqn(owner);
-        var cast = CastPrefix(valueType);
-        AddGraphStatement(found => $"{ownerFqn}.Set{propertyName}({target}, {cast}{found});", key);
+        AddGraphStatement(
+            Assigning(valueType, value => $"{ownerFqn}.Set{propertyName}({target}, {value});"),
+            key
+        );
+    }
+
+    // A resource of another type leaves the slot alone, as the parser leaves it, where an unbox throws.
+    Func<string, string> Assigning(ITypeSymbol? type, Func<string, string> assign)
+    {
+        if (type is null || TakesAnything(type))
+            return assign;
+
+        if (!type.IsValueType)
+            return found => assign($"({XamlTypeResolver.Fqn(type)}){found}");
+
+        var held = NextName("held");
+        var unboxed = XamlTypeResolver.Fqn(Wrapped(type) ?? type);
+        return found => $"if ({found} is {unboxed} {held}) {{ {assign(held)} }}";
     }
 
     void ApplyProperty(
@@ -473,14 +550,17 @@ sealed partial class XamlEmitter
         if (value is null)
             return;
 
-        if (property.SetMethod is null)
+        if (!Settable(property, type))
         {
             Errors.Add($"'{name}' on {XamlTypeResolver.Fqn(type)} is read-only");
             return;
         }
 
-        _lines.Add($"{target}.{name} = {value};");
+        _lines.Add($"{Member(target, name)} = {value};");
     }
+
+    bool Settable(IPropertySymbol property, ITypeSymbol receiver) =>
+        property.SetMethod is { } setter && resolver.IsAccessible(setter, _rootClass, receiver);
 
     void ApplyMarkup(
         XElement element,
@@ -536,15 +616,17 @@ sealed partial class XamlEmitter
                     return;
                 }
 
-                if (property.SetMethod is null)
+                if (!Settable(property, type))
                 {
                     Errors.Add($"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is read-only");
                     return;
                 }
 
-                var cast = $"({XamlTypeResolver.Fqn(property.Type)})";
                 AddGraphStatement(
-                    found => $"{target}.{property.Name} = {cast}{found};",
+                    Assigning(
+                        property.Type,
+                        value => $"{Member(target, property.Name)} = {value};"
+                    ),
                     key,
                     skipMissing: true
                 );
@@ -552,6 +634,12 @@ sealed partial class XamlEmitter
             }
             default:
             {
+                if (!Settable(property, type))
+                {
+                    Errors.Add($"'{property.Name}' on {XamlTypeResolver.Fqn(type)} is read-only");
+                    return;
+                }
+
                 if (IsCustomExtension(call))
                 {
                     var slot =
@@ -572,14 +660,14 @@ sealed partial class XamlEmitter
                             ? null
                             : provided => BindStatement(target, type, property, provided)!,
                         provided =>
-                            $"{target}.{property.Name} = {CastPrefix(property.Type)}{provided};"
+                            $"{Member(target, property.Name)} = {CastPrefix(property.Type)}{provided};"
                     );
                     return;
                 }
 
                 var expression = MarkupValue(element, call, property.Type);
                 if (expression is not null)
-                    _lines.Add($"{target}.{property.Name} = {expression};");
+                    _lines.Add($"{Member(target, property.Name)} = {expression};");
                 return;
             }
         }
@@ -632,7 +720,7 @@ sealed partial class XamlEmitter
     )
     {
         if (XamlTypeResolver.DerivesFrom(property.Type, "global::Noesis.BindingBase"))
-            return $"{target}.{property.Name} = {binding};";
+            return $"{Member(target, property.Name)} = {binding};";
 
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.DependencyObject"))
         {
@@ -644,7 +732,7 @@ sealed partial class XamlEmitter
                 : $"global::Noesis.BindingOperations.SetBinding({target}, {slot}, {binding});";
         }
 
-        return $"{target}.{property.Name} = {binding};";
+        return $"{Member(target, property.Name)} = {binding};";
     }
 
     string? DependencyPropertyRef(IPropertySymbol property) =>

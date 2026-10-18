@@ -27,10 +27,11 @@ sealed partial class XamlEmitter
             case "x:Type":
             case "Type":
             {
+                var errors = Errors.Count;
                 var type = ResolveTypeReference(element, call.Positional.FirstOrDefault() ?? "");
                 if (type is null)
                 {
-                    return Fail("could not resolve {x:Type}");
+                    return Errors.Count > errors ? null : Fail("could not resolve {x:Type}");
                 }
 
                 return $"typeof({type})";
@@ -167,7 +168,10 @@ sealed partial class XamlEmitter
                 return Fail($"'{call.Name}' has no property '{content}'");
             }
 
-            var value = ConvertValue(element, call.Positional[i], property.Type);
+            if (!Settable(property, symbol))
+                return Fail($"'{call.Name}.{content}' is read-only");
+
+            var value = ConvertOrFail(element, call.Positional[i], property.Type, content);
             if (value is null)
                 return null;
 
@@ -182,12 +186,15 @@ sealed partial class XamlEmitter
                 return Fail($"'{call.Name}' has no property '{pair.Key}'");
             }
 
+            if (!Settable(property, symbol))
+                return Fail($"'{call.Name}.{pair.Key}' is read-only");
+
             if (pair.Value is not string text)
             {
                 return Fail($"'{call.Name}.{pair.Key}' takes a nested extension");
             }
 
-            var value = ConvertValue(element, text, property.Type);
+            var value = ConvertOrFail(element, text, property.Type, pair.Key);
             if (value is null)
                 return null;
 
@@ -437,10 +444,13 @@ sealed partial class XamlEmitter
 
         if (ancestor is not null)
         {
+            var errors = Errors.Count;
             var type = ResolveTypeReference(element, ancestor);
             if (type is null)
             {
-                return Fail($"could not resolve AncestorType '{ancestor}'");
+                return Errors.Count > errors
+                    ? null
+                    : Fail($"could not resolve AncestorType '{ancestor}'");
             }
 
             return $"new global::Noesis.RelativeSource(global::Noesis.RelativeSourceMode.FindAncestor, typeof({type}), {level})";

@@ -29,8 +29,8 @@ static class Refusals
 
         // Only a dependency property raises anything to watch.
         ["element-member-is-not-a-dependency-property"] = RefusalKind.Boundary,
+        ["hop-off-a-dependency-object"] = RefusalKind.Boundary,
         ["target-is-not-a-dependency-property"] = RefusalKind.Boundary,
-        ["multi-binding-target-is-not-a-dependency-property"] = RefusalKind.Boundary,
 
         // A format and a one-way conversion cannot be run backwards.
         ["write-back-through-a-format"] = RefusalKind.Boundary,
@@ -62,22 +62,31 @@ static class Refusals
         ["target-is-the-data-context"] = RefusalKind.Boundary,
         ["target-adopts-its-content-as-data-context"] = RefusalKind.Boundary,
         ["presenter-content-in-a-template"] = RefusalKind.Boundary,
-        ["multi-binding-presenter-content-in-a-template"] = RefusalKind.Boundary,
-        ["multi-binding-target-is-the-data-context"] = RefusalKind.Boundary,
-        ["multi-binding-target-adopts-its-content-as-data-context"] = RefusalKind.Boundary,
         ["compile-bindings-is-not-a-boolean"] = RefusalKind.Author,
-        ["multi-binding-compile-bindings-is-not-a-boolean"] = RefusalKind.Author,
 
         // A resource or binding value is a live lookup, which a constant cannot express.
         ["trigger-value-is-a-lookup"] = RefusalKind.Boundary,
 
+        // The parser builds that root, so nothing compiled can join its wiring.
+        ["trigger-root-left-to-the-parser"] = RefusalKind.Boundary,
+
+        // Generated code can read neither, where the engine reads through reflection.
+        ["hop-getter-inaccessible"] = RefusalKind.Boundary,
+        ["hop-is-ref-like"] = RefusalKind.Boundary,
+
         ["opted-out"] = RefusalKind.Author,
-        ["multi-binding-opted-out"] = RefusalKind.Author,
         ["data-context-undeclared"] = RefusalKind.Author,
+        ["ancestor-data-context-undeclared"] = RefusalKind.Author,
         ["hop-missing"] = RefusalKind.Author,
         ["element-has-no-such-member"] = RefusalKind.Author,
     };
 
+    const string MultiBinding = "multi-binding-";
+
     internal static RefusalKind Of(string reason) =>
-        Kinds.TryGetValue(reason, out var kind) ? kind : RefusalKind.Gap;
+        Kinds.TryGetValue(reason, out var kind) ? kind
+        : reason.StartsWith(MultiBinding, System.StringComparison.Ordinal)
+        && Kinds.TryGetValue(reason.Substring(MultiBinding.Length), out var single)
+            ? single
+        : RefusalKind.Gap;
 }

@@ -33,7 +33,15 @@ sealed partial class XamlEmitter
     {
         if (_rootClass is not null)
         {
-            _lines.Add(statement(ResolveExpression(key)));
+            if (!skipMissing)
+            {
+                _lines.Add(statement(ResolveExpression(key)));
+                return;
+            }
+
+            var resolved = NextName("found");
+            _lines.Add($"var {resolved} = {ResolveExpression(key)};");
+            _lines.Add($"if ({resolved} != null) {{ {statement(resolved)} }}");
             return;
         }
 
@@ -138,6 +146,9 @@ sealed partial class XamlEmitter
 
         foreach (var child in root.Elements())
         {
+            if (IsIgnorable(child))
+                continue;
+
             var local = child.Name.LocalName;
 
             if (local.Contains("."))
@@ -164,7 +175,19 @@ sealed partial class XamlEmitter
 
             if (resourceKey.Key is not { } key)
             {
-                escaped.Add(EmitUnmanagedKeyEntry(child));
+                if (EmitUnmanagedKeyEntry(child) is { } parsedEntry)
+                    escaped.Add(parsedEntry);
+                continue;
+            }
+
+            if (local == "StaticResource")
+            {
+                if (ResourceElementKey(child) is { } reference)
+                    AddGraphStatement(
+                        found => $"{target}.Add({key}, {found});",
+                        reference,
+                        skipMissing: true
+                    );
                 continue;
             }
 
@@ -189,7 +212,7 @@ sealed partial class XamlEmitter
     }
 
     // Add takes only string and Type keys; anything else rides in as a merged dictionary.
-    string EmitUnmanagedKeyEntry(XElement entry)
+    string? EmitUnmanagedKeyEntry(XElement entry)
     {
         var escaped = new XElement(entry);
         CopyScope(escaped, entry);
@@ -205,12 +228,30 @@ sealed partial class XamlEmitter
         if (basedOnKey is not null)
             basedOn!.Remove();
 
-        RootParsed(entry, "resource-left-to-the-parser");
+        const string reason = "resource-left-to-the-parser";
+        RootParsed(entry, reason);
+
+        var probe = Probe(entry, new XElement(escaped));
+        if (
+            Carry(
+                entry,
+                probe,
+                ResourceKeysIn(escaped),
+                reason,
+                $"<{entry.Name.LocalName}> left to the parser"
+            )
+            is not { } carried
+        )
+            return null;
 
         var parsed = NextName("escaped");
         _lines.Add(
-            $"var {parsed} = (global::Noesis.ResourceDictionary)global::Noesis.GUI.ParseXaml({Quote(WrapAsDictionary(escaped))});"
+            $"var {parsed} = (global::Noesis.ResourceDictionary)global::Noesis.GUI.ParseXaml({Quote(Serialize(probe))});"
         );
+
+        // The copies only fed the parse; the dictionary's own entries stay the ones it reads.
+        foreach (var key in carried)
+            _lines.Add($"{parsed}.Remove({Quote(key)});");
 
         if (basedOnKey is not null)
             AddGraphStatement(
@@ -302,7 +343,11 @@ sealed partial class XamlEmitter
                 return new ResourceKeyResult(Quote(raw));
 
             var typeKey = ResolveTypeSymbol(element, raw);
-            if (typeKey is null || UnknownToParser(typeKey))
+            if (
+                typeKey is null
+                || UnknownToParser(typeKey)
+                || !resolver.IsAccessible(typeKey, _rootClass)
+            )
             {
                 return new ResourceKeyResult(null);
             }
@@ -319,10 +364,25 @@ sealed partial class XamlEmitter
                 return Failed($"could not resolve DataType '{dataType.Value}'");
             }
 
-            return new ResourceKeyResult(UnknownToParser(type) ? null : KeyExpressionFor(type));
+            return new ResourceKeyResult(
+                UnknownToParser(type) || !resolver.IsAccessible(type, _rootClass)
+                    ? null
+                    : KeyExpressionFor(type)
+            );
         }
 
         var targetType = element.Attribute("TargetType");
+        if (
+            targetType is not null
+            && resolver.SymbolOf(element) is { } keyed
+            && !XamlTypeResolver.DerivesFrom(keyed, "global::Noesis.Style")
+        )
+        {
+            // Only a Style is keyed by its TargetType; the parser drops anything else left unkeyed.
+            DeadMarkup.Add($"<{element.Name.LocalName}> has no x:Key and is dropped");
+            return null;
+        }
+
         if (targetType is not null)
         {
             var symbol = ResolveTypeSymbol(element, targetType.Value);
@@ -331,7 +391,9 @@ sealed partial class XamlEmitter
                 return Failed($"could not resolve TargetType '{targetType.Value}'");
             }
 
-            return new ResourceKeyResult(KeyExpressionFor(symbol));
+            return new ResourceKeyResult(
+                resolver.IsAccessible(symbol, _rootClass) ? KeyExpressionFor(symbol) : null
+            );
         }
 
         return Failed($"<{element.Name.LocalName}> has no x:Key, DataType or TargetType");
@@ -366,6 +428,32 @@ sealed partial class XamlEmitter
                 or SpecialType.System_Int64
                 or SpecialType.System_UInt64
         || XamlTypeResolver.Fqn(symbol) is "global::System.Uri" or "global::System.Type";
+
+    MarkupCall? ResourceElementCall(XElement element)
+    {
+        var reference = new MarkupCall { Name = element.Name.LocalName };
+        var raw = element.Attribute("ResourceKey")?.Value;
+        if (raw is null)
+        {
+            Errors.Add($"<{element.Name.LocalName}> has no ResourceKey");
+            return null;
+        }
+
+        if (!XamlMarkupParser.IsMarkup(raw))
+        {
+            reference.Positional.Add(raw.Trim());
+            return reference;
+        }
+
+        if (!TryMarkup(raw, out var nested))
+            return null;
+
+        reference.PositionalCalls.Add(nested);
+        return reference;
+    }
+
+    string? ResourceElementKey(XElement element) =>
+        ResourceElementCall(element) is { } call ? ResourceKeyExpression(element, call) : null;
 
     string? ResourceKeyExpression(XElement element, MarkupCall call)
     {

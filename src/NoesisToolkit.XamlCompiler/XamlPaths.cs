@@ -57,15 +57,18 @@ static class XamlPaths
                 + uri.Substring(component + ";component/".Length);
         }
 
+        // A scheme of its own makes the uri the provider's to resolve, exactly as the parser hands it on.
+        if (Scheme.IsMatch(uri))
+            return source;
+
         var rooted = uri.StartsWith("/", StringComparison.Ordinal);
         uri = uri.TrimStart('/');
         if (uri.Contains(";"))
             return uri;
 
-        var directory = rooted
-            ? ""
-            : System.IO.Path.GetDirectoryName(filePath.Replace('\\', '/'))?.Replace('\\', '/')
-                ?? "";
+        var file = filePath.Replace('\\', '/');
+        var directory =
+            rooted || file.LastIndexOf('/') is not (> 0 and var end) ? "" : file.Substring(0, end);
 
         var segments = new List<string>();
         var escaped = false;
@@ -87,15 +90,34 @@ static class XamlPaths
             segments.Add(segment);
         }
 
-        // The walk drops the empty leading segment, and Relativise compares against a rooted root.
+        // The walk drops the empty leading segments, and Relativise compares against a rooted root.
         var combined = directory.Length > 0 ? directory + "/" + uri : uri;
         var normalised =
-            (combined.StartsWith("/", StringComparison.Ordinal) ? "/" : "")
-            + string.Join("/", segments.ToArray());
+            (
+                combined.StartsWith("//", StringComparison.Ordinal) ? "//"
+                : combined.StartsWith("/", StringComparison.Ordinal) ? "/"
+                : ""
+            ) + string.Join("/", segments.ToArray());
 
         // Prefixing an escaped uri would key a registry row that can never match.
         return escaped ? uri : prefix + ";" + (Relativise(normalised, projectDir) ?? normalised);
     }
+
+    // Roslyn compares hint names ignoring case where C# type names do not, so the case is hashed in.
+    internal static string HintNameFor(string typeName)
+    {
+        var hash = 2166136261u;
+        foreach (var c in typeName)
+            hash = unchecked((hash ^ c) * 16777619u);
+
+        return $"{typeName}.{hash:x8}.g.cs";
+    }
+
+    // Two letters at least: a drive letter is a path, not a scheme.
+    static readonly System.Text.RegularExpressions.Regex Scheme = new(
+        @"^[A-Za-z][A-Za-z0-9+.\-]+:",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant
+    );
 
     /// <summary>
     /// A type name unique per document. Derived from the whole project-relative path, so two folders

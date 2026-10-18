@@ -430,13 +430,13 @@ public partial class XamlCompilerTests
         await Assert.That(run.Errors).IsEmpty();
         var source = run.AllSources;
 
-        await Assert.That(source).Contains("__s => this._Sibling");
+        await Assert.That(source).Contains("__s => this.__Sibling");
         await Assert.That(source).Contains("__s => __s.FindName(\"Peer\")");
 
         // A name the document declared outside the template is reached by walking past the clone's
         // own scope the root's own field would be the prototype's, shared by every clone.
         await Assert.That(source).Contains("CompiledBinding.FindNamed(__s, \"Outer\")");
-        await Assert.That(source).DoesNotContain("__s => this._Outer");
+        await Assert.That(source).DoesNotContain("__s => this.__Outer");
         await Assert
             .That(source)
             .Contains("CompiledBinding.FindAncestor(__s, typeof(global::Noesis.ItemsControl))");
@@ -547,7 +547,7 @@ public partial class XamlCompilerTests
 
         // The field is what the generated code reads; the scope is what a fallback binding's
         // ElementName resolves through.
-        await Assert.That(run.AllSources).Contains("this._Ok =");
+        await Assert.That(run.AllSources).Contains("this.__Ok =");
         await Assert.That(run.AllSources).Contains("__scope.RegisterName(\"Ok\"");
     }
 
@@ -599,6 +599,20 @@ public partial class XamlCompilerTests
         var unrooted = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1004").ToList();
         await Assert.That(unrooted.Count).IsEqualTo(1);
         await Assert.That(unrooted[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(11);
+    }
+
+    [Test]
+    public async Task A_member_missing_off_a_resolved_context_is_reported_beside_an_unresolved_item_type()
+    {
+        var run = Run(["UnresolvedItemType.xaml"], [UnresolvedTypesPartial]);
+
+        await Assert
+            .That(
+                run.GeneratorDiagnostics.Count(d =>
+                    d.Id == "NTK1004" && d.GetMessage().Contains("'Missing'")
+                )
+            )
+            .IsEqualTo(1);
     }
 
     static List<string> LeftNativeAt(int line) =>
@@ -780,6 +794,85 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task An_element_left_to_the_parser_still_takes_its_resources_and_triggers()
+    {
+        var run = Run(
+            ["ParsedRoots.xaml"],
+            [
+                """
+                namespace Sample;
+
+                public class Flagged
+                {
+                    public bool Flag { get; set; }
+                }
+
+                public class TrExtension : global::Noesis.MarkupExtension
+                {
+                    public TrExtension(string key) { }
+
+                    public override object? ProvideValue(object? provider) => null;
+                }
+                """,
+                Stubs.Mvvm,
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_type_another_assembly_keeps_internal_is_left_to_the_parser()
+    {
+        var run = GeneratorHarness.Run(
+            new XamlCompileGenerator(),
+            ["InaccessibleElement.xaml"],
+            [Host("InaccessibleHost")],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            extraReferences:
+            [
+                GeneratorHarness.Reference(
+                    "Lib",
+                    "namespace Lib { internal class Badge : global::Noesis.Control { } }"
+                ),
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("ParseXaml");
+    }
+
+    [Test]
+    public async Task A_dictionary_with_code_behind_builds_its_entries_into_itself()
+    {
+        var run = Run(
+            ["ClassDictionary.xaml"],
+            [
+                """
+                namespace Sample;
+
+                public partial class ClassTheme : global::Noesis.ResourceDictionary
+                {
+                    public ClassTheme() => InitializeComponent();
+                }
+                """,
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("this.Add(\"Accent\"");
+    }
+
+    [Test]
+    public async Task A_plain_value_on_an_unresolved_element_keeps_the_document_compiled()
+    {
+        var run = Run(["UnresolvedValue.xaml"], [UnresolvedHostPartial]);
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("BuildXamlTree");
+    }
+
+    [Test]
     public async Task A_handler_the_generated_connect_cannot_type_is_an_error_not_a_silent_drop()
     {
         var run = Run(
@@ -800,7 +893,7 @@ public partial class XamlCompilerTests
         await Assert.That(run.Errors).IsEmpty();
         var source = run.AllSources;
         await Assert.That(source).Contains("RegisterName(\"Plain\"");
-        await Assert.That(source).DoesNotContain("this._Plain");
+        await Assert.That(source).DoesNotContain("this.__Plain");
     }
 
     [Test]
@@ -823,7 +916,19 @@ public partial class XamlCompilerTests
 
         // The tag says "Button" only symbol resolution knows which Button that is.
         await Assert.That(run.AllSources).DoesNotContain("private Button _Ok;");
-        await Assert.That(run.AllSources).Contains("private global::Noesis.Button _Ok;");
+        await Assert.That(run.AllSources).Contains("private global::Noesis.Button __Ok;");
+    }
+
+    [Test]
+    public async Task Accessors_compile_for_an_internal_type_a_hidden_member_and_an_underscore()
+    {
+        var run = Run(
+            ["CbAccessors.xaml"],
+            [Host("AccessorHost"), "namespace Sample; class Gauge : global::Noesis.Control { }"]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("internal global::Sample.Gauge Speed");
     }
 
     [Test]
@@ -930,6 +1035,131 @@ public partial class XamlCompilerTests
 
         await Assert.That(source).Contains("var shared0 = global::XamlGenerated.SideCar");
         await Assert.That(source).DoesNotContain("shared1");
+    }
+
+    [Test]
+    public async Task A_reference_sharing_the_apps_generated_namespace_is_reached_through_its_link()
+    {
+        var run = GeneratorHarness.Run(
+            new XamlCompileGenerator(),
+            ["Theme.xaml"],
+            buildProperties: new Dictionary<string, string>
+            {
+                ["build_property.ProjectDir"] = "/repo/App",
+            },
+            assemblyName: "Foo.App",
+            extraReferences:
+            [
+                GeneratorHarness.Reference("FooApp", SideCarResources.Replace("SideCar", "FooApp")),
+                GeneratorHarness.Reference(
+                    "Foo_App",
+                    """
+                    namespace XamlGenerated.Links;
+
+                    public static class A_Foo_x005F_App
+                    {
+                        public static void Flush(global::Noesis.ResourceDictionary root) { }
+
+                        public static global::Noesis.ResourceDictionary? Resolve(string logical) => null;
+
+                        public static object? SharedByKey(object key) => null;
+                    }
+                    """
+                ),
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+
+        await Assert
+            .That(source)
+            .DoesNotContain("= global::XamlGenerated.FooApp.XamlResources.Resolve");
+        await Assert
+            .That(source)
+            .Contains("var from0 = global::XamlGenerated.Links.A_Foo_x005F_App.Resolve(logical);");
+        await Assert.That(source).Contains("public static class A_Foo_x002E_App");
+        await Assert.That(run.GeneratorDiagnostics.Count(d => d.Id == "NTK1009")).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task A_relative_source_in_a_project_on_a_network_share_stays_project_relative()
+    {
+        var logical = XamlPaths.SourceLogicalName(
+            "Colors.xaml",
+            @"\\nas\dev\App\Themes\Main.xaml",
+            "App",
+            @"\\nas\dev\App\"
+        );
+
+        await Assert.That(logical).IsEqualTo("App;Themes/Colors.xaml");
+    }
+
+    [Test]
+    public async Task A_source_with_a_scheme_of_its_own_is_left_to_the_provider()
+    {
+        var source = "pack://application:,,,/Themes/Colors.xaml";
+
+        await Assert
+            .That(XamlPaths.SourceLogicalName(source, "/repo/App/Main.xaml", "App", "/repo/App"))
+            .IsEqualTo(source);
+    }
+
+    [Test]
+    public async Task Documents_whose_paths_differ_only_in_case_get_distinct_files()
+    {
+        var upper = XamlPaths.HintNameFor(
+            XamlPaths.TypeNameFor("/repo/App/Views/Theme.xaml", "/repo/App")
+        );
+        var lower = XamlPaths.HintNameFor(
+            XamlPaths.TypeNameFor("/repo/App/views/Theme.xaml", "/repo/App")
+        );
+
+        // Roslyn rejects a second hint name that differs from the first only in case.
+        await Assert
+            .That(string.Equals(upper, lower, StringComparison.OrdinalIgnoreCase))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task A_linked_document_is_named_by_its_link()
+    {
+        var run = GeneratorHarness.Run(
+            new XamlCompileGenerator(),
+            ["Theme.xaml"],
+            buildProperties: new Dictionary<string, string>
+            {
+                ["build_property.ProjectDir"] = "/repo/App",
+                ["build_metadata.AdditionalFiles.Link"] = @"Themes\Linked.xaml",
+            }
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("\"SampleApp;Themes/Linked.xaml\"");
+    }
+
+    [Test]
+    public async Task A_hand_written_InitializeComponent_is_reported_rather_than_duplicated()
+    {
+        var run = Run(
+            ["CbAccessors.xaml"],
+            [
+                """
+                namespace Sample;
+
+                public partial class AccessorHost : global::Noesis.UserControl
+                {
+                    public void InitializeComponent() { }
+                }
+
+                class Gauge : global::Noesis.Control { }
+                """,
+            ]
+        );
+
+        await Assert
+            .That(run.Errors.Select(e => e.Id).Distinct())
+            .IsEquivalentTo(new[] { "NTK1001" });
     }
 
     const string SideCarResources = """

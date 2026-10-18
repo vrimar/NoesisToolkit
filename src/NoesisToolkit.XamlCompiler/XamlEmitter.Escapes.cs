@@ -93,33 +93,63 @@ sealed partial class XamlEmitter
         if (scopeNamespace is not null)
             probe.Add(new XAttribute(XNamespace.Xmlns + "__probe", scopeNamespace));
 
-        // Noesis seals the binding as it parses, so the fragment carries what it names, transitively.
-        var pending = new Queue<string>(ResourceKeysIn(style));
-        var carried = new HashSet<string>(StringComparer.Ordinal);
-        while (pending.Count > 0)
-        {
-            var key = pending.Dequeue();
-            if (!carried.Add(key))
-                continue;
-
-            if (DeclarationOf(setter, key) is not { } declaration)
-            {
-                return Fail(
-                    $"a Setter left to the parser names '{key}', which its own file does not declare"
-                );
-            }
-
-            probe.AddFirst(new XElement(declaration));
-            RootParsed(declaration, SetterLeftToParser);
-
-            foreach (var inner in ResourceKeysIn(declaration))
-                pending.Enqueue(inner);
-        }
+        if (
+            Carry(
+                setter,
+                probe,
+                ResourceKeysIn(style),
+                SetterLeftToParser,
+                "a Setter left to the parser"
+            )
+            is null
+        )
+            return null;
 
         var name = NextName("setter");
         _lines.Add($"var {name} = (global::Noesis.Setter){ParsedStyle(probe)}.Setters[0];");
 
         return name;
+    }
+
+    // Noesis seals what it parses: carry every named declaration, transitively, in document order.
+    List<string>? Carry(
+        XElement scope,
+        XElement probe,
+        IEnumerable<string> keys,
+        string reason,
+        string what
+    )
+    {
+        var pending = new Queue<string>(keys);
+        var carried = new List<string>();
+        var declarations = new List<XElement>();
+        while (pending.Count > 0)
+        {
+            var key = pending.Dequeue();
+            if (carried.Contains(key))
+                continue;
+
+            carried.Add(key);
+            if (DeclarationOf(scope, key) is not { } declaration)
+            {
+                Errors.Add($"{what} names '{key}', which its own file does not declare");
+                return null;
+            }
+
+            declarations.Add(declaration);
+            RootParsed(declaration, reason);
+
+            foreach (var inner in ResourceKeysIn(declaration))
+                pending.Enqueue(inner);
+        }
+
+        probe.AddFirst(
+            declarations
+                .OrderBy(d => (XNode)d, XNode.DocumentOrderComparer)
+                .Select(d => new XElement(d))
+                .ToArray()
+        );
+        return carried;
     }
 
     static IEnumerable<string> ResourceKeysIn(XElement fragment) =>
@@ -192,6 +222,47 @@ sealed partial class XamlEmitter
                     && HasUnconstructibleExtension(element, call)
                 );
 
+    // Managed code makes a resource reference live on an element only; the parser, on what it holds.
+    bool HoldsLiveReference(XElement element, INamedTypeSymbol type)
+    {
+        if (!XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement"))
+            return false;
+
+        var pending = new Stack<XElement>(element.Elements());
+        while (pending.Count > 0)
+        {
+            var child = pending.Pop();
+            if (!child.Name.LocalName.Contains("."))
+            {
+                if (
+                    resolver.SymbolOf(child) is not { } symbol
+                    || !XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.DependencyObject")
+                    || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkElement")
+                    || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkTemplate")
+                    || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Style")
+                    || XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.ResourceDictionary")
+                )
+                    continue;
+
+                if (
+                    child
+                        .Attributes()
+                        .Any(a =>
+                            !a.IsNamespaceDeclaration
+                            && XamlMarkupParser.IsMarkup(a.Value)
+                            && XamlMarkupParser.Parse(a.Value) is { Name: "DynamicResource" }
+                        )
+                )
+                    return true;
+            }
+
+            foreach (var grandchild in child.Elements())
+                pending.Push(grandchild);
+        }
+
+        return false;
+    }
+
     internal static bool Unassignable(
         XElement element,
         INamedTypeSymbol type,
@@ -203,18 +274,29 @@ sealed partial class XamlEmitter
             if (attribute.IsNamespaceDeclaration || attribute.Name.LocalName.Contains("."))
                 continue;
 
-            var property = resolver.FindProperty(type, attribute.Name.LocalName);
-            if (
-                property is not null
-                && XamlTypeResolver.Fqn(property.Type)
-                    is "global::Noesis.BindingExpressionBase"
-                        or "global::Noesis.PathFigureCollection"
-            )
+            if (UnassignableSlot(resolver.FindProperty(type, attribute.Name.LocalName)))
+                return true;
+        }
+
+        foreach (var child in element.Elements())
+        {
+            var local = child.Name.LocalName;
+            var dot = local.IndexOf('.');
+            if (dot < 0 || child.HasElements)
+                continue;
+
+            if (UnassignableSlot(resolver.FindProperty(type, local.Substring(dot + 1))))
                 return true;
         }
 
         return false;
     }
+
+    static bool UnassignableSlot(IPropertySymbol? property) =>
+        property is not null
+        && XamlTypeResolver.Fqn(property.Type)
+            is "global::Noesis.BindingExpressionBase"
+                or "global::Noesis.PathFigureCollection";
 
     // The managed API cannot install a template-binding expression, so the parser builds each element
     // that carries one from those attributes alone, in a template of the same kind.
@@ -350,11 +432,10 @@ sealed partial class XamlEmitter
         && resolver.SymbolOf(element) is { } symbol
         && !IsSetterLike(symbol)
         && !HasUnassignableSlot(element, symbol)
+        && !HoldsLiveReference(element, symbol)
         && !NeedsParsedSetter(element, symbol)
         && !(
-            !element.HasElements
-            && (symbol.SpecialType != SpecialType.None || symbol.TypeKind == TypeKind.Struct)
-            && LiteralOf(element, symbol) is not null
+            !element.HasElements && IsLiteralType(symbol) && LiteralOf(element, symbol) is not null
         )
         && !symbol.IsAbstract
         && resolver.HasConstructor(symbol);
@@ -385,11 +466,11 @@ sealed partial class XamlEmitter
             if (attribute.IsNamespaceDeclaration || !NamesAResource(attribute.Value))
                 continue;
 
-            if (parsedType is null)
+            if (parsedType is null || !resolver.IsAccessible(parsedType, _rootClass))
             {
                 return Fail(
                     $"<{element.Name.LocalName}> stays on the parser and its {attribute.Name.LocalName} "
-                        + "names a resource, but the type is unresolved so it cannot be assigned after"
+                        + "names a resource, but generated code cannot name the type to assign it after"
                 );
             }
 
@@ -429,8 +510,13 @@ sealed partial class XamlEmitter
 
         RegisterParsedNames(element, name);
 
+        if (deferred.Count == 0)
+            return name;
+
+        var typed = NextName(element.Name.LocalName);
+        _lines.Add($"var {typed} = ({XamlTypeResolver.Fqn(parsedType!)})(object){name};");
         foreach (var attribute in deferred)
-            ApplyAttribute(element, name, parsedType!, attribute);
+            ApplyAttribute(element, typed, parsedType!, attribute);
 
         return name;
     }
@@ -482,8 +568,11 @@ sealed partial class XamlEmitter
 
             if (resolver.SymbolOf(element) is { } symbol)
             {
-                _lines.Add($"this._{name} = ({XamlTypeResolver.Fqn(symbol)}){found};");
-                found = $"this._{name}";
+                var field = $"this.{XamlCodeBehind.Field(name!)}";
+                _lines.Add(
+                    $"{field} = ({XamlTypeResolver.Fqn(resolver.Nameable(symbol, _rootClass))}){found};"
+                );
+                found = field;
             }
 
             _lines.Add($"{RootScope}.RegisterName({Quote(name!)}, {found});");
@@ -541,8 +630,6 @@ sealed partial class XamlEmitter
     static string ParsedStyle(XElement probe) =>
         $"((global::Noesis.Style)((global::Noesis.ResourceDictionary)"
         + $"global::Noesis.GUI.ParseXaml({Quote(Serialize(probe))}))[\"__p\"])";
-
-    static string WrapAsDictionary(XElement entry) => Serialize(Probe(entry, new XElement(entry)));
 
     static string Serialize(XElement fragment)
     {

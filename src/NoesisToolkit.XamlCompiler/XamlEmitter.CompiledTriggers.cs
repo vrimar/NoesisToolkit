@@ -24,14 +24,11 @@ sealed partial class XamlEmitter
 
     void PlanCompiledTriggers(XElement owner, string target, INamedTypeSymbol type, XElement style)
     {
-        if (!OptedIntoCompiledBindings(owner))
+        var wrapper = style.Elements().FirstOrDefault(e => e.Name.LocalName == "Style.Triggers");
+        if (wrapper is null || !OptedIn(style, wrapper))
             return;
 
         if (!XamlTypeResolver.DerivesFrom(type, "global::Noesis.FrameworkElement"))
-            return;
-
-        var wrapper = style.Elements().FirstOrDefault(e => e.Name.LocalName == "Style.Triggers");
-        if (wrapper is null)
             return;
 
         var specs = PlanTriggers(owner, type, wrapper, templateScoped: false);
@@ -46,13 +43,10 @@ sealed partial class XamlEmitter
     // that slot is emitted the moment the root has taken its last child.
     void PlanTemplateTriggers(XElement template)
     {
-        if (!OptedIntoCompiledBindings(template))
-            return;
-
         var wrapper = template
             .Elements()
             .FirstOrDefault(e => e.Name.LocalName == template.Name.LocalName + ".Triggers");
-        if (wrapper is null)
+        if (wrapper is null || !OptedIn(template, wrapper))
             return;
 
         var content = template.Elements().FirstOrDefault(e => e.Name.LocalName.IndexOf('.') < 0);
@@ -66,6 +60,14 @@ sealed partial class XamlEmitter
         )
             return;
 
+        // A root the parser builds never reaches the wiring the trigger set would join.
+        if (!Graftable(content))
+        {
+            foreach (var trigger in wrapper.Elements())
+                TriggerFell(trigger, "trigger-root-left-to-the-parser");
+            return;
+        }
+
         var specs = PlanTriggers(content, contentType, wrapper, templateScoped: true);
         if (specs is null)
             return;
@@ -74,6 +76,17 @@ sealed partial class XamlEmitter
         var shared = NextName("triggers");
         _lines.Add($"var {shared} = new {TriggerSpecFqn}[] {{ {specs} }};");
         AddPendingWire(content, $"{TriggerSetFqn}.Bind(__e, {shared});");
+    }
+
+    bool OptedIn(XElement scope, XElement wrapper)
+    {
+        if (OptedIntoCompiledBindings(scope))
+            return true;
+
+        foreach (var trigger in wrapper.Elements())
+            TriggerFell(trigger, "opted-out");
+
+        return false;
     }
 
     string? PlanTriggers(
@@ -487,7 +500,10 @@ sealed partial class XamlEmitter
             : templateScoped && AncestorRelative(call) ? AncestorOfTemplatedParent(owner, call)
             : ResolveSource(owner, call);
         if (from is not { } source)
+        {
+            Note("trigger-source-unresolved");
             return null;
+        }
 
         // Each reads the templated parent's DataContext, not the one the root rebinds for itself.
         if (

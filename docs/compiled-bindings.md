@@ -170,6 +170,8 @@ property should not also bind it.
 | Form | Kind | Why |
 |---|---|---|
 | a path off an element that is not one of its dependency properties | boundary | nothing else about an element can be watched |
+| a hop off any other dependency object, such as `{Binding Accent.Opacity}` through a brush | boundary | a dependency property raises no change notification a hop can watch |
+| a hop whose getter generated code cannot reach, or whose value is a ref struct | boundary | only reflection reads it |
 | `StringFormat` or a one-way conversion with a write back | boundary | neither can be run backwards |
 | `DataContext="{Binding …}"` on the element itself | boundary | the write would feed the next read its own result |
 | a value the target slot's declared type does not accept | boundary | `SetValue` dispatches on that type, so a near-enough value is a crash |
