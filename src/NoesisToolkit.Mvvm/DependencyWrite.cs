@@ -216,6 +216,11 @@ public static class DependencyWrite
                     value
                 );
                 break;
+            case Slot.Misrouted:
+                throw new NotSupportedException(
+                    $"Noesis writes a {property.PropertyType.Name} property as a pointer, so managed "
+                        + $"code cannot set '{property.Name}': set it from markup, a style or a binding."
+                );
             default:
                 var instance = NoesisInternals.InstanceHandle(null, value);
                 Native.Component(null, target, Handle(property), instance.Handle);
@@ -243,6 +248,7 @@ public static class DependencyWrite
         Size,
         CornerRadius,
         Proxy,
+        Misrouted,
     }
 
     static readonly Dictionary<DependencyProperty, Slot> Slots =
@@ -278,6 +284,7 @@ public static class DependencyWrite
             : type == typeof(Size) ? Slot.Size
             : type == typeof(CornerRadius) ? Slot.CornerRadius
             : NativeSlots.Typed(type) ? Slot.Proxy
+            : NativeSlots.Misrouted(type) ? Slot.Misrouted
             : Slot.Component;
         Slots[property] = slot;
         return slot;

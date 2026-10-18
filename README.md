@@ -152,6 +152,11 @@ static void OnWidthChanged(DependencyObject d, DependencyPropertyChangedEventArg
 A `static` partial property registers as an attached property and gains generated `GetSlot` /
 `SetSlot` accessors instead.
 
+Noesis 4.0 reads and writes a `GridLength`, `Matrix`, `Matrix3D`, `Matrix4` or
+`VirtualizationCacheLength` property from managed code as a pointer, so one of those types is declared
+`{ get; }` (`NTK3002` otherwise) and set from markup, a style or a binding; the generated getter reads
+the value through a coerce callback the registration carries. An attached one gets no `Set` accessor.
+
 A callback may take its object by handle instead, `(ElementHandle element,
 DependencyPropertyChangedEventArgs e)`. Noesis holds a native element's managed proxy weakly and mints
 a new one on the first touch after every collection; a callback that reads through `GetSlot(element)`

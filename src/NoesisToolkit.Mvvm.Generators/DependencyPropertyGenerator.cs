@@ -25,6 +25,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    private static readonly DiagnosticDescriptor MisroutedSetter = new(
+        id: "NTK3002",
+        title: "Noesis cannot write this property type from managed code",
+        messageFormat: "'{0}' is a {1}, which Noesis writes from managed code as a pointer; declare it {{ get; }} and set it from markup, a style or a binding",
+        category: "NoesisToolkit",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     internal const string PropertiesStep = "NoesisMvvmDependencyProperties";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -56,6 +65,19 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                             )
                         );
                         continue;
+                    }
+
+                    foreach (var m in group)
+                    {
+                        if (m.Misrouted && !m.IsAttached && m.SetterKeyword is not null)
+                            spc.ReportDiagnostic(
+                                Diagnostic.Create(
+                                    MisroutedSetter,
+                                    m.Location?.ToLocation(),
+                                    m.PropertyName,
+                                    m.TypeDisplay
+                                )
+                            );
                     }
 
                     Output.Add(
@@ -115,12 +137,22 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         }
 
         var owner = prop.ContainingType;
+        var underlying = prop.Type
+            is INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
+            } nullable
+            ? nullable.TypeArguments[0]
+            : prop.Type;
 
         return new Model(
             OwnerInfo.From(owner),
+            LocationInfo.From(prop.Locations.FirstOrDefault()),
             prop.Name,
             prop.Type.ToDisplayString(SymbolText.FqnNullable),
             typeFqn,
+            prop.Type.ToDisplayString(),
+            NoesisSlots.IsMisrouted(underlying.ToDisplayString()),
             propertyChanged,
             defaultValue,
             metadataOptions,
@@ -380,7 +412,11 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             if (m.GetterModifier is { } getter)
                 w.Line($"{getter}get => {Read(m, "this")};");
             if (m.SetterKeyword is { } setter)
-                w.Line($"{m.SetterModifier}{setter} => {Write(m, "this")};");
+                w.Line(
+                    m.Misrouted
+                        ? $"{m.SetterModifier}{setter} => throw new global::System.NotSupportedException();"
+                        : $"{m.SetterModifier}{setter} => {Write(m, "this")};"
+                );
         }
         w.Line();
     }
@@ -390,7 +426,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     private static string Read(Model m, string target) =>
         m.TypedRead is { } typed
             ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"
-            : $"({m.TypeFqnNullable}){target}.GetValue({m.PropertyName}Property)";
+        : m.Misrouted ? $"({m.TypeFqnNullable}){ReadFqn}.Value({target}, {m.PropertyName}Property)!"
+        : $"({m.TypeFqnNullable}){target}.GetValue({m.PropertyName}Property)";
 
     private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
 
@@ -450,12 +487,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             w.Line($"{ReadByHandle(m, "element")};");
 
         w.Line();
-        w.Line(
-            $"public static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
-        );
-        using (w.Indented())
-            w.Line($"{Write(m, "element")};");
-        w.Line();
+        if (!m.Misrouted)
+        {
+            w.Line(
+                $"public static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
+            );
+            using (w.Indented())
+                w.Line($"{Write(m, "element")};");
+            w.Line();
+        }
 
         if (m.IsPropertyPartial)
         {
@@ -479,16 +519,21 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         string opts = m.MetadataOptions ?? "FrameworkPropertyMetadataOptions.None";
 
         // A null callback would not pick between the object and the handle overloads.
-        return m.PropertyChanged is { } changed
+        var metadata = m.PropertyChanged is { } changed
             ? $"{WatcherFqn}.Metadata({def}, {opts}, {changed})"
             : $"{WatcherFqn}.Metadata({def}, {opts})";
+
+        return m.Misrouted ? $"{ReadFqn}.Capturing({metadata})" : metadata;
     }
 
     private readonly record struct Model(
         OwnerInfo Owner,
+        LocationInfo? Location,
         string PropertyName,
         string TypeFqnNullable,
         string TypeFqn,
+        string TypeDisplay,
+        bool Misrouted,
         string? PropertyChanged,
         string? DefaultValue,
         string? MetadataOptions,

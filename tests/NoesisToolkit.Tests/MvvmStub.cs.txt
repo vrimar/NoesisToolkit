@@ -74,6 +74,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
     public static class DependencyRead
     {
         public static object? Value(Noesis.DependencyObject source, Noesis.DependencyProperty property) => null;
+        public static Noesis.FrameworkPropertyMetadata Capturing(Noesis.FrameworkPropertyMetadata metadata) => metadata;
         public static bool Bool(Noesis.DependencyObject source, Noesis.DependencyProperty property) => false;
         public static int Int(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0;
         public static long Long(Noesis.DependencyObject source, Noesis.DependencyProperty property) => 0L;

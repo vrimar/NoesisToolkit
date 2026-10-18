@@ -285,6 +285,35 @@ public class MvvmGeneratorTests
         await Assert.That(run.GeneratorDiagnostics.Select(d => d.Id)).Contains("NTK3001");
     }
 
+    [Test]
+    public async Task A_settable_GridLength_property_is_reported_and_a_get_only_one_is_not()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, GridLengthOwner]
+        );
+
+        var misrouted = run.GeneratorDiagnostics.Where(d => d.Id == "NTK3002").ToList();
+        await Assert.That(misrouted.Count).IsEqualTo(1);
+        await Assert.That(misrouted[0].GetMessage()).Contains("'Settable'");
+    }
+
+    const string GridLengthOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Gutter : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial global::Noesis.GridLength Settable { get; set; }
+
+            [DependencyProperty]
+            public partial global::Noesis.GridLength Fixed { get; }
+        }
+        """;
+
     const string AttachedOwner = """
         using NoesisToolkit.Mvvm;
 

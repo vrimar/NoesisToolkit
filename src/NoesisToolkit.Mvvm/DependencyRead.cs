@@ -198,6 +198,48 @@ public static class DependencyRead
     internal static object? Value(nint source, DependencyProperty property) =>
         ReaderOf(property).Read(source, property);
 
+    /// <summary>Makes a property of a type Noesis' <c>GetValue</c> reads as a pointer readable through
+    /// <see cref="Value(DependencyObject, DependencyProperty)"/>: <paramref name="metadata"/> takes a
+    /// coerce callback that hands the effective value over.</summary>
+    /// <param name="metadata">The metadata to register the property with; its coerce callback is replaced.</param>
+    /// <returns><paramref name="metadata"/>, so the call can wrap a registration's metadata.</returns>
+    public static FrameworkPropertyMetadata Capturing(FrameworkPropertyMetadata metadata)
+    {
+        Guard.NotNull(metadata, nameof(metadata));
+        metadata.CoerceValueCallback = Capture;
+        return metadata;
+    }
+
+    static readonly CoerceValueCallback Capture = OnCoerce;
+
+    static readonly object NotCaptured = new object();
+
+    [ThreadStatic]
+    static object? _captured;
+
+    static object OnCoerce(DependencyObject target, object baseValue)
+    {
+        if (ReferenceEquals(_captured, NotCaptured))
+            _captured = baseValue;
+
+        return baseValue;
+    }
+
+    static object? Captured(DependencyObject source, DependencyProperty property)
+    {
+        _captured = NotCaptured;
+        source.CoerceValue(property);
+        var value = _captured;
+        _captured = null;
+
+        return ReferenceEquals(value, NotCaptured)
+            ? throw new NotSupportedException(
+                $"Noesis reads a {property.PropertyType.Name} property as a pointer: '{property.Name}' "
+                    + "is readable from managed code only when registered through DependencyRead.Capturing."
+            )
+            : value;
+    }
+
     internal static bool Bool(nint source, DependencyProperty property) =>
         Native.Bool(null, source, Handle(property), false, out _);
 
@@ -235,10 +277,22 @@ public static class DependencyRead
             // Noesis reports its own object-typed properties as BaseComponent.
             if (type == typeof(object) || type == typeof(BaseComponent))
                 return ObjectReader.Instance;
+            if (NativeSlots.Misrouted(type))
+                return CapturedReader.Instance;
             return NativeSlots.Typed(type) ? PlainReader.Instance : ComponentReader.Instance;
         }
 
         internal abstract object? Read(nint source, DependencyProperty property);
+    }
+
+    sealed class CapturedReader : Reader
+    {
+        internal static readonly CapturedReader Instance = new CapturedReader();
+
+        internal override object? Read(nint source, DependencyProperty property) =>
+            NoesisInternals.Proxy(null, source, false) is DependencyObject target
+                ? Captured(target, property)
+                : null;
     }
 
     // A struct or nullable Noesis marshals itself; only this read still goes through a proxy.

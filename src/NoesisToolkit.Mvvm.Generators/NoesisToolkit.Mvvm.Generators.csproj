@@ -8,6 +8,7 @@
     <NoesisSharedFile Include="LocationInfo" />
     <NoesisSharedFile Include="DynamicDependencies" />
     <NoesisSharedFile Include="ProbedOverrides" />
+    <NoesisSharedFile Include="NoesisSlots" />
   </ItemGroup>
 
   <Import Project="../../build/Analyzer.props" />
