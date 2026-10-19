@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`Events.On` and `Events.Off` by name refuse a name Noesis raises no event under** with an
+  `ArgumentException`, as Noesis' own `AddHandler` does. A routed event such as `SizeChanged` named as
+  a string was taken and never fired; it goes through the `RoutedEvent` overload.
+
 ## [0.6.1] - 2026-10-18
 
 ### Added

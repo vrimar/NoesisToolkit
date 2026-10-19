@@ -153,6 +153,16 @@ public sealed class EventsTests
     }
 
     [Test]
+    public void A_routed_event_subscribed_by_name_is_refused()
+    {
+        NoesisRuntime.Start();
+
+        var host = new Border();
+
+        Assert.Throws<ArgumentException>(() => Events.On(host, "SizeChanged", static _ => { }));
+    }
+
+    [Test]
     public async Task A_handler_on_an_element_a_compiled_binding_also_watches_runs_once()
     {
         NoesisRuntime.Start();

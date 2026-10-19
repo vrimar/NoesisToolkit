@@ -89,10 +89,12 @@ public static class Events
     }
 
     /// <summary>Runs <paramref name="handler"/> whenever the named event, one Noesis raises by name
-    /// such as <c>SizeChanged</c> or <c>IsVisibleChanged</c>, fires on <paramref name="element"/>.</summary>
+    /// such as <c>IsVisibleChanged</c> or <c>LayoutUpdated</c>, fires on <paramref name="element"/>.</summary>
     /// <param name="element">The element to listen on.</param>
     /// <param name="eventName">The event's name as its C# event is called.</param>
     /// <param name="handler">Takes the element the event fired on.</param>
+    /// <exception cref="ArgumentException">Noesis raises no event by that name, as for a routed event
+    /// such as <c>SizeChanged</c>, which the <see cref="RoutedEvent"/> overload takes.</exception>
     public static void On(
         FrameworkElement element,
         string eventName,
@@ -102,13 +104,14 @@ public static class Events
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(eventName, nameof(eventName));
         Guard.NotNull(handler, nameof(handler));
-        ElementEvents.Subscribe(element, 0, NoesisInternals.EventId(null, eventName), handler);
+        ElementEvents.Subscribe(element, 0, NamedEventId(eventName), handler);
     }
 
     /// <summary>Stops a subscription taken with <see cref="On(FrameworkElement, string, Action{FrameworkElement})"/>.</summary>
     /// <param name="element">The element listened on.</param>
     /// <param name="eventName">The event's name.</param>
     /// <param name="handler">The handler that was registered.</param>
+    /// <exception cref="ArgumentException">Noesis raises no event by that name.</exception>
     public static void Off(
         FrameworkElement element,
         string eventName,
@@ -118,7 +121,7 @@ public static class Events
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(eventName, nameof(eventName));
         Guard.NotNull(handler, nameof(handler));
-        ElementEvents.Unsubscribe(element, 0, NoesisInternals.EventId(null, eventName), handler);
+        ElementEvents.Unsubscribe(element, 0, NamedEventId(eventName), handler);
     }
 
     /// <summary>Runs <paramref name="handler"/> with the key whenever the key event reaches
@@ -187,5 +190,27 @@ public static class Events
         Guard.NotNull(routedEvent, nameof(routedEvent));
         Guard.NotNull(handler, nameof(handler));
         ElementEvents.Unsubscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
+    }
+
+    static readonly Action AnyHandler = static () => { };
+
+    // Bound by a name Noesis raises nothing under, a subscription is taken and never fires.
+    static uint NamedEventId(string eventName)
+    {
+        var id = NoesisInternals.EventId(null, eventName);
+        try
+        {
+            NoesisInternals.IsLegalHandler(null, id, AnyHandler);
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentNullException)
+        {
+            throw new ArgumentException(
+                $"Noesis raises no event named {eventName}; a routed event takes its RoutedEvent.",
+                nameof(eventName),
+                e
+            );
+        }
+
+        return id;
     }
 }

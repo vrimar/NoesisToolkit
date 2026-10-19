@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -39,6 +40,13 @@ static class NoesisInternals
     internal static extern uint EventId(
         [UnsafeAccessorType("Noesis.EventManager, Noesis.GUI")] object? owner,
         string name
+    );
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "IsLegalHandler")]
+    internal static extern bool IsLegalHandler(
+        [UnsafeAccessorType("Noesis.EventManager, Noesis.GUI")] object? owner,
+        uint eventId,
+        Delegate handler
     );
 
     internal static object? DataContext(nint element) =>
