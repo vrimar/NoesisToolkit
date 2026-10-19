@@ -11,6 +11,12 @@ All notable changes to this project are documented here. The format follows
   `ArgumentException`, as Noesis' own `AddHandler` does. A routed event such as `SizeChanged` named as
   a string was taken and never fired; it goes through the `RoutedEvent` overload.
 
+### Fixed
+
+- **A native event binding is released once nothing listens to it.** A binding that resolved late
+  through the layout retry, or a handler taken off with `Events.Off`, left Noesis calling back on
+  every raise for as long as the element lived.
+
 ## [0.6.1] - 2026-10-18
 
 ### Added

@@ -30,6 +30,12 @@ static unsafe class NativeEvents
     internal static void BindNamed(nint element, uint eventId) =>
         Noesis_Event_Bind(&OnEvent, element, eventId);
 
+    internal static void UnbindRouted(nint element, nint routedEvent) =>
+        Noesis_RoutedEvent_Unbind(&OnRoutedEvent, element, routedEvent);
+
+    internal static void UnbindNamed(nint element, uint eventId) =>
+        Noesis_Event_Unbind(&OnEvent, element, eventId);
+
     internal static Key KeyOf(nint args) => (Key)KeyGet(null, new HandleRef(null, args));
 
     internal static void MarkHandled(nint args) =>
@@ -114,6 +120,20 @@ static unsafe class NativeEvents
 
     [DllImport("Noesis")]
     static extern void Noesis_Event_Bind(
+        delegate* unmanaged<nint, nint, uint, nint, nint, void> callback,
+        nint element,
+        uint eventId
+    );
+
+    [DllImport("Noesis")]
+    static extern void Noesis_RoutedEvent_Unbind(
+        delegate* unmanaged<nint, nint, nint, nint, nint, void> callback,
+        nint element,
+        nint routedEvent
+    );
+
+    [DllImport("Noesis")]
+    static extern void Noesis_Event_Unbind(
         delegate* unmanaged<nint, nint, uint, nint, nint, void> callback,
         nint element,
         uint eventId

@@ -17,8 +17,11 @@ static class ElementEvents
         entry.DataContextChanged.Add(listener);
     }
 
-    internal static void UnwatchDataContext(ElementState element, IChangeListener listener) =>
+    internal static void UnwatchDataContext(ElementState element, IChangeListener listener)
+    {
         element.Events?.DataContextChangedIfAny?.Remove(listener);
+        Release(element, 0, NativeEvents.DataContextChanged);
+    }
 
     internal static void WatchLayout(ElementState element, IChangeListener listener)
     {
@@ -30,11 +33,19 @@ static class ElementEvents
         entry.LayoutUpdated.Add(listener);
     }
 
-    internal static void UnwatchLayout(ElementState element, IChangeListener listener) =>
+    internal static void UnwatchLayout(ElementState element, IChangeListener listener)
+    {
         element.Events?.LayoutUpdatedIfAny?.Remove(listener);
+        Release(element, 0, NativeEvents.LayoutUpdated);
+    }
 
-    internal static void UnwatchLifecycle(ElementState element, ElementLifecycle lifecycle) =>
+    internal static void UnwatchLifecycle(ElementState element, ElementLifecycle lifecycle)
+    {
         element.Events?.LifecycleIfAny?.Remove(lifecycle);
+        Release(element, NativeEvents.Loaded, 0);
+        Release(element, NativeEvents.Reloaded, 0);
+        Release(element, NativeEvents.Unloaded, 0);
+    }
 
     /// <summary>Hears Loaded, Reloaded and Unloaded for as long as the element lives.</summary>
     internal static void WatchLifecycle(ElementState element, ElementLifecycle lifecycle)
@@ -90,10 +101,13 @@ static class ElementEvents
     internal static void Unsubscribe(nint element, nint routed, uint named, Delegate handler)
     {
         if (
-            ElementState.Find(element)?.Events?.SubscriptionsIfAny is { } list
-            && Find(list, routed, named, handler) is { } subscription
+            ElementState.Find(element) is not { Events.SubscriptionsIfAny: { } list } state
+            || Find(list, routed, named, handler) is not { } subscription
         )
-            list.Remove(subscription);
+            return;
+
+        list.Remove(subscription);
+        Release(state, routed, named);
     }
 
     static Subscription? Find(
@@ -187,6 +201,23 @@ static class ElementEvents
             NativeEvents.BindNamed(handle, named);
     }
 
+    // Bound with nothing listening, the event still calls back on every raise.
+    static void Release(ElementState element, nint routed, uint named)
+    {
+        if (
+            !element.Alive
+            || element.Events is not { } entry
+            || entry.Wants(routed, named)
+            || !entry.Unbind(routed, named)
+        )
+            return;
+
+        if (routed != 0)
+            NativeEvents.UnbindRouted(element.Handle, routed);
+        else
+            NativeEvents.UnbindNamed(element.Handle, named);
+    }
+
     internal sealed class Subscription(nint routed, uint named, Delegate handler)
     {
         internal nint Routed => routed;
@@ -218,6 +249,45 @@ static class ElementEvents
 
             _bound.Add((routed, named));
             return true;
+        }
+
+        internal bool Unbind(nint routed, uint named) => _bound?.Remove((routed, named)) == true;
+
+        internal bool Wants(nint routed, uint named)
+        {
+            if (_subscriptions is not null)
+            {
+                using var run = _subscriptions.Start();
+                while (run.Next(out var subscription))
+                {
+                    if (subscription.Routed == routed && subscription.Named == named)
+                        return true;
+                }
+            }
+
+            if (routed == 0)
+            {
+                return named == NativeEvents.LayoutUpdated
+                    ? _layoutUpdated?.Count > 0
+                    : named == NativeEvents.DataContextChanged && _dataContextChanged?.Count > 0;
+            }
+
+            if (_routed is not null)
+            {
+                using var run = _routed.Start();
+                while (run.Next(out var watch))
+                {
+                    if (watch.Routed == routed)
+                        return true;
+                }
+            }
+
+            return _lifecycle?.Count > 0
+                && (
+                    routed == NativeEvents.Loaded
+                    || routed == NativeEvents.Reloaded
+                    || routed == NativeEvents.Unloaded
+                );
         }
 
         internal NamedEvent DataContextChanged => _dataContextChanged ??= new NamedEvent();
@@ -287,6 +357,8 @@ static class ElementEvents
     internal sealed class NamedEvent
     {
         readonly HandlerList<IChangeListener> _listeners = new HandlerList<IChangeListener>();
+
+        internal int Count => _listeners.Count;
 
         internal void Add(IChangeListener listener) => _listeners.Add(listener);
 

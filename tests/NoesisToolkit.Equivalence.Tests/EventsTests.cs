@@ -134,6 +134,26 @@ public sealed class EventsTests
     }
 
     [Test]
+    public async Task A_handler_taken_again_after_its_removal_runs_once()
+    {
+        NoesisRuntime.Start();
+
+        var sized = 0;
+        var host = new Border { Width = 100, Height = 100 };
+        void OnSized(FrameworkElement _) => sized++;
+        var view = NoesisRuntime.Show(host);
+
+        Events.On(host, FrameworkElement.SizeChangedEvent, OnSized);
+        Events.Off(host, FrameworkElement.SizeChangedEvent, OnSized);
+        Events.On(host, FrameworkElement.SizeChangedEvent, OnSized);
+        var before = sized;
+        host.Width = 120;
+        NoesisRuntime.Pump(view, host);
+
+        await Assert.That(sized).IsEqualTo(before + 1);
+    }
+
+    [Test]
     public async Task A_named_visibility_change_reaches_its_handler()
     {
         NoesisRuntime.Start();
