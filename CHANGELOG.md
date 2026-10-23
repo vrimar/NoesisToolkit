@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`DependencyRead.Thickness`, `CornerRadius`, `Point`, `Size` and `Color`** read a property of
+  that type with no box, by object or by handle. A generated `[DependencyProperty]` of one of them
+  reads through them, where its getter boxed on every read.
+
+### Fixed
+
+- **A nullable or Noesis struct property read through `DependencyRead.Value` no longer boxes per
+  read.** A `bool?` such as `ToggleButton.IsChecked` comes back as one of the two shared boxes, or
+  null; an `int?`, `long?`, `float?` or `double?`, and a `Thickness`, `CornerRadius`, `Point`,
+  `Size` or `Color`, nullable or not, as a box kept per value. A compiled binding or trigger
+  reading one allocated on every evaluation.
+
 ## [0.6.2] - 2026-10-19
 
 ### Changed

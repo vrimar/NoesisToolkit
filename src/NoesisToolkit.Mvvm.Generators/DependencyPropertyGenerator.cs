@@ -352,7 +352,16 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             SpecialType.System_Int64 => "Long",
             SpecialType.System_Single => "Float",
             SpecialType.System_Double => "Double",
-            _ => type.TypeKind == TypeKind.Enum ? $"Enum<{type.Fq()}>" : null,
+            _ when type.TypeKind == TypeKind.Enum => $"Enum<{type.Fq()}>",
+            _ => type.ToDisplayString() switch
+            {
+                "Noesis.Thickness" => "Thickness",
+                "Noesis.CornerRadius" => "CornerRadius",
+                "Noesis.Point" => "Point",
+                "Noesis.Size" => "Size",
+                "Noesis.Color" => "Color",
+                _ => null,
+            },
         };
     }
 
@@ -440,8 +449,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         w.Line();
     }
 
-    // A bool, int, long, float, double or enum reads typed through the toolkit; Noesis' GetValue boxes
-    // every value type anew.
+    // A bool, int, long, float, double, enum or Noesis struct reads typed through the toolkit; Noesis'
+    // GetValue boxes every value type anew.
     private static string Read(Model m, string target) =>
         m.TypedRead is { } typed
             ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"

@@ -144,6 +144,37 @@ public sealed class SettledCostTests
     }
 
     [Test]
+    public async Task A_nullable_or_struct_dependency_property_reads_without_boxing()
+    {
+        NoesisRuntime.Start();
+
+        var toggle = new ToggleButton
+        {
+            IsThreeState = true,
+            IsChecked = true,
+            Margin = new Thickness(1, 2, 3, 4),
+        };
+
+        await Assert
+            .That(DependencyRead.Value(toggle, ToggleButton.IsCheckedProperty))
+            .IsEqualTo(true);
+        await Assert
+            .That(DependencyRead.Value(toggle, FrameworkElement.MarginProperty))
+            .IsEqualTo(new Thickness(1, 2, 3, 4));
+        await Assert
+            .That(Allocated(() => _ = DependencyRead.Value(toggle, ToggleButton.IsCheckedProperty)))
+            .IsEqualTo(0);
+        await Assert
+            .That(
+                Allocated(() => _ = DependencyRead.Value(toggle, FrameworkElement.MarginProperty))
+            )
+            .IsEqualTo(0);
+
+        toggle.IsChecked = null;
+        await Assert.That(DependencyRead.Value(toggle, ToggleButton.IsCheckedProperty)).IsNull();
+    }
+
+    [Test]
     public async Task Firing_a_watched_property_allocates_nothing_per_handler()
     {
         NoesisRuntime.Start();

@@ -2,15 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
 
 namespace NoesisToolkit.Mvvm.CodeGen;
 
 /// <summary>Reads a dependency property without the box Noesis' <c>GetValue</c> makes for every
-/// value type: a bool comes back as one of two shared boxes, and an int, long, float, double or enum
-/// as a box kept per value. Text — a string property, or an object one holding a string — comes back as the
-/// string already decoded for it, where Noesis decodes afresh. Anything else reads as Noesis reads it.</summary>
+/// value type: a bool comes back as one of two shared boxes, and an int, long, float, double, enum,
+/// <see cref="Noesis.Thickness"/>, <see cref="Noesis.CornerRadius"/>, <see cref="Noesis.Point"/>,
+/// <see cref="Noesis.Size"/> or <see cref="Noesis.Color"/> as a box kept per value, nullable or not.
+/// Text — a string property, or an object one holding a string — comes back as the string already
+/// decoded for it, where Noesis decodes afresh. Anything else reads as Noesis reads it.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class DependencyRead
 {
@@ -51,6 +54,45 @@ public static class DependencyRead
     /// <returns>The value.</returns>
     public static double Double(DependencyObject source, DependencyProperty property) =>
         Native.Double(null, Handle(source), Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Thickness"/> property with no box at all.</summary>
+    /// <param name="source">The object to read.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Thickness Thickness(
+        DependencyObject source,
+        DependencyProperty property
+    ) => *(Thickness*)Native.Thickness(null, Handle(source), Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.CornerRadius"/> property with no box at all.</summary>
+    /// <param name="source">The object to read.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe CornerRadius CornerRadius(
+        DependencyObject source,
+        DependencyProperty property
+    ) => *(CornerRadius*)Native.CornerRadius(null, Handle(source), Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Point"/> property with no box at all.</summary>
+    /// <param name="source">The object to read.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Point Point(DependencyObject source, DependencyProperty property) =>
+        *(Point*)Native.Point(null, Handle(source), Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Size"/> property with no box at all.</summary>
+    /// <param name="source">The object to read.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Size Size(DependencyObject source, DependencyProperty property) =>
+        *(Size*)Native.Size(null, Handle(source), Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Color"/> property with no box at all.</summary>
+    /// <param name="source">The object to read.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Color Color(DependencyObject source, DependencyProperty property) =>
+        *(Color*)Native.Color(null, Handle(source), Handle(property), false, out _);
 
     /// <summary>Reads an enum property with no box at all.</summary>
     /// <typeparam name="TEnum">The enum type, stored by Noesis as its unsigned bits.</typeparam>
@@ -195,6 +237,43 @@ public static class DependencyRead
         where TEnum : struct, System.Enum =>
         Bits<TEnum>(Native.UInt64(null, source.Pointer, Handle(property), false, out _));
 
+    /// <summary>Reads a <see cref="Noesis.Thickness"/> property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Thickness Thickness(ElementHandle source, DependencyProperty property) =>
+        *(Thickness*)Native.Thickness(null, source.Pointer, Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.CornerRadius"/> property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe CornerRadius CornerRadius(
+        ElementHandle source,
+        DependencyProperty property
+    ) => *(CornerRadius*)Native.CornerRadius(null, source.Pointer, Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Point"/> property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Point Point(ElementHandle source, DependencyProperty property) =>
+        *(Point*)Native.Point(null, source.Pointer, Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Size"/> property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Size Size(ElementHandle source, DependencyProperty property) =>
+        *(Size*)Native.Size(null, source.Pointer, Handle(property), false, out _);
+
+    /// <summary>Reads a <see cref="Noesis.Color"/> property with no box at all.</summary>
+    /// <param name="source">The object to read, by handle.</param>
+    /// <param name="property">The property to read.</param>
+    /// <returns>The value.</returns>
+    public static unsafe Color Color(ElementHandle source, DependencyProperty property) =>
+        *(Color*)Native.Color(null, source.Pointer, Handle(property), false, out _);
+
     internal static object? Value(nint source, DependencyProperty property) =>
         ReaderOf(property).Read(source, property);
 
@@ -260,18 +339,52 @@ public static class DependencyRead
         internal static Reader For(DependencyProperty property)
         {
             var type = property.PropertyType;
-            if (type == typeof(bool))
-                return BoolReader.Instance;
-            if (type == typeof(int))
-                return new IntReader();
-            if (type == typeof(long))
-                return new LongReader();
             if (type.IsEnum)
                 return new EnumReader(type);
-            if (type == typeof(float))
-                return new FloatReader();
-            if (type == typeof(double))
-                return new DoubleReader();
+
+            // Noesis reads a nullable through the same typed native, asked whether it holds null.
+            var value = Nullable.GetUnderlyingType(type) ?? type;
+            var nullable = value != type;
+            if (value == typeof(bool))
+                return nullable ? BoolReader.OrNull : BoolReader.Instance;
+            if (value == typeof(int))
+                return new IntReader(nullable);
+            if (value == typeof(long))
+                return new LongReader(nullable);
+            if (value == typeof(float))
+                return new FloatReader(nullable);
+            if (value == typeof(double))
+                return new DoubleReader(nullable);
+            if (value == typeof(Thickness))
+                return new StructReader<Thickness>(
+                    static (nint s, nint p, bool n, out bool isNull) =>
+                        Native.Thickness(null, s, p, n, out isNull),
+                    nullable
+                );
+            if (value == typeof(CornerRadius))
+                return new StructReader<CornerRadius>(
+                    static (nint s, nint p, bool n, out bool isNull) =>
+                        Native.CornerRadius(null, s, p, n, out isNull),
+                    nullable
+                );
+            if (value == typeof(Point))
+                return new StructReader<Point>(
+                    static (nint s, nint p, bool n, out bool isNull) =>
+                        Native.Point(null, s, p, n, out isNull),
+                    nullable
+                );
+            if (value == typeof(Size))
+                return new StructReader<Size>(
+                    static (nint s, nint p, bool n, out bool isNull) =>
+                        Native.Size(null, s, p, n, out isNull),
+                    nullable
+                );
+            if (value == typeof(Color))
+                return new StructReader<Color>(
+                    static (nint s, nint p, bool n, out bool isNull) =>
+                        Native.Color(null, s, p, n, out isNull),
+                    nullable
+                );
             if (type == typeof(string))
                 return StringReader.Instance;
             // Noesis reports its own object-typed properties as BaseComponent.
@@ -383,39 +496,50 @@ public static class DependencyRead
         }
     }
 
-    sealed class BoolReader : Reader
+    sealed class BoolReader(bool nullable) : Reader
     {
-        internal static readonly BoolReader Instance = new BoolReader();
+        internal static readonly BoolReader Instance = new BoolReader(false);
+        internal static readonly BoolReader OrNull = new BoolReader(true);
 
         static readonly object True = true;
         static readonly object False = false;
 
-        internal override object Read(nint source, DependencyProperty property) =>
-            Native.Bool(null, source, Handle(property), false, out _) ? True : False;
+        internal override object? Read(nint source, DependencyProperty property)
+        {
+            var raw = Native.Bool(null, source, Handle(property), nullable, out var isNull);
+
+            return nullable && isNull ? null
+                : raw ? True
+                : False;
+        }
     }
 
-    sealed class IntReader : Reader
+    sealed class IntReader(bool nullable) : Reader
     {
         // A counter shown in the UI lives in small values; a larger one boxes as Noesis would.
         readonly object?[] _small = new object?[256];
 
-        internal override object Read(nint source, DependencyProperty property)
+        internal override object? Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Int(null, source, Handle(property), false, out _);
+            var raw = Native.Int(null, source, Handle(property), nullable, out var isNull);
+            if (nullable && isNull)
+                return null;
 
             return (uint)raw < (uint)_small.Length ? _small[raw] ??= raw : raw;
         }
     }
 
-    sealed class LongReader : Reader
+    sealed class LongReader(bool nullable) : Reader
     {
         const int Cap = 64;
 
         readonly Dictionary<long, object> _boxes = new Dictionary<long, object>();
 
-        internal override object Read(nint source, DependencyProperty property)
+        internal override object? Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Int64(null, source, Handle(property), false, out _);
+            var raw = Native.Int64(null, source, Handle(property), nullable, out var isNull);
+            if (nullable && isNull)
+                return null;
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
@@ -450,7 +574,7 @@ public static class DependencyRead
     }
 
     // A layout value repeats across instances, so the boxes are kept per value up to a cap.
-    sealed class FloatReader : Reader
+    sealed class FloatReader(bool nullable) : Reader
     {
         const int Cap = 64;
 
@@ -458,9 +582,11 @@ public static class DependencyRead
             BitwiseFloat.Instance
         );
 
-        internal override object Read(nint source, DependencyProperty property)
+        internal override object? Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Float(null, source, Handle(property), false, out _);
+            var raw = Native.Float(null, source, Handle(property), nullable, out var isNull);
+            if (nullable && isNull)
+                return null;
 
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
@@ -473,7 +599,7 @@ public static class DependencyRead
         }
     }
 
-    sealed class DoubleReader : Reader
+    sealed class DoubleReader(bool nullable) : Reader
     {
         const int Cap = 64;
 
@@ -481,10 +607,42 @@ public static class DependencyRead
             BitwiseDouble.Instance
         );
 
-        internal override object Read(nint source, DependencyProperty property)
+        internal override object? Read(nint source, DependencyProperty property)
         {
-            var raw = Native.Double(null, source, Handle(property), false, out _);
+            var raw = Native.Double(null, source, Handle(property), nullable, out var isNull);
+            if (nullable && isNull)
+                return null;
 
+            if (_boxes.TryGetValue(raw, out var boxed))
+                return boxed;
+
+            boxed = raw;
+            if (_boxes.Count < Cap)
+                _boxes[raw] = boxed;
+
+            return boxed;
+        }
+    }
+
+    delegate nint StructRead(nint source, nint property, bool nullable, out bool isNull);
+
+    // Noesis hands a struct back as a pointer to its value, which repeats across instances as a float does.
+    sealed unsafe class StructReader<T>(StructRead read, bool nullable) : Reader
+        where T : unmanaged
+    {
+        const int Cap = 64;
+
+        readonly Dictionary<T, object> _boxes = new Dictionary<T, object>(
+            BitwiseStruct<T>.Instance
+        );
+
+        internal override object? Read(nint source, DependencyProperty property)
+        {
+            var at = read(source, Handle(property), nullable, out var isNull);
+            if (nullable && isNull)
+                return null;
+
+            var raw = *(T*)at;
             if (_boxes.TryGetValue(raw, out var boxed))
                 return boxed;
 
@@ -515,6 +673,24 @@ public static class DependencyRead
             BitConverter.DoubleToInt64Bits(x) == BitConverter.DoubleToInt64Bits(y);
 
         public int GetHashCode(double value) => BitConverter.DoubleToInt64Bits(value).GetHashCode();
+    }
+
+    sealed class BitwiseStruct<T> : IEqualityComparer<T>
+        where T : unmanaged
+    {
+        internal static readonly BitwiseStruct<T> Instance = new BitwiseStruct<T>();
+
+        public bool Equals(T x, T y) => Bytes(in x).SequenceEqual(Bytes(in y));
+
+        public int GetHashCode(T value)
+        {
+            var hash = new HashCode();
+            hash.AddBytes(Bytes(in value));
+            return hash.ToHashCode();
+        }
+
+        static ReadOnlySpan<byte> Bytes(in T value) =>
+            MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value));
     }
 
     // Noesis' own typed getters, which its GetValue boxes the result of on every read.
@@ -633,6 +809,54 @@ public static class DependencyRead
 
         [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencyGet_Int64")]
         internal static extern long Int64(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            bool isNullable,
+            out bool isNull
+        );
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencyGet_Thickness")]
+        internal static extern nint Thickness(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            bool isNullable,
+            out bool isNull
+        );
+
+        [UnsafeAccessor(
+            UnsafeAccessorKind.StaticMethod,
+            Name = "Noesis_DependencyGet_CornerRadius"
+        )]
+        internal static extern nint CornerRadius(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            bool isNullable,
+            out bool isNull
+        );
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencyGet_Point")]
+        internal static extern nint Point(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            bool isNullable,
+            out bool isNull
+        );
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencyGet_Size")]
+        internal static extern nint Size(
+            DependencyObject? owner,
+            nint dependencyObject,
+            nint dependencyProperty,
+            bool isNullable,
+            out bool isNull
+        );
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "Noesis_DependencyGet_Color")]
+        internal static extern nint Color(
             DependencyObject? owner,
             nint dependencyObject,
             nint dependencyProperty,

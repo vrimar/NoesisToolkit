@@ -106,6 +106,7 @@ public sealed class TypedWriteTests
             )
             .IsEqualTo(0);
         await Assert.That(AllocationCost.Of(() => typed.Inset = inset)).IsEqualTo(0);
+        await Assert.That(AllocationCost.Of(() => _ = typed.Inset)).IsEqualTo(0);
     }
 
     [Test]
