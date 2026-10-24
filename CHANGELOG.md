@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`NTK2006` reports an element naming a type its `clr-namespace` does not hold.** Noesis resolves
+  an element's type at load and only logs the miss, so a control deleted or renamed while a template
+  still names it built cleanly and left a gap in the UI.
+
 ## [0.6.4] - 2026-10-24
 
 ### Added

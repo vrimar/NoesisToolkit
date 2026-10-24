@@ -29,6 +29,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     public const string UnresolvedStaticId = "NTK2003";
     public const string UndeclaredContextId = "NTK2004";
     public const string UnresolvedEnumValueId = "NTK2005";
+    public const string UnresolvedElementTypeId = "NTK2006";
 
     private const string EnabledProperty = "build_property.NoesisAnalyzeXamlBindings";
 
@@ -89,12 +90,25 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             + "member left behind by a rename reaches the lookup as a name nothing maps."
     );
 
+    private static readonly DiagnosticDescriptor UnresolvedElementTypeRule = new(
+        UnresolvedElementTypeId,
+        title: "Element type does not resolve",
+        messageFormat: "'{0}' matches no type here; the element does not load",
+        category: "Reliability",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Noesis resolves an element's type reflectively at load time and only logs when it "
+            + "misses, so a control deleted or renamed while a template still names it leaves a gap "
+            + "in the UI rather than failing the build."
+    );
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(
             UnresolvedBindingRule,
             UnresolvedNamespaceRule,
             UnresolvedStaticRule,
             UnresolvedEnumValueRule,
+            UnresolvedElementTypeRule,
             UndeclaredContextRule
         );
 
@@ -134,6 +148,9 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
 
                 foreach (var reference in TokenScanner.Scan(content))
                     VerifyEnumValue(ctx, reference, text);
+
+                foreach (var reference in BindingScanner.ScanElementTypes(content))
+                    VerifyElementType(ctx, reference, text);
 
                 var scan = BindingScanner.ScanAll(
                     content,
@@ -224,6 +241,31 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
                 member is not null
                     ? "names a static Noesis' parser cannot read; bind it instead"
                     : "does not resolve"
+            )
+        );
+    }
+
+    private static void VerifyElementType(
+        AdditionalFileAnalysisContext context,
+        ElementTypeReference reference,
+        SourceText text
+    )
+    {
+        if (!Resolves(context.Compilation.GlobalNamespace, reference.Namespace))
+            return;
+
+        var name = $"{reference.Namespace}.{reference.TypeName}";
+        if (
+            TypeLookup.ByName(context.Compilation, name) is not null
+            || TypeLookup.ByName(context.Compilation, name + "Extension") is not null
+        )
+            return;
+
+        context.ReportDiagnostic(
+            Diagnostic.Create(
+                UnresolvedElementTypeRule,
+                LocationOf(context.AdditionalFile.Path, reference.Line, reference.Column, text),
+                name
             )
         );
     }

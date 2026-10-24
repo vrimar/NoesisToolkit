@@ -170,6 +170,46 @@ internal static class BindingScanner
         return ok ? declarations : Array.Empty<XmlnsDeclaration>();
     }
 
+    /// <summary>Every element one XAML file names through a <c>clr-namespace:</c> prefix, by the type
+    /// it names: its owner, for a property element.</summary>
+    public static IReadOnlyList<ElementTypeReference> ScanElementTypes(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return Array.Empty<ElementTypeReference>();
+
+        var references = new List<ElementTypeReference>();
+        try
+        {
+            using var reader = CreateReader(content!);
+            var lineInfo = (IXmlLineInfo)reader;
+            while (reader.Read())
+            {
+                if (
+                    reader.NodeType != XmlNodeType.Element
+                    || NamespaceOf(reader, reader.Prefix) is not { } ns
+                    || ns == PresentationNamespace
+                )
+                    continue;
+
+                var dot = reader.LocalName.IndexOf('.');
+                references.Add(
+                    new ElementTypeReference(
+                        lineInfo.LineNumber,
+                        lineInfo.LinePosition,
+                        ns,
+                        dot < 0 ? reader.LocalName : reader.LocalName.Substring(0, dot)
+                    )
+                );
+            }
+        }
+        catch (XmlException)
+        {
+            return Array.Empty<ElementTypeReference>();
+        }
+
+        return references;
+    }
+
     /// <summary>Visits every attribute of every element. Returns false when the document is not
     /// well-formed, which a scanner treats as nothing to say rather than as an error.</summary>
     static bool ForEachAttribute(string content, Action<XmlReader, IXmlLineInfo, string?> visit)
@@ -937,6 +977,22 @@ internal readonly struct StaticReference
 }
 
 /// <summary>One <c>xmlns:prefix="clr-namespace:N"</c> declaration and where it sits in the file.</summary>
+internal readonly struct ElementTypeReference
+{
+    public ElementTypeReference(int line, int column, string @namespace, string typeName)
+    {
+        Line = line;
+        Column = column;
+        Namespace = @namespace;
+        TypeName = typeName;
+    }
+
+    public int Line { get; }
+    public int Column { get; }
+    public string Namespace { get; }
+    public string TypeName { get; }
+}
+
 internal readonly struct XmlnsDeclaration
 {
     public XmlnsDeclaration(int line, int column, string prefix, string @namespace)

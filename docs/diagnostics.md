@@ -17,6 +17,7 @@
 | `NTK2003` | Error | `x:Static` does not resolve, or names a static Noesis' parser loads unset |
 | `NTK2004` | Error | binding has no declared DataContext type, in a document marked `ntk:CompileBindings` |
 | `NTK2005` | Error | enum-valued attribute names a member the enum does not declare |
+| `NTK2006` | Error | element names a type its `clr-namespace` does not hold |
 | `NTK2101` | Warning | Noesis element event subscription is never unsubscribed |
 | `NTK2102` | Warning | a command on a Noesis control captures the control |
 | `NTK3001` | Error | `[DependencyProperty]` owner is not partial |
