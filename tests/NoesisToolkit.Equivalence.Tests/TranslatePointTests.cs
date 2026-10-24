@@ -64,6 +64,20 @@ public sealed class TranslatePointTests
     }
 
     [Test]
+    public async Task AnOffset_IsWhatNoesisReturns_AndCostsNothing()
+    {
+        var (child, _) = Laid();
+
+        var native = VisualTreeHelper.GetOffset(child);
+        var typed = ElementGeometry.GetOffset(child);
+
+        await Assert.That(typed.X).IsEqualTo(native.X);
+        await Assert.That(typed.Y).IsEqualTo(native.Y);
+        await Assert.That(typed.X).IsEqualTo(11f).Because("the margin puts the child at 11");
+        await Assert.That(AllocationCost.Of(() => ElementGeometry.GetOffset(child))).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task ASizeRead_CostsNothing()
     {
         var (child, _) = Laid();

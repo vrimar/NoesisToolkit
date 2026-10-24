@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`ElementGeometry.GetOffset`** reads where a visual sits in its parent's space with no
+  allocation, where `VisualTreeHelper.GetOffset` allocates on every call.
+
 ## [0.6.3] - 2026-10-23
 
 ### Added

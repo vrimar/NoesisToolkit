@@ -100,6 +100,17 @@ public static class ElementGeometry
         return size == 0 ? default : Unsafe.Read<Size>((void*)size);
     }
 
+    /// <summary>The same as <see cref="VisualTreeHelper.GetOffset"/>, without the allocation.</summary>
+    /// <param name="visual">The visual to read.</param>
+    /// <returns>Where the visual sits in its parent's space.</returns>
+    public static unsafe Point GetOffset(Visual visual)
+    {
+        Guard.NotNull(visual, nameof(visual));
+
+        var offset = Offset(null, BaseComponent.getCPtr(visual));
+        return offset == 0 ? default : Unsafe.Read<Point>((void*)offset);
+    }
+
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "UIElement_TranslatePoint")]
     static extern nint Translate(
         [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
@@ -146,6 +157,12 @@ public static class ElementGeometry
     static extern nint Desired(
         [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
         HandleRef element
+    );
+
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "VisualTreeHelper_GetOffset")]
+    static extern nint Offset(
+        [UnsafeAccessorType("Noesis.NoesisGUI_PINVOKE, Noesis.GUI")] object? owner,
+        HandleRef visual
     );
 
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "UIElement_RenderSize_get")]
