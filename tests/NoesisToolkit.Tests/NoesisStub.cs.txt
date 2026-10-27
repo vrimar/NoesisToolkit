@@ -90,6 +90,10 @@ public class KeyBinding : InputBinding
 
 public class NameScope
 {
+    protected NameScope() { }
+
+    public NameScope(object owner) { }
+
     public static void SetNameScope(DependencyObject target, NameScope? scope) { }
 
     public static NameScope? GetNameScope(DependencyObject target) => null;

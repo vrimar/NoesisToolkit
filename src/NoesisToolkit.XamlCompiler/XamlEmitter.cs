@@ -152,7 +152,7 @@ sealed partial class XamlEmitter(
         // Cleared first: a hot reload runs this again over a root whose names point at the old elements.
         if (!dictionary)
             _lines.Add("global::Noesis.NameScope.SetNameScope(this, null);");
-        _lines.Add($"var {RootScope} = new global::Noesis.NameScope();");
+        _lines.Add($"var {RootScope} = new global::Noesis.NameScope(this);");
         if (!dictionary)
             _lines.Add($"global::Noesis.NameScope.SetNameScope(this, {RootScope});");
         PlanTemplateBindings(root, null);
