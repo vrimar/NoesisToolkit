@@ -24,11 +24,11 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -81,7 +81,7 @@ jobs:
       - name: Pack
         run: dotnet pack NoesisToolkit.slnx -c Release --no-build -o artifacts -p:Version=${{ steps.version.outputs.value }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: packages
           path: artifacts/*
@@ -94,11 +94,11 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: packages
           path: artifacts
@@ -118,12 +118,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: packages
           path: artifacts
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
