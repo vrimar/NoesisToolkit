@@ -97,7 +97,7 @@ public static unsafe class RenderDeviceTiles
         {
             if (NoesisInternals.ExtendInstance(null, device) is RenderDevice renderDevice)
                 renderDevice.ResolveRenderTarget(
-                    (RenderTarget)NoesisInternals.ExtendInstance(null, surface)!,
+                    (RenderTarget)NoesisInternals.Proxy(null, surface, false)!,
                     Tiles(tiles, count)
                 );
         }
