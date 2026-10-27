@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`NativeDrag.DoDragDrop`** starts a drag whose completion allocates nothing. Noesis' own
+  `DragDrop.DoDragDrop` wraps the data in a new `DataObject` and boxes the drop point on every
+  completion; this one hands the callback the effects and the drop point and nothing else.
+
+### Changed
+
+- **`HandlerArgs.Reuse` covers drag-and-drop.** A managed `DragEnter`, `DragOver`, `DragLeave`,
+  `Drop`, `GiveFeedback` or `QueryContinueDrag` handler, and their preview forms, now reads one reused
+  args object instead of a fresh one Noesis mints per delivery, which a drag paid on every pointer
+  move for every element it crossed.
+
 ## [0.6.5] - 2026-10-24
 
 ### Added
