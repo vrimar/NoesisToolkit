@@ -64,6 +64,9 @@ public static class HandlerArgs
             : handler == typeof(SizeChangedEventHandler) ? nameof(DeliverSizeChanged)
             : handler == typeof(ToolTipEventHandler) ? nameof(DeliverToolTip)
             : handler == typeof(ContextMenuEventHandler) ? nameof(DeliverContextMenu)
+            : handler == typeof(DragEventHandler) ? nameof(DeliverDrag)
+            : handler == typeof(GiveFeedbackEventHandler) ? nameof(DeliverGiveFeedback)
+            : handler == typeof(QueryContinueDragEventHandler) ? nameof(DeliverQueryContinueDrag)
             : handler == typeof(DependencyPropertyChangedEventHandler)
                 ? nameof(DeliverPropertyChanged)
             : null;
@@ -244,6 +247,45 @@ public static class HandlerArgs
         }
     }
 
+    static void DeliverDrag(Delegate handler, nint sender, nint args)
+    {
+        var e = DragArgs.Borrow(args);
+        try
+        {
+            ((DragEventHandler)handler)?.Invoke(Sender(sender), e);
+        }
+        finally
+        {
+            DragArgs.Return(e);
+        }
+    }
+
+    static void DeliverGiveFeedback(Delegate handler, nint sender, nint args)
+    {
+        var e = GiveFeedbackArgs.Borrow(args);
+        try
+        {
+            ((GiveFeedbackEventHandler)handler)?.Invoke(Sender(sender), e);
+        }
+        finally
+        {
+            GiveFeedbackArgs.Return(e);
+        }
+    }
+
+    static void DeliverQueryContinueDrag(Delegate handler, nint sender, nint args)
+    {
+        var e = QueryContinueDragArgs.Borrow(args);
+        try
+        {
+            ((QueryContinueDragEventHandler)handler)?.Invoke(Sender(sender), e);
+        }
+        finally
+        {
+            QueryContinueDragArgs.Return(e);
+        }
+    }
+
     static void DeliverPropertyChanged(Delegate handler, nint sender, nint args)
     {
         var e = PropertyChangedArgs.Borrow(args);
@@ -338,6 +380,15 @@ public static class HandlerArgs
     static readonly Pool<ToolTipEventArgs> ToolTipArgs = new(() => NewToolTip(0, false), Point);
     static readonly Pool<ContextMenuEventArgs> ContextMenuArgs = new(
         () => NewContextMenu(0, false),
+        Point
+    );
+    static readonly Pool<DragEventArgs> DragArgs = new(() => NewDrag(0, false), Point);
+    static readonly Pool<GiveFeedbackEventArgs> GiveFeedbackArgs = new(
+        () => NewGiveFeedback(0, false),
+        Point
+    );
+    static readonly Pool<QueryContinueDragEventArgs> QueryContinueDragArgs = new(
+        () => NewQueryContinueDrag(0, false),
         Point
     );
     static readonly Pool<DependencyPropertyChangedEventArgs> PropertyChangedArgs = new(
@@ -436,6 +487,24 @@ public static class HandlerArgs
         Ptr(e) = new HandleRef(e, p);
     }
 
+    static void Point(DragEventArgs e, nint p)
+    {
+        Point((RoutedEventArgs)e, p);
+        Ptr(e) = new HandleRef(e, p);
+    }
+
+    static void Point(GiveFeedbackEventArgs e, nint p)
+    {
+        Point((RoutedEventArgs)e, p);
+        Ptr(e) = new HandleRef(e, p);
+    }
+
+    static void Point(QueryContinueDragEventArgs e, nint p)
+    {
+        Point((RoutedEventArgs)e, p);
+        Ptr(e) = new HandleRef(e, p);
+    }
+
     static void Point(DependencyPropertyChangedEventArgs e, nint p) => Ptr(e) = new HandleRef(e, p);
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
@@ -487,6 +556,15 @@ public static class HandlerArgs
     static extern ref HandleRef Ptr(ContextMenuEventArgs e);
 
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
+    static extern ref HandleRef Ptr(DragEventArgs e);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
+    static extern ref HandleRef Ptr(GiveFeedbackEventArgs e);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
+    static extern ref HandleRef Ptr(QueryContinueDragEventArgs e);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "swigCPtr")]
     static extern ref HandleRef Ptr(DependencyPropertyChangedEventArgs e);
 
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
@@ -527,6 +605,15 @@ public static class HandlerArgs
 
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     static extern ContextMenuEventArgs NewContextMenu(nint cPtr, bool cMemoryOwn);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+    static extern DragEventArgs NewDrag(nint cPtr, bool cMemoryOwn);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+    static extern GiveFeedbackEventArgs NewGiveFeedback(nint cPtr, bool cMemoryOwn);
+
+    [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
+    static extern QueryContinueDragEventArgs NewQueryContinueDrag(nint cPtr, bool cMemoryOwn);
 
     [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
     static extern DependencyPropertyChangedEventArgs NewPropertyChanged(nint cPtr, bool cMemoryOwn);
