@@ -17,6 +17,20 @@ All notable changes to this project are documented here. The format follows
   `Drop`, `GiveFeedback` or `QueryContinueDrag` handler, and their preview forms, now reads one reused
   args object instead of a fresh one Noesis mints per delivery, which a drag paid on every pointer
   move for every element it crossed.
+- **Built against Noesis.GUI 4.0.1**, which a consumer now needs. A compiled root creates its name
+  scope through `NameScope(owner)`, the only public constructor 4.0.1 leaves.
+
+### Removed
+
+- **`ElementGeometry`.** Noesis 4.0.1 returns a struct without the box it made before, so
+  `UIElement.TranslatePoint`, `DesiredSize` and `RenderSize`, `Visual.PointToScreen` and
+  `PointFromScreen`, `VisualTreeHelper.GetOffset` and `MouseEventArgs.GetPosition` and
+  `DragEventArgs.GetPosition` allocate nothing on their own.
+
+### Fixed
+
+- **`RenderDeviceTiles` hands `ResolveRenderTarget` a surface Noesis created natively**, as Noesis
+  4.0.1's own callback does; it handed one over as null.
 
 ## [0.6.5] - 2026-10-24
 

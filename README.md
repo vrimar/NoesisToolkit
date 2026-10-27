@@ -166,10 +166,9 @@ a new one on the first touch after every collection; a callback that reads throu
 or `DependencyRead`, writes through `DependencyWrite` and subscribes through `Events.On` never has one
 minted, which matters for an attached property bound in a template that a list rebinds per row.
 
-`Events.On` and `ElementGeometry` are the same reads Noesis' managed layer offers, without the
-object it mints per call — an element's events deliver the element itself rather than a fresh args
-object, and a translated point or a desired size comes back unboxed. Both matter where something
-runs per child, such as a panel arranging its children or testing them against the viewport.
+`Events.On` is the same subscription Noesis' managed layer offers, without the args object it mints
+per delivery — an element's events deliver the element itself. That matters where a handler runs per
+child, such as every row of a list.
 
 A subscription through `Events.On` or `DependencyWatcher.Watch` lasts until the element is
 destroyed, as one on a Noesis event does. The handler is handed the element for that reason: one
