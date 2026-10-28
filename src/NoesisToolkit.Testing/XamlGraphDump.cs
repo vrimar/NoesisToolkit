@@ -145,7 +145,12 @@ static class XamlGraphDump
                     new ContentControl(),
                     h => ((ContentControl)h).ContentTemplate = template
                 );
-                DumpTriggers(template.Triggers, CompiledSetsUnder(host), sb, depth + 1);
+                DumpTriggers(
+                    template.Triggers,
+                    CompiledSetsUnder(PresentedRoot(host)),
+                    sb,
+                    depth + 1
+                );
                 WalkVisual(host, sb, depth + 1);
                 return;
             }
@@ -337,7 +342,7 @@ static class XamlGraphDump
 
     static string Plain(object? value) => value is null ? "null" : Text(value);
 
-    static List<CompiledTriggerSet> CompiledSetsUnder(DependencyObject root)
+    static List<CompiledTriggerSet> CompiledSetsUnder(DependencyObject? root)
     {
         var sets = new List<CompiledTriggerSet>();
         void Walk(DependencyObject node, int depth)
@@ -349,8 +354,12 @@ static class XamlGraphDump
             if (node is FrameworkElement element)
                 sets.AddRange(CompiledTriggerSet.SetsOf(element));
 
-            // A nested templated control's triggers belong to its own template, listed there.
-            if (depth > 0 && node is Control { Template: not null })
+            // A nested templated control's triggers belong to its own template, listed there; so do those
+            // of the data template a presenter realizes.
+            if (
+                (depth > 0 && node is Control { Template: not null })
+                || node is ContentPresenter { Content: not UIElement }
+            )
                 return;
 
             var count = VisualTreeHelper.GetChildrenCount(node);
@@ -358,8 +367,28 @@ static class XamlGraphDump
                 Walk(VisualTreeHelper.GetChild(node, i), depth + 1);
         }
 
-        Walk(root, 0);
+        if (root is not null)
+            Walk(root, 0);
         return sets;
+    }
+
+    // The host's own presenter comes first in the walk; what it realized is the template's root.
+    static DependencyObject? PresentedRoot(DependencyObject host)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(host);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(host, i);
+            if (child is ContentPresenter presenter)
+                return VisualTreeHelper.GetChildrenCount(presenter) > 0
+                    ? VisualTreeHelper.GetChild(presenter, 0)
+                    : null;
+
+            if (PresentedRoot(child) is { } found)
+                return found;
+        }
+
+        return null;
     }
 
     static Control HostFor(Type? targetType)

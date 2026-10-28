@@ -71,6 +71,27 @@
     </ControlTemplate.Triggers>
   </ControlTemplate>
 
+  <DataTemplate x:Key="PresentedInner" ntk:DataType="t:TsInner">
+    <Border x:Name="Bg" Height="5" />
+    <DataTemplate.Triggers>
+      <DataTrigger Binding="{Binding Label}" Value="inner">
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </DataTemplate.Triggers>
+  </DataTemplate>
+
+  <DataTemplate x:Key="PresentingOuter" ntk:DataType="t:SpikeItem">
+    <StackPanel x:Name="Panel">
+      <ContentPresenter Content="{Binding Payload}" ContentTemplate="{StaticResource PresentedInner}" />
+      <ContentPresenter Content="{Binding Payload}" ContentTemplate="{StaticResource PresentedInner}" />
+    </StackPanel>
+    <DataTemplate.Triggers>
+      <DataTrigger Binding="{Binding Label}" Value="outer">
+        <Setter TargetName="Panel" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </DataTemplate.Triggers>
+  </DataTemplate>
+
   <ControlTemplate x:Key="AncestorStart" TargetType="{x:Type t:SpikeControl}">
     <Border x:Name="Bg" Height="5" />
     <ControlTemplate.Triggers>

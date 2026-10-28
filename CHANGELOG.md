@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`XamlParity` lists a template's compiled triggers without those of the data templates its
+  presenters realize**, so a template whose `ContentPresenter` applies another trigger-carrying
+  template no longer reports the nested triggers as its own, once per presenter.
+
 ## [0.7.1] - 2026-10-28
 
 ### Fixed
