@@ -286,13 +286,27 @@ static class XamlGraphDump
         return text;
     }
 
+    static string SourceSegment(DependencyProperty property)
+    {
+        var owner = property.OwnerType;
+        if (
+            owner.GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance)
+            is not null
+        )
+            return property.Name;
+
+        var name =
+            owner.Assembly == typeof(DependencyObject).Assembly ? owner.Name : owner.FullName;
+        return $"({name}.{property.Name})";
+    }
+
     static string DescribeCompiledTrigger(CompiledTriggerSpec spec)
     {
         static string Condition(CompiledTriggerCondition condition)
         {
             var segments = new List<string>();
             if (condition.Part.SourceProperty is { } property)
-                segments.Add(property.Name);
+                segments.Add(SourceSegment(property));
 
             segments.AddRange(condition.Part.Hops.Select(h => h.Name));
             return $"path={string.Join(".", segments)} value={Plain(condition.Value)}";

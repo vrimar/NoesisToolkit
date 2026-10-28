@@ -59,6 +59,18 @@
     </ControlTemplate.Triggers>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="AttachedElementCondition" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Bg" Grid.Row="1" t:LifetimeMarks.Side="Left" Height="5" />
+    <ControlTemplate.Triggers>
+      <DataTrigger Binding="{Binding (Grid.Row), ElementName=Bg}" Value="1">
+        <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding (t:LifetimeMarks.Side), ElementName=Bg}" Value="Left">
+        <Setter TargetName="Bg" Property="Height" Value="7" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="AncestorStart" TargetType="{x:Type t:SpikeControl}">
     <Border x:Name="Bg" Height="5" />
     <ControlTemplate.Triggers>

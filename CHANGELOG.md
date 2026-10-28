@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`XamlParity` names a compiled trigger's attached-property condition as the parser does**, as
+  `(Owner.Name)` rather than the bare property name, so every `DataTrigger` reading an attached
+  property off an element reported a mismatch the compiled graph did not have.
+
 ## [0.7.0] - 2026-10-27
 
 ### Added
