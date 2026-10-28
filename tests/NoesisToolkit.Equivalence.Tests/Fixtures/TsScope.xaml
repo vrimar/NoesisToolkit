@@ -82,8 +82,14 @@
 
   <DataTemplate x:Key="PresentingOuter" ntk:DataType="t:SpikeItem">
     <StackPanel x:Name="Panel">
-      <ContentPresenter Content="{Binding Payload}" ContentTemplate="{StaticResource PresentedInner}" />
-      <ContentPresenter Content="{Binding Payload}" ContentTemplate="{StaticResource PresentedInner}" />
+      <ContentPresenter
+        Content="{Binding Payload}"
+        ContentTemplate="{StaticResource PresentedInner}"
+      />
+      <ContentPresenter
+        Content="{Binding Payload}"
+        ContentTemplate="{StaticResource PresentedInner}"
+      />
     </StackPanel>
     <DataTemplate.Triggers>
       <DataTrigger Binding="{Binding Label}" Value="outer">
