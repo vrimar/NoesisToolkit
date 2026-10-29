@@ -52,6 +52,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    private static readonly DiagnosticDescriptor AlreadyImplemented = new(
+        id: "NTK3005",
+        title: "Dependency property is already implemented",
+        messageFormat: "'{0}' already has an implementing declaration; remove it to generate its dependency property",
+        category: "NoesisToolkit",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     internal const string PropertiesStep = "NoesisMvvmDependencyProperties";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -95,7 +104,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                         if (!m.Generates)
                             spc.ReportDiagnostic(
                                 Diagnostic.Create(
-                                    PropertyNotPartial,
+                                    m.IsPropertyPartial ? AlreadyImplemented : PropertyNotPartial,
                                     m.Location?.ToLocation(),
                                     m.PropertyName
                                 )
@@ -126,7 +135,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
                     Output.Add(
                         spc,
-                        $"{owner.Owner.Key}.DependencyProperties.g.cs",
+                        Output.HintName(owner.Owner.Key, "DependencyProperties.g.cs"),
                         GeneratePartial(owner, generated)
                     );
                 }
@@ -183,30 +192,24 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             }
         }
 
-        var owner = prop.ContainingType;
-        var underlying = prop.Type
-            is INamedTypeSymbol
-            {
-                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
-            } nullable
-            ? nullable.TypeArguments[0]
-            : prop.Type;
+        var underlying = Underlying(prop.Type).ToDisplayString();
 
         return new Model(
-            OwnerInfo.From(owner),
+            OwnerInfo.From(prop.ContainingType),
             LocationInfo.From(prop.Locations.FirstOrDefault()),
             prop.Name,
             prop.Type.ToDisplayString(SymbolText.FqnNullable),
             typeFqn,
             prop.Type.ToDisplayString(),
-            NoesisSlots.IsMisrouted(underlying.ToDisplayString()),
-            NoesisSlots.IsUnregistrable(underlying.ToDisplayString()),
+            NoesisSlots.IsMisrouted(underlying),
+            NoesisSlots.IsUnregistrable(underlying),
             propertyChanged,
             defaultValue,
             metadataOptions,
             prop.IsStatic,
             OwnerNaming.IsPartial(prop),
-            InheritsDependencyField(owner, prop.Name),
+            HasImplementation(prop),
+            HiddenMembers(prop, model.Compilation),
             TypedRead(prop.Type),
             WritesTyped(prop.Type),
             string.Join(" ", declaration.Modifiers.Select(m => m.Text)),
@@ -414,27 +417,101 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                     or "Noesis.CornerRadius"
         );
 
-    // A base in this compilation gets its field from this same pass, so its attribute stands in for it.
-    private static bool InheritsDependencyField(INamedTypeSymbol owner, string propertyName)
+    private static ITypeSymbol Underlying(ITypeSymbol type) =>
+        type
+            is INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
+            } nullable
+            ? nullable.TypeArguments[0]
+            : type;
+
+    // Roslyn 4.8 has no PartialImplementationPart, so accessor bodies in the syntax decide.
+    private static bool HasImplementation(IPropertySymbol prop) =>
+        prop
+            .ContainingType.DeclaringSyntaxReferences.Select(r => r.GetSyntax())
+            .OfType<TypeDeclarationSyntax>()
+            .SelectMany(t => t.Members.OfType<PropertyDeclarationSyntax>())
+            .Any(p =>
+                p.Identifier.ValueText == prop.Name
+                && p.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
+                && (
+                    p.ExpressionBody is not null
+                    || p.AccessorList is { } accessors
+                        && accessors.Accessors.Any(a =>
+                            a.Body is not null || a.ExpressionBody is not null
+                        )
+                )
+            );
+
+    // A base in this compilation gets its members from this pass, so its attribute stands in.
+    private static Hidden HiddenMembers(IPropertySymbol prop, Compilation compilation)
     {
+        var owner = prop.ContainingType;
+        var members = GeneratedMembers(prop, compilation).ToList();
+        var hidden = Hidden.None;
         for (var t = owner.BaseType; t is not null; t = t.BaseType)
         {
-            foreach (var member in t.GetMembers(propertyName + "Property"))
-            {
-                if (member.DeclaredAccessibility != Accessibility.Private)
-                    return true;
-            }
+            var generated = t.GetMembers(prop.Name)
+                .OfType<IPropertySymbol>()
+                .Where(p => p.GetAttributes().Any(IsDependencyPropertyAttribute))
+                .SelectMany(p => GeneratedMembers(p, compilation))
+                .ToList();
 
-            if (
-                t.GetMembers(propertyName)
-                    .OfType<IPropertySymbol>()
-                    .Any(p => p.GetAttributes().Any(IsDependencyPropertyAttribute))
-            )
-                return true;
+            foreach (var member in members)
+            {
+                if (
+                    t.GetMembers(member.Name)
+                        .Any(m =>
+                            compilation.IsSymbolAccessibleWithin(m, owner)
+                            && Hides(member.Parameters, m)
+                        )
+                    || generated.Any(g =>
+                        g.Name == member.Name && Hides(member.Parameters, g.Parameters)
+                    )
+                )
+                    hidden |= member.Kind;
+            }
         }
 
-        return false;
+        return hidden;
     }
+
+    // The public members a [DependencyProperty] generates; null parameters mark the field.
+    private static IEnumerable<(
+        Hidden Kind,
+        string Name,
+        ITypeSymbol[]? Parameters
+    )> GeneratedMembers(IPropertySymbol prop, Compilation compilation)
+    {
+        yield return (Hidden.Field, prop.Name + "Property", null);
+
+        if (
+            !prop.IsStatic
+            || compilation.GetTypeByMetadataName("Noesis.DependencyObject") is not { } element
+        )
+            yield break;
+
+        yield return (Hidden.Getter, "Get" + prop.Name, new[] { element });
+        if (compilation.GetTypeByMetadataName(HandleMetadataName) is { } handle)
+            yield return (Hidden.HandleGetter, "Get" + prop.Name, new[] { handle });
+        if (!NoesisSlots.IsMisrouted(Underlying(prop.Type).ToDisplayString()))
+            yield return (Hidden.Setter, "Set" + prop.Name, new[] { element, prop.Type });
+    }
+
+    private static bool Hides(ITypeSymbol[]? parameters, ISymbol inherited) =>
+        parameters is null
+        || inherited is not IMethodSymbol method
+        || method.Arity == 0
+            && method.Parameters.All(p => p.RefKind == RefKind.None)
+            && method
+                .Parameters.Select(p => p.Type)
+                .SequenceEqual(parameters, SymbolEqualityComparer.Default);
+
+    private static bool Hides(ITypeSymbol[]? parameters, ITypeSymbol[]? inherited) =>
+        parameters is null
+        || inherited is null
+        || parameters.SequenceEqual(inherited, SymbolEqualityComparer.Default);
 
     private static bool IsDependencyPropertyAttribute(AttributeData attribute) =>
         attribute.AttributeClass?.ToDisplayString() == AttributeMetadataName;
@@ -467,9 +544,9 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
     private static void WriteDependencyProperty(CodeWriter w, Model m)
     {
-        string fieldNew = m.HidesInheritedField ? "new " : "";
-
-        w.Line($"public {fieldNew}static readonly DependencyProperty {m.PropertyName}Property =");
+        w.Line(
+            $"public {New(m, Hidden.Field)}static readonly DependencyProperty {m.PropertyName}Property ="
+        );
         WriteRegistration(w, m, attached: false);
 
         w.Line();
@@ -497,7 +574,9 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
     private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
 
-    private const string HandleFqn = "global::NoesisToolkit.Mvvm.ElementHandle";
+    private const string HandleMetadataName = "NoesisToolkit.Mvvm.ElementHandle";
+
+    private const string HandleFqn = "global::" + HandleMetadataName;
 
     // What a change callback that takes its object by handle reads its sibling properties with.
     private static string ReadByHandle(Model m, string target) =>
@@ -535,20 +614,22 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
     private static void WriteAttachedProperty(CodeWriter w, Model m)
     {
-        var fieldNew = m.HidesInheritedField ? "new " : "";
-
-        w.Line($"public {fieldNew}static readonly DependencyProperty {m.PropertyName}Property =");
+        w.Line(
+            $"public {New(m, Hidden.Field)}static readonly DependencyProperty {m.PropertyName}Property ="
+        );
         WriteRegistration(w, m, attached: true);
 
         w.Line();
         w.Line(
-            $"public static {m.TypeFqnNullable} Get{m.PropertyName}(DependencyObject element) =>"
+            $"public {New(m, Hidden.Getter)}static {m.TypeFqnNullable} Get{m.PropertyName}(DependencyObject element) =>"
         );
         using (w.Indented())
             w.Line($"{Read(m, "element")};");
 
         w.Line();
-        w.Line($"public static {m.TypeFqnNullable} Get{m.PropertyName}({HandleFqn} element) =>");
+        w.Line(
+            $"public {New(m, Hidden.HandleGetter)}static {m.TypeFqnNullable} Get{m.PropertyName}({HandleFqn} element) =>"
+        );
         using (w.Indented())
             w.Line($"{ReadByHandle(m, "element")};");
 
@@ -556,14 +637,14 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         if (!m.Misrouted)
         {
             w.Line(
-                $"public static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
+                $"public {New(m, Hidden.Setter)}static void Set{m.PropertyName}(DependencyObject element, {m.TypeFqnNullable} value) =>"
             );
             using (w.Indented())
                 w.Line($"{Write(m, "element")};");
             w.Line();
         }
 
-        if (m.IsPropertyPartial)
+        if (m.ImplementsProperty)
         {
             w.Line($"private static {m.TypeFqnNullable} __backing_{m.PropertyName} = default!;");
             using (w.Block($"{m.Modifiers} {m.TypeFqnNullable} {Identifier(m)}"))
@@ -578,6 +659,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     }
 
     private static string Identifier(Model m) => PartialTypeEmitter.Identifier(m.PropertyName);
+
+    private static string New(Model m, Hidden member) => (m.Hides & member) != 0 ? "new " : "";
 
     private static string BuildMetadata(Model m)
     {
@@ -606,7 +689,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         string? MetadataOptions,
         bool IsAttached,
         bool IsPropertyPartial,
-        bool HidesInheritedField,
+        bool HasImplementation,
+        Hidden Hides,
         string? TypedRead,
         bool WritesTyped,
         string Modifiers,
@@ -615,6 +699,18 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         string SetterModifier
     )
     {
-        public bool Generates => IsAttached || IsPropertyPartial;
+        public bool ImplementsProperty => IsPropertyPartial && !HasImplementation;
+
+        public bool Generates => IsAttached || ImplementsProperty;
+    }
+
+    [Flags]
+    private enum Hidden
+    {
+        None = 0,
+        Field = 1,
+        Getter = 2,
+        HandleGetter = 4,
+        Setter = 8,
     }
 }

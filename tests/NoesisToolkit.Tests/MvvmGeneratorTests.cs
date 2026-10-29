@@ -351,6 +351,45 @@ public class MvvmGeneratorTests
     }
 
     [Test]
+    public async Task A_redeclared_attached_property_hides_exactly_the_accessors_it_shadows()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, RedeclaringAttachedOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        var ids = run.CompileDiagnostics.Select(d => d.Id).ToList();
+        await Assert.That(ids).DoesNotContain("CS0108");
+        await Assert.That(ids).DoesNotContain("CS0109");
+    }
+
+    [Test]
+    public async Task A_property_with_its_own_implementing_declaration_is_reported_unless_attached()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, ImplementedPropertyOwner]
+        );
+
+        await Assert.That(run.Errors.Select(d => d.Id)).IsEquivalentTo(["NTK3005", "NTK3005"]);
+    }
+
+    [Test]
+    public async Task Owners_whose_names_flatten_alike_all_generate()
+    {
+        var run = GeneratorHarness.Run(
+            [new DependencyPropertyGenerator(), new DelegateCommandGenerator()],
+            [],
+            [Stubs.Mvvm, LookalikeOwners]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
     public async Task A_non_partial_instance_property_is_reported_and_not_generated()
     {
         var run = GeneratorHarness.Run(
@@ -396,6 +435,7 @@ public class MvvmGeneratorTests
         );
 
         await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.CompileDiagnostics.Select(d => d.Id)).DoesNotContain("CS9258");
     }
 
     [Test]
@@ -463,6 +503,103 @@ public class MvvmGeneratorTests
         {
             [DependencyProperty]
             public new partial int Count { get; set; }
+        }
+        """;
+
+    const string RedeclaringAttachedOwner = """
+        using NoesisToolkit.Mvvm;
+        using Noesis;
+
+        namespace Sample;
+
+        public partial class Dock : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public static partial int Slot { get; set; }
+        }
+
+        public partial class LabeledDock : Dock
+        {
+            [DependencyProperty]
+            public static new partial int Slot { get; set; }
+        }
+
+        public class Classic : global::Noesis.UserControl
+        {
+            public static readonly DependencyProperty RowProperty = null!;
+
+            public static int GetRow(DependencyObject element) => 0;
+
+            public static void SetRow(DependencyObject element, int value) { }
+        }
+
+        public partial class Modern : Classic
+        {
+            [DependencyProperty]
+            public static partial int Row { get; set; }
+        }
+        """;
+
+    const string ImplementedPropertyOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Meter : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial int Count { get; set; }
+
+            public partial int Count { get => 0; set { } }
+
+            public partial int Total { get; set; }
+
+            [DependencyProperty]
+            public partial int Total { get => 0; set { } }
+
+            [DependencyProperty]
+            public static partial int Slot { get; set; }
+
+            public static partial int Slot { get => 0; set { } }
+        }
+        """;
+
+    const string LookalikeOwners = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Foo_Inner : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial int A { get; set; }
+        }
+
+        public partial class Foo
+        {
+            public partial class Inner : global::Noesis.UserControl
+            {
+                [DependencyProperty]
+                public partial int B { get; set; }
+            }
+        }
+
+        public partial class Case : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial int C { get; set; }
+
+            [DelegateCommand]
+            void Save() { }
+        }
+
+        public partial class CASE : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial int D { get; set; }
+
+            [DelegateCommand]
+            void Load() { }
         }
         """;
 
@@ -537,6 +674,9 @@ public class MvvmGeneratorTests
 
             [DelegateCommand]
             void @lock() { }
+
+            [DelegateCommand]
+            void field() { }
 
             static void @checked(DependencyObject d, DependencyPropertyChangedEventArgs e) { }
         }

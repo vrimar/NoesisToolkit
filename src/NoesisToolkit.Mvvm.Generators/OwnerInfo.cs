@@ -7,16 +7,13 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace NoesisToolkit.CodeGen;
 
-/// <summary>The type a generated member is reopened into, as both MVVM generators need it.
-/// <see cref="Key"/> names the file; <see cref="Fqn"/> groups and <see cref="Display"/> is what a
-/// diagnostic prints, so the two never drift into each other's job.</summary>
 /// <summary>Naming and reopening the type a generated member belongs to. The hint-name key and
 /// the partial check are only ever asked by this generator, so they sit with it.</summary>
 static class OwnerNaming
 {
     /// <summary>
-    /// A file-name-safe key for a type: its namespace and every nesting level joined flat, each
-    /// level's arity included so <c>Outer.Inner</c> and <c>Outer&lt;T&gt;.Inner</c> do not collide.
+    /// A file-name-safe key no other type shares: namespace levels joined with <c>.</c>, nesting
+    /// levels with <c>+</c>, and each level's arity after a <c>`</c>, none of which a name can hold.
     /// </summary>
     internal static string Key(INamedTypeSymbol type)
     {
@@ -24,14 +21,15 @@ static class OwnerNaming
         for (var current = type; current is not null; current = current.ContainingType)
             levels.Push(current.Arity == 0 ? current.Name : current.Name + "`" + current.Arity);
 
+        var key = string.Join("+", levels);
         for (
             var ns = type.ContainingNamespace;
             ns is { IsGlobalNamespace: false };
             ns = ns.ContainingNamespace
         )
-            levels.Push(ns.Name);
+            key = ns.Name + "." + key;
 
-        return string.Join("_", levels);
+        return key;
     }
 
     internal static bool IsPartial(ISymbol symbol) =>
@@ -55,6 +53,9 @@ static class OwnerNaming
     }
 }
 
+/// <summary>The type a generated member is reopened into, as both MVVM generators need it.
+/// <see cref="Key"/> names the file; <see cref="Fqn"/> groups and <see cref="Display"/> is what a
+/// diagnostic prints, so the two never drift into each other's job.</summary>
 readonly record struct OwnerInfo(
     string Key,
     string Fqn,

@@ -6,3 +6,4 @@
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK3004 | NoesisToolkit | Error | [DependencyProperty] instance property is not partial
+NTK3005 | NoesisToolkit | Error | [DependencyProperty] instance property already has an implementing declaration

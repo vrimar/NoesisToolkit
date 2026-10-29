@@ -24,6 +24,7 @@
 | `NTK3002` | Error | a `[DependencyProperty]` of `GridLength`, which Noesis can only write from markup, a style or a binding, declares a setter |
 | `NTK3003` | Error | a `[DependencyProperty]` of a type Noesis cannot register from managed code (`Matrix`, `Matrix3D`, `Matrix4`, `VirtualizationCacheLength`) |
 | `NTK3004` | Error | a non-static `[DependencyProperty]` is not declared `partial` |
+| `NTK3005` | Error | a non-static `[DependencyProperty]` already has an implementing declaration |
 | `NTK3101` | Error | `[DelegateCommand]` owner is not a partial class |
 | `NTK3102` | Error | `[DelegateCommand]` method returns something other than `void`/`ValueTask` |
 | `NTK3103` | Error | `[DelegateCommand]` method takes more than one parameter |

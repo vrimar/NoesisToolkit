@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
 
@@ -94,15 +95,7 @@ static class XamlPaths
         return escaped ? uri : prefix + ";" + string.Join("/", segments.ToArray());
     }
 
-    // Roslyn compares hint names ignoring case where C# type names do not, so the case is hashed in.
-    internal static string HintNameFor(string typeName)
-    {
-        var hash = 2166136261u;
-        foreach (var c in typeName)
-            hash = unchecked((hash ^ c) * 16777619u);
-
-        return $"{typeName}.{hash:x8}.g.cs";
-    }
+    internal static string HintNameFor(string typeName) => Output.HintName(typeName, "g.cs");
 
     // Two letters at least: a drive letter is a path, not a scheme.
     static readonly System.Text.RegularExpressions.Regex Scheme = new(

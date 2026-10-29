@@ -16,7 +16,10 @@ static class PartialTypeEmitter
             : "<" + string.Join(", ", type.TypeParameters.Select(p => Identifier(p.Name))) + ">";
 
     public static string Identifier(string name) =>
-        SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
+        SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None
+        && SyntaxFacts.GetContextualKeywordKind(name) == SyntaxKind.None
+            ? name
+            : "@" + name;
 
     /// <summary>One entry per nesting level, outermost first: a dotted join would give
     /// "class Outer.class Inner".</summary>

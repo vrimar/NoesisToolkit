@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace NoesisToolkit.CodeGen;
 
@@ -22,6 +24,17 @@ static class Output
         w.Line();
     }
 
+    /// <summary>A hint name for <paramref name="name"/>. Roslyn compares hint names ignoring case
+    /// where C# names do not, so the case is hashed in.</summary>
+    public static string HintName(string name, string suffix)
+    {
+        var hash = 2166136261u;
+        foreach (var c in name)
+            hash = unchecked((hash ^ c) * 16777619u);
+
+        return $"{name}.{hash:x8}.{suffix}";
+    }
+
     /// <summary>Adds a generated file, reporting a hint-name collision instead of swallowing it.</summary>
     public static void Add(SourceProductionContext spc, string hintName, string source)
     {
@@ -29,7 +42,8 @@ static class Output
         {
             spc.AddSource(hintName, source);
         }
-        catch (ArgumentException)
+        // Roslyn refuses a name of only these characters for a collision and nothing else.
+        catch (ArgumentException) when (hintName.Length > 0 && hintName.All(IsPlainHintChar))
         {
             spc.ReportDiagnostic(
                 Diagnostic.Create(
@@ -40,4 +54,7 @@ static class Output
             );
         }
     }
+
+    static bool IsPlainHintChar(char c) =>
+        SyntaxFacts.IsIdentifierPartCharacter(c) || c is '.' or '-' or '+' or '`';
 }

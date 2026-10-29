@@ -160,6 +160,8 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
 
             var w = new CodeWriter();
             Output.Header(w);
+            // The getters mean the field keyword even where the type has a member named field.
+            w.Line("#pragma warning disable CS9258");
             if (owner.Owner.Namespace is not null)
                 w.Line($"namespace {owner.Owner.Namespace};");
             w.Line();
@@ -169,7 +171,11 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
             w.Line(members.ToString().TrimEnd('\n'));
             PartialTypeEmitter.Close(scopes);
 
-            Output.Add(spc, $"{owner.Owner.Key}.DelegateCommands.g.cs", w.ToString());
+            Output.Add(
+                spc,
+                Output.HintName(owner.Owner.Key, "DelegateCommands.g.cs"),
+                w.ToString()
+            );
         }
     }
 
