@@ -146,4 +146,24 @@ static class NoesisSlots
             || ownerAssembly == "Noesis.GUI"
                 && (memberIsCommand || member.EndsWith("StyleKey", StringComparison.Ordinal));
     }
+
+    // Owners whose commands the parser reads as text only without the member's "Command" suffix.
+    internal static readonly string[] SuffixlessCommandOwners = { "Noesis.Slider" };
+
+    /// <summary>Whether the parser reads <c>Command="Owner.Written"</c>, which names the property
+    /// <paramref name="member"/>: only a Noesis command, by the name it registers natively.</summary>
+    internal static bool ParserReadsCommandText(
+        string owner,
+        string? ownerAssembly,
+        string written,
+        string member,
+        bool memberIsCommand
+    ) =>
+        ownerAssembly == "Noesis.GUI"
+        && memberIsCommand
+        && (
+            Array.IndexOf(SuffixlessCommandOwners, owner) >= 0
+                ? written + "Command" == member
+                : written == member
+        );
 }

@@ -321,7 +321,7 @@ sealed partial class XamlEmitter
         if (CommandMember(ownerSymbol, member) is not { } named)
             return Fail($"'{owner}' has no member '{member}'");
 
-        return ParserReadsUnset(ownerSymbol, named)
+        return ParserReadsCommandUnset(ownerSymbol, member, named)
             ? Fail(UnreadCommand(text))
             : $"{owner}.{named}";
     }

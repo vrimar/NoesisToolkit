@@ -563,6 +563,11 @@ public static class ApplicationCommands
     public static RoutedUICommand Copy => new RoutedUICommand();
 }
 
+public class Slider : Control
+{
+    public static RoutedCommand DecreaseLargeCommand => new RoutedCommand();
+}
+
 [ContentProperty("VisualTree")]
 public class FrameworkTemplate
 {

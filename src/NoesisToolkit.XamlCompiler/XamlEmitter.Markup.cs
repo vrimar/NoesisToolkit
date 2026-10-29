@@ -97,13 +97,25 @@ sealed partial class XamlEmitter
             owner.TypeKind == TypeKind.Enum,
             owner.ContainingAssembly?.Name,
             member,
-            owner
-                .GetMembers(member)
-                .Any(m =>
-                    ((m as IPropertySymbol)?.Type ?? (m as IFieldSymbol)?.Type) is { } type
-                    && XamlTypeResolver.DerivesFrom(type, "global::Noesis.RoutedCommand")
-                )
+            IsRoutedCommand(owner, member)
         );
+
+    static bool ParserReadsCommandUnset(INamedTypeSymbol owner, string written, string member) =>
+        !NoesisSlots.ParserReadsCommandText(
+            owner.ToDisplayString(),
+            owner.ContainingAssembly?.Name,
+            written,
+            member,
+            IsRoutedCommand(owner, member)
+        );
+
+    static bool IsRoutedCommand(INamedTypeSymbol owner, string member) =>
+        owner
+            .GetMembers(member)
+            .Any(m =>
+                ((m as IPropertySymbol)?.Type ?? (m as IFieldSymbol)?.Type) is { } type
+                && XamlTypeResolver.DerivesFrom(type, "global::Noesis.RoutedCommand")
+            );
 
     static string UnreadStatic(string reference) =>
         $"{{x:Static {reference}}} names a static Noesis' parser cannot read; bind it instead";

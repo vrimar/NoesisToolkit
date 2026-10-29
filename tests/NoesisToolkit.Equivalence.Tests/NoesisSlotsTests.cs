@@ -11,6 +11,12 @@ public static class ParserStatics
     public static string Hint => "hint";
 }
 
+public static class ParserCommands
+{
+    public static RoutedCommand Go { get; } = new("Go", typeof(ParserCommands));
+    public static RoutedCommand JumpCommand { get; } = new("Jump", typeof(ParserCommands));
+}
+
 public enum ParserEnum
 {
     First,
@@ -183,6 +189,63 @@ public sealed class NoesisSlotsTests
         }
 
         await Assert.That(statics.Count(s => s.Owner.IsEnum)).IsGreaterThan(0);
+        await Assert.That(wrong).IsEmpty();
+    }
+
+    [Test]
+    public async Task ParserReadsCommandText_is_every_command_the_parser_reads_as_text()
+    {
+        NoesisRuntime.Start();
+        _ = ParserCommands.Go;
+
+        var noesis = typeof(DependencyObject).Assembly;
+        var commands = noesis
+            .GetExportedTypes()
+            .Where(t => t.Namespace == "Noesis" && !t.IsNested)
+            .Append(typeof(ParserCommands))
+            .SelectMany(owner =>
+                owner
+                    .GetProperties(
+                        BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly
+                    )
+                    .Where(p => typeof(RoutedCommand).IsAssignableFrom(p.PropertyType))
+                    .Select(p => (Owner: owner, Member: p.Name))
+            )
+            .ToList();
+
+        var wrong = new List<string>();
+        foreach (var (owner, member) in commands)
+        {
+            var written = new List<string> { member };
+            if (
+                member.EndsWith("Command", StringComparison.Ordinal)
+                && owner.GetProperty(member[..^"Command".Length]) is null
+            )
+                written.Add(member[..^"Command".Length]);
+
+            var prefix = owner.Assembly == noesis ? "" : "t:";
+            foreach (var text in written)
+            {
+                var button = (Button)
+                    GUI.ParseXaml(
+                        "<Button xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' "
+                            + $"xmlns:t='clr-namespace:{owner.Namespace};assembly={owner.Assembly.GetName().Name}' "
+                            + $"Command='{prefix}{owner.Name}.{text}' />"
+                    );
+
+                var expected = NoesisSlots.ParserReadsCommandText(
+                    owner.FullName!,
+                    owner.Assembly.GetName().Name,
+                    text,
+                    member,
+                    memberIsCommand: true
+                );
+                if (button.Command is not null != expected)
+                    wrong.Add($"{owner.Name}.{text}");
+            }
+        }
+
+        await Assert.That(commands.Count(c => c.Owner.Name == "Slider")).IsGreaterThan(0);
         await Assert.That(wrong).IsEmpty();
     }
 

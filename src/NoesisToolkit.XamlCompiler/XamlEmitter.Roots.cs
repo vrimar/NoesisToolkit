@@ -1297,7 +1297,7 @@ sealed partial class XamlEmitter
             dot > 0
             && ResolveTypeSymbol(element, text.Substring(0, dot)) is { } owner
             && CommandMember(owner, text.Substring(dot + 1)) is { } member
-            && ParserReadsUnset(owner, member)
+            && ParserReadsCommandUnset(owner, text.Substring(dot + 1), member)
         )
         {
             var site = SiteOf(element, UnreadCommand(text));

@@ -7,5 +7,6 @@
   <StackPanel>
     <ui:Launcher Go="ApplicationCommands.Copy" />
     <ui:Launcher Go="ui:Commands.Save" />
+    <ui:Launcher Go="Slider.DecreaseLarge" />
   </StackPanel>
 </UserControl>
