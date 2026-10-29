@@ -30,6 +30,10 @@ public static class MkMarker
         target.SetValue(FillProperty, value);
 }
 
+public partial class MkNativeRoot : UserControl { }
+
+public partial class MkQualifiedRoot : UserControl { }
+
 public sealed class MkItem
 {
     public string Name { get; set; } = "";
@@ -247,6 +251,88 @@ public sealed class CompiledMarkupParityTests
 
         await Assert.That(SourceUri(native)).IsEqualTo(expected);
         await Assert.That(SourceUri(compiled)).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task An_owner_qualified_property_on_the_root_s_own_type_is_the_plain_property()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = new MkQualifiedRoot();
+        GUI.LoadComponent(parsed, "/Fixtures;Fixtures/MkQualifiedRoot.xaml");
+        var compiled = new MkQualifiedRoot();
+        compiled.InitializeComponent();
+
+        await Assert.That(parsed.HorizontalContentAlignment).IsEqualTo(HorizontalAlignment.Right);
+        await Assert.That(compiled.HorizontalContentAlignment).IsEqualTo(HorizontalAlignment.Right);
+    }
+
+    static Setter[] NativeSetters(ResourceDictionary dictionary) =>
+        ((Style)dictionary["Mk.NativeSetters"]).Setters.Cast<Setter>().ToArray();
+
+    static string? StrokeOf(DependencyObject target, ResourceDictionary dictionary) =>
+        (
+            target.GetValue(NativeSetters(dictionary)[1].Property) as SolidColorBrush
+        )?.Color.ToString();
+
+    [Test]
+    public async Task A_property_of_Noesis_extensions_is_set_and_watched_as_the_parser_does()
+    {
+        NoesisRuntime.Start();
+
+        var native = (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/MkNative.xaml");
+        var compiled = XamlGenerated.NoesisToolkitEquivalenceTests.FixturesMkNativexamlXaml.Build();
+        XamlGenerated.NoesisToolkitEquivalenceTests.XamlResources.Flush(compiled);
+
+        foreach (var (dictionary, side) in new[] { (native, "native"), (compiled, "compiled") })
+        {
+            var setters = NativeSetters(dictionary);
+            await Assert.That(setters[0].Property.Name).IsEqualTo("StrokeThickness").Because(side);
+            await Assert.That(setters[0].Value).IsEqualTo(2f).Because(side);
+
+            var element = (TextBlock)dictionary["Mk.NativeElement"];
+            await Assert.That(StrokeOf(element, dictionary)).IsEqualTo("#FF123456").Because(side);
+
+            var triggered = (TextBlock)dictionary["Mk.NativeTriggered"];
+            dictionary.Remove("Mk.NativeTriggered");
+            NoesisRuntime.Show(triggered);
+            await Assert.That(triggered.Tag).IsEqualTo("trigger").Because(side);
+            await Assert.That(triggered.Width).IsEqualTo(33f).Because(side);
+        }
+    }
+
+    [Test]
+    public async Task A_root_leaves_a_key_it_never_declares_to_the_parser_and_the_installed_resources()
+    {
+        NoesisRuntime.Start();
+
+        var setters = (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/MkNative.xaml");
+
+        async Task Check(MkNativeRoot root, string side)
+        {
+            root.DataContext = new MkItem { Name = "abc" };
+            NoesisRuntime.Show(root);
+
+            TextBlock Part(string name) => (TextBlock)root.FindName(name);
+
+            await Assert.That(Part("Converted").Text).IsEqualTo("ABC").Because(side);
+            await Assert
+                .That(StrokeOf(Part("Stroked"), setters))
+                .IsEqualTo("#FF3366CC")
+                .Because(side);
+            await Assert
+                .That(StrokeOf(Part("WholeStroked"), setters))
+                .IsEqualTo("#FF3366CC")
+                .Because(side);
+        }
+
+        var parsed = new MkNativeRoot();
+        GUI.LoadComponent(parsed, "/Fixtures;Fixtures/MkNativeRoot.xaml");
+        var compiled = new MkNativeRoot();
+        compiled.InitializeComponent();
+
+        await Check(parsed, "parsed");
+        await Check(compiled, "compiled");
     }
 
     static string? SourceUri(object? holder) =>

@@ -108,6 +108,44 @@ public sealed class CompiledMultiBindingTests
     }
 
     [Test]
+    public async Task Binding_a_property_again_stops_the_binding_it_replaces()
+    {
+        NoesisRuntime.Start();
+
+        var native = new SpikeItem { Label = "a", Index = 1 };
+        var nativeText = new TextBlock { DataContext = native };
+        nativeText.SetBinding(FrameworkElement.TagProperty, new Binding(nameof(SpikeItem.Label)));
+        var multi = new MultiBinding { Converter = new First() };
+        multi.Bindings.Add(new Binding(nameof(SpikeItem.Index)));
+        BindingOperations.SetBinding(nativeText, FrameworkElement.TagProperty, multi);
+
+        var compiled = new SpikeItem { Label = "a", Index = 1 };
+        var compiledText = new TextBlock { DataContext = compiled };
+        CompiledBinding.Bind(
+            compiledText,
+            FrameworkElement.TagProperty,
+            new CompiledBindingSpec { Hops = [Hop.Label] }
+        );
+        CompiledMultiBinding.Bind(
+            compiledText,
+            FrameworkElement.TagProperty,
+            new CompiledMultiBindingSpec
+            {
+                Parts = [new CompiledBindingPart { Hops = [Hop.Index] }],
+                Converter = new First(),
+                TargetType = typeof(object),
+            }
+        );
+
+        NoesisRuntime.Show(nativeText, compiledText);
+        native.Label = "b";
+        compiled.Label = "b";
+
+        await Assert.That(compiledText.Tag).IsEqualTo(nativeText.Tag);
+        await Assert.That(compiledText.Tag).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task A_reload_keeps_what_the_control_put_in_a_one_way_slot()
     {
         NoesisRuntime.Start();

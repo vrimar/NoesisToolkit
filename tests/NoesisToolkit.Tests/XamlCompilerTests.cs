@@ -189,6 +189,49 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task Metadata_held_in_a_field_keeps_a_writerless_binding_native()
+    {
+        var run = Run(
+            ["RegisteredTwoWay.xaml"],
+            [
+                Stubs.Mvvm,
+                Host("RegisteredTwoWayHost"),
+                """
+                namespace Sample.Ui;
+
+                public sealed class Caption
+                {
+                    public string Name { get; } = "";
+                }
+
+                public class MetaBox : global::Noesis.Control
+                {
+                    static readonly global::Noesis.FrameworkPropertyMetadata TextMetadata =
+                        new("") { BindsTwoWayByDefault = true };
+
+                    public static readonly global::Noesis.DependencyProperty TextProperty =
+                        global::Noesis.DependencyProperty.Register(
+                            "Text",
+                            typeof(string),
+                            typeof(MetaBox),
+                            TextMetadata
+                        );
+
+                    public string Text
+                    {
+                        get => (string)GetValue(TextProperty);
+                        set => SetValue(TextProperty, value);
+                    }
+                }
+                """,
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.AllSources).Contains("new global::Noesis.Binding(\"Name\")");
+    }
+
+    [Test]
     public async Task An_assembly_named_like_a_framework_one_is_still_the_applications()
     {
         await Assert.That(XamlTypeResolver.Framework("SystemMonitor")).IsFalse();
@@ -410,6 +453,27 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_runtime_of_another_version_leaves_every_binding_native()
+    {
+        var run = GeneratorHarness.Run(
+            new XamlCompileGenerator(),
+            ["CompiledBindings.xaml"],
+            [Host("CompiledHost"), SampleUi],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            extraReferences:
+            [
+                GeneratorHarness.Reference(
+                    "NoesisToolkit.Mvvm",
+                    "[assembly: System.Reflection.AssemblyVersion(\"0.0.0.1\")]\n" + Stubs.Mvvm
+                ),
+            ]
+        );
+
+        await Assert.That(run.GeneratorDiagnostics.Select(d => d.Id)).Contains("NTK1011");
+        await Assert.That(run.AllSources).DoesNotContain("NoesisToolkit.Mvvm.CodeGen");
+    }
+
+    [Test]
     public async Task A_multi_binding_compiles_its_parts_and_an_unresolvable_child_keeps_it_native()
     {
         var run = CompiledBindings();
@@ -455,6 +519,40 @@ public partial class XamlCompilerTests
 
         await Assert.That(run.Errors).IsEmpty();
         await Assert.That(run.Source("EnumKnobCase")).Contains("global::Noesis.BindingMode.TwoWay");
+    }
+
+    static readonly Lazy<GeneratorRun> SpellingRun = new(() =>
+        Run(["CbSpelling.xaml"], [Host("CbSpellingHost"), SampleUi, Stubs.Mvvm])
+    );
+
+    [Test]
+    public async Task A_direction_and_update_trigger_in_any_case_compile()
+    {
+        await Assert
+            .That(SpellingRun.Value.Source("CbSpelling"))
+            .DoesNotContain("new global::Noesis.Binding(\"Def.Family\")");
+    }
+
+    [Test]
+    public async Task A_relative_source_mode_in_any_case_is_the_mode_it_names()
+    {
+        await Assert.That(SpellingRun.Value.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_multi_binding_stating_the_default_direction_compiles()
+    {
+        await Assert
+            .That(SpellingRun.Value.Source("CbSpelling"))
+            .Contains("CompiledMultiBinding.Bind(");
+    }
+
+    [Test]
+    public async Task A_template_trigger_targets_an_element_named_without_x_Name()
+    {
+        await Assert
+            .That(SpellingRun.Value.Source("CbSpelling"))
+            .Contains("CompiledTriggerSet.Bind(");
     }
 
     [Test]
@@ -1007,6 +1105,40 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_style_left_to_the_parser_does_not_also_hold_the_triggers_compiled_from_it()
+    {
+        var run = Run(
+            ["ParsedStyleTriggers.xaml"],
+            [
+                Host("ParsedStyleHost"),
+                """
+                namespace Sample;
+
+                public class Flagged
+                {
+                    public bool Flag { get; set; }
+                }
+
+                public class ThemedExtension : global::Noesis.MarkupExtension
+                {
+                    public ThemedExtension(string key) { }
+
+                    public override object? ProvideValue(object? provider) => null;
+                }
+                """,
+                Stubs.Mvvm,
+            ]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+        await Assert.That(source).Contains("CompiledTriggerSet.Bind");
+        var parses = source.Split('\n').Where(l => l.Contains("ParseXaml(")).ToList();
+        await Assert.That(parses).IsNotEmpty();
+        await Assert.That(parses.Any(l => l.Contains("DataTrigger"))).IsFalse();
+    }
+
+    [Test]
     public async Task A_type_another_assembly_keeps_internal_is_left_to_the_parser()
     {
         var run = GeneratorHarness.Run(
@@ -1037,6 +1169,17 @@ public partial class XamlCompilerTests
         await Assert.That(source).Contains("noesis:Text.Stroke=\\\"Red\\\"");
         await Assert.That(source).Contains("= (global::Noesis.TextBlock)__templated");
         await Assert.That(source).Contains(".Text = \"outlined\";");
+    }
+
+    [Test]
+    public async Task An_element_setting_a_Noesis_extension_property_element_is_parsed_whole_with_no_carrier_inside()
+    {
+        var run = Run(["NoesisExtensionsWhole.xaml"], [Host("ExtensionsWholeHost")]);
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+        await Assert.That(source).Contains("noesis:Element.PPAAMode");
+        await Assert.That(source).DoesNotContain("__templated(");
     }
 
     [Test]
@@ -1265,7 +1408,25 @@ public partial class XamlCompilerTests
     {
         var run = Run(["InvalidName.xaml"], [Host("InvalidNameHost")]);
 
-        await Assert.That(run.GeneratorDiagnostics.Select(d => d.Id)).Contains("NTK1001");
+        var refused = run.GeneratorDiagnostics.Single(d => d.Id == "NTK1001");
+        await Assert.That(refused.Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task A_dictionary_entry_with_no_key_is_refused_where_it_is_written()
+    {
+        var run = Run(["KeylessEntry.xaml"]);
+
+        var refused = run.GeneratorDiagnostics.Single(d => d.Id == "NTK1001");
+        await Assert.That(refused.Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task A_dropped_dictionary_entry_is_reported_once()
+    {
+        var run = Run(["DroppedEntry.xaml"]);
+
+        await Assert.That(run.GeneratorDiagnostics.Where(d => d.Id == "NTK1002")).HasSingleItem();
     }
 
     [Test]
@@ -1601,6 +1762,42 @@ public partial class XamlCompilerTests
 
                 public class Launcher : global::Noesis.Control
                 {
+                    public global::Noesis.RoutedCommand? Go { get; set; }
+                }
+
+                public static class Commands
+                {
+                    public static global::Noesis.RoutedCommand Save { get; } = new();
+                }
+                """,
+            ]
+        );
+
+        var refused = run.GeneratorDiagnostics.Where(d => d.Id == "NTK1001").ToList();
+        await Assert.That(refused).HasSingleItem();
+        await Assert.That(refused[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(8);
+    }
+
+    [Test]
+    public async Task A_command_named_as_text_in_an_element_left_to_the_parser_is_refused_where_unread()
+    {
+        var run = Run(
+            ["CommandParsed.xaml"],
+            [
+                Host("CommandParsedHost"),
+                """
+                namespace Sample.Ui;
+
+                public class Pad : global::Noesis.Control
+                {
+                    public static readonly global::Noesis.DependencyProperty DepthProperty =
+                        global::Noesis.DependencyProperty.Register(
+                            "Depth",
+                            typeof(double),
+                            typeof(Pad),
+                            new global::Noesis.FrameworkPropertyMetadata()
+                        );
+
                     public global::Noesis.RoutedCommand? Go { get; set; }
                 }
 

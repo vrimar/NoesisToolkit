@@ -572,4 +572,91 @@ public sealed class CompiledResourceParityTests
         await Assert.That(Followed(parsed)).IsEqualTo("#FFFF0000 -> #FF0000FF");
         await Assert.That(Followed(compiled)).IsEqualTo("#FFFF0000 -> #FF0000FF");
     }
+
+    [Test]
+    public async Task A_resource_element_holds_what_the_parser_finds_where_it_sits()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResElements.xaml");
+        var compiled = Generated.FixturesResElementsxamlXaml.Build();
+        Generated.XamlResources.Flush(compiled);
+
+        foreach (var (dictionary, side) in new[] { (parsed, "parsed"), (compiled, "compiled") })
+        {
+            await Assert
+                .That(((Border)dictionary["Res.MistypedChild"]).Child)
+                .IsNull()
+                .Because(side);
+            await Assert
+                .That(((StackPanel)dictionary["Res.MistypedItem"]).Children.Count)
+                .IsEqualTo(1)
+                .Because(side);
+            await Assert
+                .That(((ContentControl)dictionary["Res.AheadContent"]).Content)
+                .IsNull()
+                .Because(side);
+        }
+
+        static string Items(ResourceDictionary dictionary) =>
+            string.Join(
+                ",",
+                ((ItemsControl)dictionary["Res.OutsideItems"])
+                    .Items.Cast<object>()
+                    .Select(item => ColorOf(item) ?? item.ToString())
+            );
+
+        await Assert.That(Items(parsed)).IsEqualTo("#FF3366CC,between,#80FFFFFF");
+        await Assert.That(Items(compiled)).IsEqualTo(Items(parsed));
+    }
+
+    [Test]
+    public async Task A_dynamic_resource_element_follows_the_key()
+    {
+        NoesisRuntime.Start();
+
+        static string Followed(ResourceDictionary dictionary)
+        {
+            var content = (ContentControl)dictionary["Res.LiveContent"];
+            dictionary.Remove("Res.LiveContent");
+            var host = new StackPanel
+            {
+                Width = 100,
+                Height = 100,
+                Resources = new ResourceDictionary(),
+            };
+            host.Resources["Res.LiveText"] = "first";
+            var view = NoesisRuntime.Show(host, content);
+            var first = content.Content;
+            host.Resources["Res.LiveText"] = "second";
+            NoesisRuntime.Pump(view, host);
+            return $"{first} -> {content.Content}";
+        }
+
+        var compiled = Generated.FixturesResElementsxamlXaml.Build();
+        Generated.XamlResources.Flush(compiled);
+
+        await Assert.That(Followed(Parsed("ResElements.xaml"))).IsEqualTo("first -> second");
+        await Assert.That(Followed(compiled)).IsEqualTo("first -> second");
+    }
+
+    [Test]
+    public async Task A_style_left_to_the_parser_keeps_the_theme_style_it_is_based_on()
+    {
+        NoesisRuntime.Start();
+
+        static Style Escaped(ResourceDictionary dictionary) =>
+            new[] { dictionary }
+                .Concat(dictionary.MergedDictionaries)
+                .SelectMany(d => d.Values.Cast<object>())
+                .OfType<Style>()
+                .Single(style => style.TargetType == typeof(RadioButton));
+
+        var parsed = Escaped(Parsed("ResEscapedBasedOn.xaml"));
+        var compiled = Generated.FixturesResEscapedBasedOnxamlXaml.Build();
+        Generated.XamlResources.Flush(compiled);
+
+        await Assert.That(parsed.BasedOn?.TargetType).IsEqualTo(typeof(RadioButton));
+        await Assert.That(Escaped(compiled).BasedOn?.TargetType).IsEqualTo(typeof(RadioButton));
+    }
 }

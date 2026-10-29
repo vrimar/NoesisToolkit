@@ -60,6 +60,20 @@ public class IncrementalityTests
         await ShouldAllBeCached(reasons);
     }
 
+    [Test]
+    public async Task Xaml_compiler_outputs_survive_an_edit_that_leaves_each_document_as_it_was()
+    {
+        var reasons = GeneratorHarness.RunAfterUnrelatedEdit(
+            new XamlCompileGenerator(),
+            ["Theme.xaml"],
+            null,
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            [XamlCompileGenerator.CompiledStep, XamlCompileGenerator.RegistryStep]
+        );
+
+        await ShouldAllBeCached(reasons);
+    }
+
     const string CommandOwner = """
         using NoesisToolkit.Mvvm;
 

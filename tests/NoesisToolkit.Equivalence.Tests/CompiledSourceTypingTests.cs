@@ -100,6 +100,8 @@ public sealed class StPickSubConverter : IMultiValueConverter
 
 public partial class StRedirectFixture : UserControl { }
 
+public partial class StKeyedMenuFixture : UserControl { }
+
 [NotInParallel("Noesis")]
 public sealed class CompiledSourceTypingTests
 {
@@ -256,6 +258,22 @@ public sealed class CompiledSourceTypingTests
         await Assert.That(MenuHeader(compiled, view)).IsEqualTo(native);
     }
 
+    [Test]
+    public async Task A_typed_keyed_resource_is_bound_on_the_copy_a_template_places()
+    {
+        NoesisRuntime.Start();
+
+        var compiled = new StKeyedMenuFixture { DataContext = new StModel() };
+        compiled.InitializeComponent();
+        var parsed = (StKeyedMenuFixture)GUI.LoadXaml("/Fixtures;Fixtures/StKeyedMenu.xaml");
+        parsed.DataContext = new StModel();
+        var view = NoesisRuntime.Show(new Grid { Width = 800, Height = 300 }, compiled, parsed);
+
+        var native = MenuHeader(parsed, view);
+        await Assert.That(native).IsEqualTo("sub-name");
+        await Assert.That(MenuHeader(compiled, view)).IsEqualTo(native);
+    }
+
     static object? MenuHeader(FrameworkElement root, View view)
     {
         var host = TreeSearch.Named<Border>(root, "MenuHost")!;
@@ -294,6 +312,34 @@ public sealed class CompiledSourceTypingTests
         await Assert.That(Rows(compiled, "Uniform")).IsEqualTo(Rows(parsed, "Uniform"));
         await Assert.That(RowsBound(compiled, "Uniform")).IsFalse();
     }
+
+    [Test]
+    public async Task A_cell_template_reads_the_rows_of_its_own_list_not_a_template_above_it()
+    {
+        NoesisRuntime.Start();
+
+        var compiled = Expanded(
+            (DataTemplate)
+                XamlGenerated.NoesisToolkitEquivalenceTests.FixturesStTemplatedxamlXaml.Build()[
+                    "InlineRows"
+                ]
+        );
+        var parsed = Expanded(
+            (DataTemplate)
+                ((ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/StTemplated.xaml"))[
+                    "InlineRows"
+                ]
+        );
+
+        await Assert.That(Cells(parsed)).IsEqualTo("sub-name,sub-name");
+        await Assert.That(Cells(compiled)).IsEqualTo(Cells(parsed));
+    }
+
+    static string Cells(FrameworkElement root) =>
+        string.Join(
+            ",",
+            TreeSearch.All<TextBlock>(root).Where(t => t.Name == "Cell").Select(t => t.Text)
+        );
 
     static ContentControl Expanded(DataTemplate template)
     {

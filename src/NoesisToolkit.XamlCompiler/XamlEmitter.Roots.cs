@@ -61,6 +61,8 @@ sealed partial class XamlEmitter
 
     const string DisplayMemberBindingLeftNative = "display-member-binding";
 
+    const string AttributeLeftToTheParser = "attribute-left-to-the-parser";
+
     const string RowUndeclared =
         "reads a row whose type is not declared; bind the list's ItemsSource to a typed path, or state the row type with ntk:ItemType on the column";
 
@@ -137,7 +139,7 @@ sealed partial class XamlEmitter
         if (named is null && (relative is null || mode == "PreviousData"))
         {
             // DataContext is read off the parent: the element's own is what this binding sets.
-            var scope = slot == "DataContext" ? BindingHost(element).Parent : element;
+            var scope = slot == "DataContext" ? InheritedScope(BindingHost(element)) : element;
             return scope is not null && DeclaredContext(scope) is { } context
                 ? SourceRoots(element, context, path)
                 : (ContextUndeclared, null);
@@ -174,6 +176,10 @@ sealed partial class XamlEmitter
             ? SourceRoots(element, elementType, path)
             : ("reads an element whose type does not resolve", null);
     }
+
+    // A keyed element is placed wherever a lookup puts it, so nothing here says what it inherits.
+    static XElement? InheritedScope(XElement host) =>
+        host.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is null ? host.Parent : null;
 
     // An attached owner's prefix resolves where the binding is written, not at its source.
     (string? Problem, ITypeSymbol? Type) SourceRoots(
@@ -215,9 +221,7 @@ sealed partial class XamlEmitter
         {
             var matches = element
                 .Document?.Root?.DescendantsAndSelf()
-                .Where(e =>
-                    e.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))?.Value == name
-                )
+                .Where(e => ScopedName(e) == name)
                 .Take(2)
                 .ToList();
             declared = matches is { Count: 1 } ? matches[0] : null;
@@ -954,6 +958,21 @@ sealed partial class XamlEmitter
         return property;
     }
 
+    // No managed type declares the property, so only the value has anything to root.
+    void RootParserSet(XElement element, XAttribute attribute)
+    {
+        var outer = _parsedBy;
+        _parsedBy = AttributeLeftToTheParser;
+        try
+        {
+            RootParsedAttribute(element, null, attribute);
+        }
+        finally
+        {
+            _parsedBy = outer;
+        }
+    }
+
     void RootParsedAttribute(XElement element, INamedTypeSymbol? type, XAttribute attribute)
     {
         var outer = _attribute;
@@ -997,7 +1016,11 @@ sealed partial class XamlEmitter
                 owner is not null
                 && resolver.FindAttachedValueType(owner, name) is { } attachedType
             )
+            {
                 Roots.EnumLiterals(attachedType);
+                if (TakesCommand(attachedType))
+                    ReportParsedCommand(element, value);
+            }
             return;
         }
 
@@ -1027,6 +1050,9 @@ sealed partial class XamlEmitter
 
         if (RootSetProperty(type, local) is not { } property)
             return;
+
+        if (TakesCommand(property.Type))
+            ReportParsedCommand(element, value);
 
         switch (XamlTypeResolver.Fqn(property.Type))
         {
@@ -1137,7 +1163,11 @@ sealed partial class XamlEmitter
             && setter.Attribute("Value") is { } value
             && !XamlMarkupParser.IsMarkup(value.Value)
         )
+        {
             Roots.EnumLiterals(valueType);
+            if (TakesCommand(valueType))
+                ReportParsedCommand(setter, value.Value);
+        }
     }
 
     INamedTypeSymbol? SetterTarget(XElement setter)
@@ -1252,6 +1282,25 @@ sealed partial class XamlEmitter
         )
         {
             var site = SiteOf(element, UnreadStatic(reference));
+            Errors.Add(site.Message, (site.Line, site.Column));
+        }
+    }
+
+    void ReportParsedCommand(XElement element, string value)
+    {
+        if (_parsedBy is null || (_attribute is { } attribute && _heldBack.Contains(attribute)))
+            return;
+
+        var text = XamlMarkupParser.Unescape(value).Trim();
+        var dot = text.LastIndexOf('.');
+        if (
+            dot > 0
+            && ResolveTypeSymbol(element, text.Substring(0, dot)) is { } owner
+            && CommandMember(owner, text.Substring(dot + 1)) is { } member
+            && ParserReadsUnset(owner, member)
+        )
+        {
+            var site = SiteOf(element, UnreadCommand(text));
             Errors.Add(site.Message, (site.Line, site.Column));
         }
     }

@@ -59,11 +59,13 @@ sealed partial class XamlEmitter
 
         if (XamlTypeResolver.NativeOwned(ns))
         {
-            if (!_grafted.Contains(element) || !ParserSets(element, attribute))
+            if (_grafted.Contains(element) && ParserSets(element, attribute))
+                RootParserSet(element, attribute);
+            else
                 Errors.Add(
                     $"<{element.Name.LocalName} {local}=...> sets a property only the parser can name, "
                         + (
-                            NamesAResource(attribute.Value)
+                            !ParserSets(element, attribute)
                                 ? "from a resource the parser building it alone cannot resolve"
                                 : "on an element generated code builds itself"
                         )
@@ -204,7 +206,6 @@ sealed partial class XamlEmitter
                 or "global::Noesis.Condition"
                 or "global::Noesis.DataTrigger";
 
-    /// <summary>The DependencyProperty a Setter/Trigger names, resolved against the styled type.</summary>
     /// <summary>Parses a markup extension, recording the failure the callers all reported the
     /// same way.</summary>
     bool TryMarkup(string raw, out MarkupCall call)
@@ -222,6 +223,24 @@ sealed partial class XamlEmitter
 
     void ApplySetterProperty(XElement element, string target, string raw)
     {
+        if (element.Name.LocalName is "Trigger" or "Condition" && NamesNativeProperty(element))
+        {
+            _probedValues.Add(target);
+            if (EmitPropertyProbe(element) is not { } probed)
+                return;
+
+            _lines.Add($"{target}.Property = {probed}.Property;");
+            if (
+                element.Attribute("Value") is not null
+                || element.Element(
+                    XName.Get(element.Name.LocalName + ".Value", element.Name.NamespaceName)
+                )
+                    is not null
+            )
+                _lines.Add($"{target}.Value = {probed}.Value;");
+            return;
+        }
+
         var scopeName =
             element.Attribute("TargetName")?.Value ?? element.Attribute("SourceName")?.Value;
         var scoped = scopeName is null ? null : LookupName(scopeName);
@@ -239,9 +258,14 @@ sealed partial class XamlEmitter
         ITypeSymbol?
     >(StringComparer.Ordinal);
 
+    readonly HashSet<string> _probedValues = new HashSet<string>(StringComparer.Ordinal);
+
     // Element text is never markup and keeps its braces: only an attribute value escapes.
     void ApplySetterValue(XElement element, string target, string raw, bool text = false)
     {
+        if (_probedValues.Contains(target))
+            return;
+
         _pendingValueTypes.TryGetValue(target, out var valueType);
 
         if (!text && XamlMarkupParser.IsMarkup(raw))
@@ -280,6 +304,7 @@ sealed partial class XamlEmitter
         _lines.Add($"{target}.Value = {value};");
     }
 
+    /// <summary>The DependencyProperty a Setter/Trigger names, resolved against the styled type.</summary>
     string? ResolveDependencyPropertyReference(
         XElement element,
         string raw,
@@ -374,6 +399,12 @@ sealed partial class XamlEmitter
                 DeadMarkup.Add($"<{element.Name.LocalName} {local}=...> is in an unknown xmlns");
             else
                 Errors.Add($"could not resolve attached-property owner '{ownerName}'");
+            return;
+        }
+
+        if (OwnQualified(type, owner, propertyName))
+        {
+            ApplyProperty(element, target, type, propertyName, rawValue);
             return;
         }
 
@@ -499,6 +530,11 @@ sealed partial class XamlEmitter
         if (value is not null)
             _lines.Add(write(value));
     }
+
+    bool OwnQualified(INamedTypeSymbol type, INamedTypeSymbol owner, string name) =>
+        XamlTypeResolver.DerivesFrom(type, XamlTypeResolver.Fqn(owner))
+        && resolver.FindAttachedSetter(owner, name) is null
+        && resolver.FindProperty(type, name) is not null;
 
     IPropertySymbol? QualifiedWrapper(INamedTypeSymbol owner, string name) =>
         resolver.FindAttachedValueType(owner, name) is null

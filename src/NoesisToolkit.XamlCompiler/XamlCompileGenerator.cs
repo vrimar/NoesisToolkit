@@ -104,6 +104,19 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             + "row. A CellTemplate is typed off the list's items and compiles."
     );
 
+    static readonly DiagnosticDescriptor OtherRuntime = new(
+        "NTK1011",
+        "NoesisToolkit.Mvvm is another version than the XAML compiler",
+        "NoesisToolkit.Mvvm {0} is referenced, but the XAML compiler is {1}; every binding stays native until both are the same version",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A compiled binding is emitted against the runtime API of the NoesisToolkit.Mvvm "
+            + "release the compiler shipped with, and that API changes from release to release. "
+            + "Against another version the generated code would not build, so the compiler leaves "
+            + "every binding to the engine, as it does when the package is absent."
+    );
+
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
     static readonly DiagnosticDescriptor Crashed = new(
         "NTK1003",
@@ -119,6 +132,10 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
     internal const string OptionsStep = "NoesisXamlOptions";
 
     internal const string DocumentsStep = "NoesisXamlDocuments";
+
+    internal const string CompiledStep = "NoesisXamlCompiled";
+
+    internal const string RegistryStep = "NoesisXamlRegistry";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -158,28 +175,34 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     // would not compile, so a project that installed the compiler alone gets the
                     // native parser rather than a build error.
                     var runtime =
-                        compilation.GetTypeByMetadataName(
-                            "NoesisToolkit.Mvvm.CodeGen.CompiledBinding"
-                        )
-                        is not null;
+                        compilation.GetTypeByMetadataName(RuntimeType) is not null
+                        && RuntimeOtherThanOwn(compilation) is null;
 
                     return Guarded(
                         path,
                         () => CompileDocument(path, link, text!, compilation, opts, runtime, ct)
                     );
                 }
-            );
+            )
+            .WithTrackingName(CompiledStep);
+
+        var scope = context.CompilationProvider.Select((compilation, _) => ScopeOf(compilation));
 
         context.RegisterSourceOutput(
-            compiled.Collect().Combine(context.CompilationProvider),
+            compiled.Collect().Combine(scope).WithTrackingName(RegistryStep),
             (spc, pair) =>
             {
-                var (all, compilation) = pair;
+                var (all, registryScope) = pair;
                 var documents = all.OfType<CompiledDocument>().ToList();
                 if (documents.Count == 0)
                     return;
 
-                var registry = Guarded("registry", () => EmitRegistry(documents, compilation));
+                if (registryScope.OtherRuntime is { } other)
+                    spc.ReportDiagnostic(
+                        Diagnostic.Create(OtherRuntime, null, other, CompilerVersion)
+                    );
+
+                var registry = Guarded("registry", () => EmitRegistry(documents, registryScope));
                 Publish(spc, registry);
             }
         );
@@ -302,10 +325,77 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         Output.Add(spc, document.HintName!, document.Source);
     }
 
-    static CompiledDocument EmitRegistry(
-        IReadOnlyList<CompiledDocument> all,
-        Compilation compilation
-    )
+    // Read off the compilation apart from it, so an edit that leaves these alone leaves the registry cached.
+    sealed class RegistryScope(
+        string generated,
+        string self,
+        IReadOnlyList<string> chain,
+        string? otherRuntime
+    ) : IEquatable<RegistryScope>
+    {
+        public string Generated { get; } = generated;
+
+        public string Self { get; } = self;
+
+        public IReadOnlyList<string> Chain { get; } = chain;
+
+        public string? OtherRuntime { get; } = otherRuntime;
+
+        public bool Equals(RegistryScope? other) =>
+            other is not null
+            && Generated == other.Generated
+            && Self == other.Self
+            && Chain.SequenceEqual(other.Chain)
+            && OtherRuntime == other.OtherRuntime;
+
+        public override bool Equals(object? obj) => Equals(obj as RegistryScope);
+
+        public override int GetHashCode() => (Generated.GetHashCode() * 397) ^ Chain.Count;
+    }
+
+    static RegistryScope ScopeOf(Compilation compilation)
+    {
+        var chain = new List<string>();
+        foreach (var reference in compilation.SourceModule.ReferencedAssemblySymbols)
+        {
+            var linked = LinkName(reference.Name);
+            if (compilation.GetTypeByMetadataName(linked) is not null)
+            {
+                chain.Add("global::" + linked);
+                continue;
+            }
+
+            var candidate = GeneratedNamespace(reference.Name) + ".XamlResources";
+            var link = "global::" + candidate;
+            if (compilation.GetTypeByMetadataName(candidate) is null || chain.Contains(link))
+                continue;
+
+            chain.Add(link);
+        }
+
+        return new RegistryScope(
+            GeneratedNamespace(compilation),
+            LinkName(compilation.AssemblyName ?? "Assembly"),
+            chain,
+            RuntimeOtherThanOwn(compilation)?.ToString()
+        );
+    }
+
+    const string RuntimeType = "NoesisToolkit.Mvvm.CodeGen.CompiledBinding";
+
+    // A release builds every package at one version, so only the runtime cut with this compiler matches.
+    static readonly Version CompilerVersion = typeof(XamlCompileGenerator)
+        .Assembly.GetName()
+        .Version!;
+
+    static Version? RuntimeOtherThanOwn(Compilation compilation) =>
+        compilation.GetTypeByMetadataName(RuntimeType)?.ContainingAssembly is { } runtime
+        && !SymbolEqualityComparer.Default.Equals(runtime, compilation.Assembly)
+        && runtime.Identity.Version != CompilerVersion
+            ? runtime.Identity.Version
+            : null;
+
+    static CompiledDocument EmitRegistry(IReadOnlyList<CompiledDocument> all, RegistryScope scope)
     {
         var w = new CodeWriter();
         var ok = 0;
@@ -421,27 +511,10 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             w.Line($"// trigger  {reason.Value, 5}  {Refusals.Of(reason.Key), -8}  {reason.Key}");
         foreach (var row in rows)
             w.Line("// " + row.Replace("\r", " ").Replace("\n", " "));
-        var chain = new List<string>();
-        var generated = GeneratedNamespace(compilation);
+        var chain = scope.Chain;
+        var generated = scope.Generated;
         var own = generated + ".XamlResources";
-        foreach (var reference in compilation.SourceModule.ReferencedAssemblySymbols)
-        {
-            var linked = LinkName(reference.Name);
-            if (compilation.GetTypeByMetadataName(linked) is not null)
-            {
-                chain.Add("global::" + linked);
-                continue;
-            }
-
-            var candidate = GeneratedNamespace(reference.Name) + ".XamlResources";
-            var link = "global::" + candidate;
-            if (compilation.GetTypeByMetadataName(candidate) is null || chain.Contains(link))
-                continue;
-
-            chain.Add(link);
-        }
-
-        var self = LinkName(compilation.AssemblyName ?? "Assembly");
+        var self = scope.Self;
         var dot = self.LastIndexOf('.');
         using (w.Block($"namespace {self.Substring(0, dot)}"))
         {
@@ -698,7 +771,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
         var resolver = new XamlTypeResolver(compilation, options);
         var emitter = new XamlEmitter(resolver, prefix, options.ProjectDir, placed)
         {
-            CompiledBindingsAvailable = runtime,
+            MvvmRuntimeReferenced = runtime,
             Cancellation = cancellation,
         };
         var typeName = XamlPaths.TypeNameFor(placed, options.ProjectDir);
@@ -784,11 +857,11 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
         document.Source = w.ToString();
         document.Tally = emitter.Tally;
-        document.Errors = emitter.Errors.Messages;
+        document.Errors = emitter.Errors.Messages.ToList();
         document.ErrorSites = emitter
             .Errors.Sites.Select(s => LocationIn(path, text, s.Line, s.Column))
             .ToList();
-        document.DeadMarkup = emitter.DeadMarkup;
+        document.DeadMarkup = emitter.DeadMarkup.ToList();
         document.UnresolvedTypes = emitter
             .UnresolvedTypes.Distinct()
             .Select(a => new MarkupDiagnostic(

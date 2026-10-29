@@ -65,11 +65,11 @@ public sealed class CompiledDetachedTests
 
         var compiledHost = new StackPanel { DataContext = compiled };
         var marked = new SpikeBehavior();
-        CompiledBinding.MarkReceiver(marked, "payload");
+        CompiledBinding.MarkReceiver(marked, "payload", 0);
         Interaction.GetBehaviors(compiledHost).Add(marked);
         CompiledBinding.Bind(
             compiledHost,
-            host => CompiledBinding.MarkedBehavior(host, "payload"),
+            host => CompiledBinding.MarkedBehavior(host, "payload", 0),
             SpikeBehavior.PayloadProperty,
             new CompiledBindingSpec { Hops = [Hop.Label] }
         );
@@ -99,13 +99,13 @@ public sealed class CompiledDetachedTests
         var host = new StackPanel { DataContext = item };
         var trigger = new SpikeTrigger();
         var marked = new SpikeAction();
-        CompiledBinding.MarkReceiver(marked, "parameter");
+        CompiledBinding.MarkReceiver(marked, "parameter", 0);
         trigger.Actions.Add(marked);
         Interaction.GetTriggers(host).Add(trigger);
 
         CompiledBinding.Bind(
             host,
-            h => CompiledBinding.MarkedAction(h, "parameter"),
+            h => CompiledBinding.MarkedAction(h, "parameter", 0),
             SpikeAction.ParameterProperty,
             new CompiledBindingSpec { Hops = [] }
         );
@@ -132,7 +132,7 @@ public sealed class CompiledDetachedTests
         // No behavior carries this mark, so the binding has nowhere to write.
         CompiledBinding.Bind(
             host,
-            h => CompiledBinding.MarkedBehavior(h, "absent"),
+            h => CompiledBinding.MarkedBehavior(h, "absent", 0),
             SpikeBehavior.PayloadProperty,
             new CompiledBindingSpec { Hops = [Hop.Label] }
         );

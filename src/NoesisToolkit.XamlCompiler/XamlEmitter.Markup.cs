@@ -108,6 +108,18 @@ sealed partial class XamlEmitter
     static string UnreadStatic(string reference) =>
         $"{{x:Static {reference}}} names a static Noesis' parser cannot read; bind it instead";
 
+    static bool TakesCommand(ITypeSymbol type) =>
+        XamlTypeResolver.Fqn(type) == "global::System.Windows.Input.ICommand"
+        || XamlTypeResolver.DerivesFrom(type, "global::Noesis.RoutedCommand");
+
+    string? CommandMember(INamedTypeSymbol owner, string member) =>
+        resolver.FindProperty(owner, member) is not null ? member
+        : resolver.FindProperty(owner, member + "Command") is not null ? member + "Command"
+        : null;
+
+    static string UnreadCommand(string text) =>
+        $"'{text}' names a command Noesis' parser cannot read; bind it instead";
+
     static bool IsCustomExtension(MarkupCall call) =>
         call.Name
             is not (
@@ -224,31 +236,31 @@ sealed partial class XamlEmitter
 
     /// <summary>An enum knob's member name. Nested markup has no name and would emit an
     /// expression that does not compile.</summary>
-    string? EnumMember(KeyValuePair<string, object> pair) => EnumMember(pair.Key, Text(pair.Value));
-
-    string? EnumMember(string knob, string raw) => EnumMember(knob, raw, null);
-
-    string? EnumMember(string knob, string raw, string? enumName)
+    string? EnumMember(string knob, string raw, string enumName)
     {
         var text = raw.Trim();
         if (!XamlMarkup.IsIdentifier(text))
             return Fail($"Binding.{knob} must name a constant, not '{text}'");
 
-        if (enumName is null)
-            return text;
+        return PresentationMember(enumName, text)
+            ?? Fail($"'{text}' is not a member of {enumName}");
+    }
 
+    // The parser reads an enum member in any case, an exact spelling first.
+    string? PresentationMember(string enumName, string text)
+    {
         var fields = resolver
             .Resolve(XamlTypeResolver.PresentationNs, enumName)
             ?.GetMembers()
             .Where(m => m.Kind == SymbolKind.Field)
             .ToList();
-        var member =
+
+        return (
             fields?.FirstOrDefault(m => m.Name == text)
             ?? fields?.FirstOrDefault(m =>
                 string.Equals(m.Name, text, System.StringComparison.OrdinalIgnoreCase)
-            );
-
-        return member is not null ? member.Name : Fail($"'{text}' is not a member of {enumName}");
+            )
+        )?.Name;
     }
 
     string? EmitBindingLike(XElement element, MarkupCall call, string? slot)

@@ -1,6 +1,12 @@
 ; Unshipped analyzer release
 ; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
 
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1011 | NoesisToolkit | Warning | NoesisToolkit.Mvvm is another version than the XAML compiler
+
 ### Removed Rules
 
 Rule ID | Category | Severity | Notes

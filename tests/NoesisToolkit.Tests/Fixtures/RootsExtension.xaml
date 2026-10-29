@@ -1,0 +1,11 @@
+<UserControl
+  x:Class="Sample.Roots.ExtensionHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:noesis="clr-namespace:NoesisGUIExtensions;assembly=Noesis.GUI.Extensions"
+  xmlns:r="clr-namespace:Sample.Roots"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:DataType="r:PanelViewModel"
+>
+  <TextBlock noesis:Text.Stroke="{Binding Inner.Note}" Text="outlined" />
+</UserControl>

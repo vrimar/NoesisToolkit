@@ -1,0 +1,25 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.StKeyedMenuFixture"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="t:StModel"
+  Width="400"
+  Height="300"
+>
+  <UserControl.Resources>
+    <ContextMenu x:Key="SubMenu" ntk:DataType="t:StSub">
+      <MenuItem Header="{Binding Name}" />
+    </ContextMenu>
+  </UserControl.Resources>
+
+  <ItemsControl ItemsSource="{Binding Subs}">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate>
+        <Border x:Name="MenuHost" Height="5" ContextMenu="{StaticResource SubMenu}" />
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

@@ -36,12 +36,21 @@ sealed partial class XamlEmitter
     string ResolveExpression(string key)
     {
         _usesResolve = true;
-        return $"__resolveIn(null, {ScopeArray()}, {key})";
+        return $"__resolveIn(null, {ScopeArray()}, {key}, {Shared(key)})";
     }
 
+    // An own key not yet in scope is a forward reference, which the parser leaves unresolved.
+    string Shared(string key) => _ownKeys?.Contains(key) == true ? "false" : "true";
+
     // Resolved where the reference sits, as the parser does; only a miss waits for the flush.
-    void AddGraphStatement(Func<string, string> statement, string key, bool skipMissing = false)
+    void AddGraphStatement(
+        Func<string, string> statement,
+        string key,
+        bool skipMissing = false,
+        Func<string, string>? settle = null
+    )
     {
+        settle ??= statement;
         if (_rootClass is not null)
         {
             if (!skipMissing)
@@ -59,17 +68,12 @@ sealed partial class XamlEmitter
         _usesGraphResolve = true;
         var found = NextName("found");
         var outer = NextName("outer");
-        var shared = _ownKeys?.Contains(key) == true ? "false" : "true";
 
         _lines.Add($"var {found} = __scoped({ScopeArray()}, {key});");
         _lines.Add($"if ({found} != null) {{ {statement(found)} }}");
         _deferredGlobal.Add(
-            $"if ({found} == null) {{ var {outer} = __outer(__root, {_dictionaries[0]}, {key}, {shared}); "
-                + (
-                    skipMissing
-                        ? $"if ({outer} != null) {{ {statement(outer)} }}"
-                        : statement(outer)
-                )
+            $"if ({found} == null) {{ var {outer} = __outer(__root, {_dictionaries[0]}, {key}, {Shared(key)}); "
+                + (skipMissing ? $"if ({outer} != null) {{ {settle(outer)} }}" : settle(outer))
                 + " }"
         );
     }
@@ -111,10 +115,10 @@ sealed partial class XamlEmitter
     static readonly string LookupHelper = XamlLookupHelper.Emit("__lookup");
 
     const string ResolveInHelper =
-        "static object __resolveIn(global::Noesis.ResourceDictionary root, global::Noesis.ResourceDictionary[] scopes, object k)\n"
+        "static object __resolveIn(global::Noesis.ResourceDictionary root, global::Noesis.ResourceDictionary[] scopes, object k, bool shared)\n"
         + "{\n"
         + "    foreach (var s in scopes) { var v = __lookup(s, k); if (v != null) return v; }\n"
-        + "    return __lookup(root, k) ?? __lookup(global::Noesis.GUI.GetApplicationResources(), k) ?? __XamlResources.SharedByKey(k);\n"
+        + "    return __lookup(root, k) ?? __lookup(global::Noesis.GUI.GetApplicationResources(), k) ?? (shared ? __XamlResources.SharedByKey(k) : null);\n"
         + "}";
 
     const string ScopedHelper =
@@ -145,13 +149,10 @@ sealed partial class XamlEmitter
     void EmitDictionaryBody(XElement root, string target)
     {
         if (_rootClass is null && _ownKeys is null && root.Document?.Root is { } document)
-        {
-            using (Speculate())
-                _ownKeys = new HashSet<string>(
-                    DeclaredKeys(document).Select(k => k.Key),
-                    StringComparer.Ordinal
-                );
-        }
+            _ownKeys = new HashSet<string>(
+                DeclaredKeys(document).Select(k => k.Key),
+                StringComparer.Ordinal
+            );
 
         var escaped = new List<string>();
 
@@ -169,6 +170,26 @@ sealed partial class XamlEmitter
                 {
                     foreach (var merged in child.Elements().Where(e => !IsIgnorable(e)))
                     {
+                        if (
+                            IsResourceElement(merged)
+                            && resolver.Resolve(
+                                XamlTypeResolver.PresentationNs,
+                                "ResourceDictionary"
+                            )
+                                is { } dictionaryType
+                            && resolver.FindProperty(dictionaryType, "MergedDictionaries")
+                                is { } mergedSlot
+                        )
+                        {
+                            AddResourceItem(
+                                merged,
+                                dictionaryType,
+                                mergedSlot.Type,
+                                $"{target}.MergedDictionaries"
+                            );
+                            continue;
+                        }
+
                         var item = EmitObject(merged);
                         if (item is not null)
                             _lines.Add($"{target}.MergedDictionaries.Add({item});");
@@ -203,7 +224,23 @@ sealed partial class XamlEmitter
             }
 
             var deferred = _deferredGlobal.Count;
-            var value = EmitObject(child);
+            var element =
+                resolver.SymbolOf(child) is { } entryType
+                && XamlTypeResolver.DerivesFrom(entryType, "global::Noesis.FrameworkElement");
+            if (element)
+                _keyedElements++;
+
+            string? value;
+            try
+            {
+                value = EmitObject(child);
+            }
+            finally
+            {
+                if (element)
+                    _keyedElements--;
+            }
+
             if (value is null)
                 continue;
 
@@ -265,11 +302,14 @@ sealed partial class XamlEmitter
             _lines.Add($"{parsed}.Remove({Quote(key)});");
 
         if (basedOnKey is not null)
+        {
+            var theme = BasedOnProbe(entry);
             AddGraphStatement(
                 found =>
-                    $"foreach (var __k in {parsed}.Keys) if ({parsed}[__k] is global::Noesis.Style __s) __s.BasedOn = (global::Noesis.Style){found};",
+                    $"foreach (var __k in {parsed}.Keys) if ({parsed}[__k] is global::Noesis.Style __s) __s.BasedOn = (global::Noesis.Style)({found} ?? {theme});",
                 basedOnKey
             );
+        }
 
         return parsed;
     }
@@ -278,7 +318,10 @@ sealed partial class XamlEmitter
     public List<(string Key, string? Leaf)> DeclaredKeys(XElement root)
     {
         var keys = new List<(string Key, string? Leaf)>();
-        Collect(root);
+
+        // A query only: building each entry is what reports a bad key.
+        using (Speculate())
+            Collect(root);
         return keys;
 
         void Collect(XElement dictionary)
@@ -343,9 +386,9 @@ sealed partial class XamlEmitter
         public string? Key { get; } = key;
     }
 
-    ResourceKeyResult? Failed(string message)
+    ResourceKeyResult? Failed(string message, System.Xml.IXmlLineInfo at)
     {
-        Errors.Add(message);
+        Errors.Add(message, at);
         return null;
     }
 
@@ -377,7 +420,7 @@ sealed partial class XamlEmitter
             var type = ResolveTypeSymbol(element, dataType.Value);
             if (type is null)
             {
-                return Failed($"could not resolve DataType '{dataType.Value}'");
+                return Failed($"could not resolve DataType '{dataType.Value}'", dataType);
             }
 
             return new ResourceKeyResult(
@@ -404,7 +447,7 @@ sealed partial class XamlEmitter
             var symbol = ResolveTypeSymbol(element, targetType.Value);
             if (symbol is null)
             {
-                return Failed($"could not resolve TargetType '{targetType.Value}'");
+                return Failed($"could not resolve TargetType '{targetType.Value}'", targetType);
             }
 
             return new ResourceKeyResult(
@@ -412,7 +455,7 @@ sealed partial class XamlEmitter
             );
         }
 
-        return Failed($"<{element.Name.LocalName}> has no x:Key, DataType or TargetType");
+        return Failed($"<{element.Name.LocalName}> has no x:Key, DataType or TargetType", element);
     }
 
     /// <summary>Must match how the implicit style was keyed on the way in: a native type, or a System

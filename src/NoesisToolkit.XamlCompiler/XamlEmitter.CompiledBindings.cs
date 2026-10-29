@@ -483,7 +483,9 @@ sealed partial class XamlEmitter
         Tally.Compiled++;
 
         if (receiver is not null && _markedReceivers.Add(element))
-            _lines.Add($"{CompiledBindingFqn}.MarkReceiver({target}, {ReceiverKey(element)});");
+            _lines.Add(
+                $"{CompiledBindingFqn}.MarkReceiver({target}, {ReceiverKey(element)}, {ReceiverBuild()});"
+            );
 
         EmitCompiledBind(
             anchor,
@@ -699,7 +701,7 @@ sealed partial class XamlEmitter
         return (
             anchor,
             anchorType,
-            $"__a => {CompiledBindingFqn}.{attached.Lookup}(__a, {ReceiverKey(element)})"
+            $"__a => {CompiledBindingFqn}.{attached.Lookup}(__a, {ReceiverKey(element)}, {ReceiverBuild()})"
         );
     }
 
@@ -740,6 +742,20 @@ sealed partial class XamlEmitter
         return key;
     }
 
+    const string ReceiverBuildVar = "__receivers";
+
+    bool _drawsBuild;
+
+    // A clone carries its prototype's objects and no others, so only a root's need a build apart.
+    string ReceiverBuild()
+    {
+        if (Cloned)
+            return "0";
+
+        _drawsBuild = true;
+        return ReceiverBuildVar;
+    }
+
     string? AnchorVar(XElement? host)
     {
         if (host is null)
@@ -762,10 +778,12 @@ sealed partial class XamlEmitter
             : null;
     }
 
+    bool Cloned => _templates.Count > 0 || _keyedElements > 0;
+
     // Inside a template the wire runs once per clone, so what it only reads is built once, outside.
     string Shared(string hint, string expression)
     {
-        if (_templates.Count == 0)
+        if (!Cloned)
             return expression;
 
         var name = NextName(hint);
@@ -775,7 +793,7 @@ sealed partial class XamlEmitter
 
     void EmitCompiledBind(string target, Func<string, string> bind)
     {
-        if (_templates.Count == 0)
+        if (!Cloned)
         {
             _lines.Add($"{bind(target)};");
             return;
@@ -1092,7 +1110,7 @@ sealed partial class XamlEmitter
         if (NamedValue(call, "Mode") is not string raw)
             return Default();
 
-        switch (raw.Trim())
+        switch (PresentationMember("BindingMode", raw.Trim()))
         {
             case "Default":
                 return Default();
@@ -1131,7 +1149,7 @@ sealed partial class XamlEmitter
         if (NamedValue(call, "UpdateSourceTrigger") is not string raw)
             return "";
 
-        return raw.Trim() switch
+        return PresentationMember("UpdateSourceTrigger", raw.Trim()) switch
         {
             "Default" => "",
             "PropertyChanged" => "PropertyChanged",
@@ -1276,12 +1294,15 @@ sealed partial class XamlEmitter
     }
 
     /// <summary>The three knobs a RelativeSource states, however the document spelled them.</summary>
-    static (string Mode, string? AncestorType, string Level) RelativeSourceParts(MarkupCall call)
+    (string Mode, string? AncestorType, string Level) RelativeSourceParts(MarkupCall call)
     {
         var written = NamedValue(call, "AncestorType");
+        var mode = (
+            call.Positional.FirstOrDefault() ?? NamedValue(call, "Mode") as string ?? ""
+        ).Trim();
 
         return (
-            (call.Positional.FirstOrDefault() ?? NamedValue(call, "Mode") as string ?? "").Trim(),
+            PresentationMember("RelativeSourceMode", mode) ?? mode,
             written as string ?? (written is MarkupCall typed ? TypeArgument(typed) : null),
             (NamedValue(call, "AncestorLevel") as string)?.Trim() ?? "1"
         );
@@ -1382,7 +1403,7 @@ sealed partial class XamlEmitter
     bool OptedIntoCompiledBindings(XElement element)
     {
         if (
-            !CompiledBindingsAvailable
+            !MvvmRuntimeReferenced
             || element
                 .AncestorsAndSelf()
                 .Select(e => e.Attribute(XName.Get("CompileBindings", XamlTypeResolver.ToolkitNs)))
@@ -1640,19 +1661,19 @@ sealed partial class XamlEmitter
             : null;
     }
 
-    // A cell template sits under the column rather than the list, so the source is the nearest one
-    // named above -- but never past a breaker, which renders something else entirely.
+    // A breaker's ItemsSource feeds its own tree, so the walk stops at it and at the first list.
     INamedTypeSymbol? SourcedContext(XElement slot, XamlScopeRules.TemplateHost host)
     {
         var owner = slot.Name.LocalName.IndexOf('.') < 0 ? slot : slot.Parent;
         foreach (var element in slot.AncestorsAndSelf())
         {
+            var breaks = XamlScopeRules.ScopeBreakers.Contains(element.Name.LocalName);
+            if (breaks && element != slot && element != owner)
+                return null;
+
             if (!WritesSource(element, host.SourceProperty, out var written))
             {
-                if (
-                    XamlScopeRules.ScopeBreakers.Contains(element.Name.LocalName)
-                    || !host.SourcedAbove && element == owner
-                )
+                if (breaks || !host.SourcedAbove && element == owner || Lists(element))
                     return null;
 
                 continue;
@@ -1669,6 +1690,10 @@ sealed partial class XamlEmitter
 
         return null;
     }
+
+    bool Lists(XElement element) =>
+        resolver.SymbolOf(element) is { } type
+        && XamlTypeResolver.DerivesFrom(type, "global::Noesis.ItemsControl");
 
     // What the host renders can be named the same three ways any other value can.
     ITypeSymbol? SourceType(XElement element, MarkupCall call, string slot)
@@ -1701,7 +1726,7 @@ sealed partial class XamlEmitter
             return false;
 
         var values = holder.Elements().ToList();
-        if (values.Count == 1 && values[0].Name.LocalName == "Binding")
+        if (values.Count == 1 && values[0].Name.LocalName == "Binding" && !values[0].HasElements)
             call = BindingElementCall(values[0]);
 
         return true;
@@ -2249,7 +2274,7 @@ sealed partial class XamlEmitter
             && !XamlTypeResolver.DerivesFrom(type, "global::System.Type")
             && (type.IsValueType || OverridesToString(type))
         )
-            return $"{value}.ToString()";
+            return $"{SlotConversionFqn}.Text({value})";
 
         Note("text-conversion-unlike-native");
         return null;
@@ -2553,10 +2578,11 @@ sealed partial class XamlEmitter
                     format = XamlMarkupParser.Unescape(attribute.Value);
                     continue;
                 case "Mode":
-                    if (attribute.Value.Trim() != "OneWay")
+                    var direction = PresentationMember("BindingMode", attribute.Value.Trim());
+                    if (direction is not ("OneWay" or "Default"))
                         return No("multi-binding-is-one-way-only");
 
-                    oneWay = true;
+                    oneWay |= direction == "OneWay";
                     continue;
                 default:
                     return No("multi-binding-knob-unsupported");
@@ -2599,7 +2625,7 @@ sealed partial class XamlEmitter
 
             if (
                 NamedValue(call, "Mode") is string mode
-                && mode.Trim() is not ("OneWay" or "Default")
+                && PresentationMember("BindingMode", mode.Trim()) is not ("OneWay" or "Default")
             )
                 return No("child-direction-unsupported");
 

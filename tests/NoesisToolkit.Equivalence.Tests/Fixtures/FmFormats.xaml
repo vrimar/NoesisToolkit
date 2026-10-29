@@ -61,6 +61,17 @@
     </StackPanel>
   </DataTemplate>
 
+  <DataTemplate x:Key="Throwing" ntk:DataType="t:FmModel">
+    <TextBlock x:Name="ThrowingJoined">
+      <TextBlock.Text>
+        <MultiBinding StringFormat="{}{0}-{1}">
+          <Binding Path="Big" />
+          <Binding Path="Throwing" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+  </DataTemplate>
+
   <DataTemplate x:Key="Unlike" ntk:DataType="t:FmModel">
     <StackPanel>
       <TextBlock x:Name="Letter" Text="{Binding Letter}" />

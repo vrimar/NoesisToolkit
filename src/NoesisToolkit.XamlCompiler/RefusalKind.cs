@@ -78,6 +78,7 @@ static class Refusals
         ["hop-is-ref-like"] = RefusalKind.Boundary,
 
         ["element-left-to-the-parser"] = RefusalKind.Boundary,
+        ["attribute-left-to-the-parser"] = RefusalKind.Boundary,
         ["setter-left-to-the-parser"] = RefusalKind.Boundary,
         ["resource-left-to-the-parser"] = RefusalKind.Boundary,
         ["document-left-to-the-loader"] = RefusalKind.Author,

@@ -95,6 +95,32 @@ public sealed class CompiledTriggerTests
         await Assert.That(compiledHost.Label).IsEqualTo(nativeHost.Label);
     }
 
+    [Test]
+    public async Task A_style_set_bound_again_stops_the_set_it_replaces()
+    {
+        NoesisRuntime.Start();
+
+        var nativeItem = new SpikeItem();
+        var nativeHost = new SpikeControl { DataContext = nativeItem, Style = NativeStyle() };
+        var rebuilt = BaseStyle();
+        var kept = new DataTrigger { Binding = new Binding("Index"), Value = "1" };
+        kept.Setters.Add(new Setter { Property = SpikeControl.LabelProperty, Value = "second" });
+        rebuilt.Triggers.Add(kept);
+        nativeHost.Style = rebuilt;
+
+        var compiledItem = new SpikeItem();
+        var compiledHost = new SpikeControl { DataContext = compiledItem, Style = BaseStyle() };
+        CompiledTriggerSet.Bind(compiledHost, CompiledTriggers());
+        CompiledTriggerSet.Bind(compiledHost, [CompiledTriggers()[1]]);
+
+        NoesisRuntime.Show(nativeHost, compiledHost);
+        nativeItem.Flag = true;
+        compiledItem.Flag = true;
+
+        await Assert.That(compiledHost.Label).IsEqualTo(nativeHost.Label);
+        await Assert.That(compiledHost.Label).IsEqualTo("base");
+    }
+
     sealed class Toggle : System.ComponentModel.INotifyPropertyChanged
     {
         static readonly System.ComponentModel.PropertyChangedEventArgs FlagChanged = new(
@@ -261,6 +287,7 @@ public sealed class CompiledTriggerTests
             [
                 new CompiledTriggerSpec
                 {
+                    TemplateScoped = true,
                     Conditions =
                     [
                         new CompiledTriggerCondition

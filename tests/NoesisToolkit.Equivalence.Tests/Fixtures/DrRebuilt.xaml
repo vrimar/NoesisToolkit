@@ -1,0 +1,14 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.DrRebuiltFixture"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="t:SpikeItem"
+>
+  <UserControl.InputBindings>
+    <KeyBinding Key="F2" CommandParameter="{Binding Label}" />
+  </UserControl.InputBindings>
+  <StackPanel />
+</UserControl>

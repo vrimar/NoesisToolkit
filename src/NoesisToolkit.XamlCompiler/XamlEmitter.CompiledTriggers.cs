@@ -541,16 +541,16 @@ sealed partial class XamlEmitter
             + $"Value = {constant} }}";
     }
 
-    static bool SelfRelative(MarkupCall call) =>
+    bool SelfRelative(MarkupCall call) =>
         NamedValue(call, "RelativeSource") is MarkupCall relative
         && RelativeSourceParts(relative).Mode == "Self";
 
-    static string? RelativeMode(MarkupCall call) =>
+    string? RelativeMode(MarkupCall call) =>
         NamedValue(call, "RelativeSource") is MarkupCall relative
             ? RelativeSourceParts(relative).Mode
             : null;
 
-    static bool AncestorRelative(MarkupCall call) =>
+    bool AncestorRelative(MarkupCall call) =>
         NamedValue(call, "RelativeSource") is MarkupCall relative
         && RelativeSourceParts(relative).AncestorType is not null;
 
@@ -759,10 +759,7 @@ sealed partial class XamlEmitter
     {
         foreach (var element in NameScopeOf(nameRoot))
         {
-            if (
-                element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))?.Value.Trim()
-                == name
-            )
+            if (ScopedName(element) == name)
                 return resolver.SymbolOf(element);
         }
 

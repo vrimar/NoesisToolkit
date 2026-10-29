@@ -17,6 +17,7 @@ sealed unsafe class ElementState
     internal List<DependencyProperty>? Probed;
     internal ElementEvents.Entry? Events;
     internal List<CompiledTriggerSet>? TriggerSets;
+    internal Dictionary<DependencyProperty, IPropertyBinding>? Bindings;
 
     ElementState(nint handle, DependencyObject? proxy)
     {
@@ -68,6 +69,16 @@ sealed unsafe class ElementState
         }
     }
 
+    // One binding per property, as natively: a rebuilt document binds the same element again.
+    internal void Bind(DependencyProperty property, IPropertyBinding binding)
+    {
+        var bindings = Bindings ??= new Dictionary<DependencyProperty, IPropertyBinding>();
+        if (bindings.TryGetValue(property, out var replaced))
+            replaced.Stop();
+
+        bindings[property] = binding;
+    }
+
     internal static ElementState? Find(nint handle)
     {
         lock (Live)
@@ -101,6 +112,7 @@ sealed unsafe class ElementState
         Probed = null;
         Events = null;
         TriggerSets = null;
+        Bindings = null;
 
         events?.OnEnded();
     }

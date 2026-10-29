@@ -12,6 +12,7 @@
 | `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
 | `NTK1008` | Warning | a `DisplayMemberPath`, `SelectedValuePath` or `EventName` names a member its type does not have |
 | `NTK1010` | Warning | a `GridViewColumn.DisplayMemberBinding` stays native, boxing its value for every row it fills; a `CellTemplate` compiles |
+| `NTK1011` | Warning | `NoesisToolkit.Mvvm` is another version than the XAML compiler, so every binding stays native |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve, or names a static Noesis' parser loads unset |
@@ -76,10 +77,12 @@ reaches, so the severity goes in a global analyzer config — a file holding `is
 A binding left to the engine is read by reflection, so every name it reads ships: in a trimmed or
 NativeAOT build the compiler roots each one, and the binary carries it. `XamlCompileSurvey.g.cs`
 counts, per file, each binding and trigger that fell back and why. NTK1007 puts each of those at
-the attribute or element that holds it, with the same reason, and adds every binding in markup
-handed to the parser whole, which the survey does not count: `setter-left-to-the-parser`,
-`element-left-to-the-parser`, `resource-left-to-the-parser` or `document-left-to-the-loader`. A
-binding the survey calls native by design has no managed name in its path and is not reported.
+the attribute or element that holds it, with the same reason, including every binding in markup
+handed to the parser: `setter-left-to-the-parser`, `element-left-to-the-parser`,
+`attribute-left-to-the-parser` for a `noesis:` attribute on an element built in code,
+`resource-left-to-the-parser`, or `document-left-to-the-loader`, the one reason the survey does not
+count. A binding the survey calls native by design has no managed name in its path and is not
+reported.
 
 It is hidden, because a binding that stays native on purpose leaves nothing to fix. To audit a
 project, raise it the way NTK1005 is raised, with `dotnet_diagnostic.NTK1007.severity = warning` in

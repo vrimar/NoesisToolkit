@@ -95,6 +95,12 @@ sealed partial class XamlEmitter
                 var itemType = CollectionItemType(type);
                 foreach (var child in content)
                 {
+                    if (IsResourceElement(child))
+                    {
+                        AddResourceItem(child, itemType, type, target);
+                        continue;
+                    }
+
                     var item = EmitObject(child, itemType);
                     if (item is not null)
                         _lines.Add($"{target}.Add({item});");
@@ -110,6 +116,9 @@ sealed partial class XamlEmitter
                 );
                 return;
             }
+
+            if (ApplyResourceElement(element, target, type, property, content))
+                return;
 
             AssignChildren(
                 target,
@@ -240,9 +249,14 @@ sealed partial class XamlEmitter
                 }
 
                 var element = (XElement)node;
+                if (IsResourceElement(element))
+                {
+                    AddResourceItem(element, itemType, propertyType, Member(target, propertyName));
+                    continue;
+                }
+
                 if (
                     itemType is not null
-                    && element.Name.LocalName is not ("StaticResource" or "DynamicResource")
                     && resolver.SymbolOf(element) is { } item
                     && !resolver.Converts(item, itemType)
                 )
@@ -286,7 +300,11 @@ sealed partial class XamlEmitter
                 var index = NextName("index");
                 _lines.Add($"var {index} = {collection}.Count;");
                 _lines.Add($"{collection}.Add({name});");
-                _deferredGlobal.Add($"{collection}[{index}] = {name};");
+                _deferredGlobal.Add(
+                    _shifts.TryGetValue(collection, out var shift)
+                        ? $"{collection}[{index} + {shift}] = {name};"
+                        : $"{collection}[{index}] = {name};"
+                );
             }
 
             return;
@@ -321,6 +339,102 @@ sealed partial class XamlEmitter
             && resolver.SymbolOf(value) is { TypeKind: TypeKind.Struct }
         )
             _deferredGlobal.Add(store(name));
+    }
+
+    static bool IsResourceElement(XElement element) =>
+        element.Name.LocalName is "StaticResource" or "DynamicResource";
+
+    bool ApplyResourceElement(
+        XElement owner,
+        string target,
+        INamedTypeSymbol type,
+        IPropertySymbol property,
+        IReadOnlyList<XElement> values
+    )
+    {
+        if (
+            values.Count != 1
+            || !IsResourceElement(values[0])
+            || XamlTypeResolver.IsCollection(property.Type)
+        )
+            return false;
+
+        if (ResourceElementCall(values[0]) is { } reference)
+            ApplyMarkup(owner, target, type, property, reference);
+        return true;
+    }
+
+    readonly Dictionary<string, string> _shifts = new Dictionary<string, string>(
+        StringComparer.Ordinal
+    );
+
+    // An item only the flush finds goes back in where the parser would have added it.
+    void AddResourceItem(
+        XElement element,
+        ITypeSymbol? itemType,
+        ITypeSymbol collectionType,
+        string collection
+    )
+    {
+        if (element.Name.LocalName == "DynamicResource")
+        {
+            DeadMarkup.Add(
+                "<DynamicResource> as a collection item is dropped, as the parser drops it"
+            );
+            return;
+        }
+
+        if (ResourceElementKey(element) is not { } key)
+            return;
+
+        var add = Assigning(itemType, item => $"{collection}.Add({item});");
+        if (_rootClass is not null)
+        {
+            AddGraphStatement(add, key, skipMissing: true);
+            return;
+        }
+
+        if (!HasInsert(collectionType))
+        {
+            Errors.Add(
+                $"<StaticResource> as an item of {XamlTypeResolver.Fqn(collectionType)} may only be found once the graph is assembled, and that collection cannot place it back"
+            );
+            return;
+        }
+
+        if (!_shifts.TryGetValue(collection, out var shift))
+        {
+            _shifts[collection] = shift = NextName("shift");
+            _lines.Add($"var {shift} = 0;");
+        }
+
+        var at = NextName("at");
+        _lines.Add($"var {at} = {collection}.Count;");
+        AddGraphStatement(
+            add,
+            key,
+            skipMissing: true,
+            settle: Assigning(itemType, item => $"{collection}.Insert({at} + {shift}++, {item});")
+        );
+    }
+
+    static bool HasInsert(ITypeSymbol collection)
+    {
+        for (var t = collection; t is not null; t = t.BaseType)
+        {
+            if (
+                t.GetMembers("Insert")
+                    .OfType<IMethodSymbol>()
+                    .Any(m =>
+                        !m.IsStatic
+                        && m.Parameters.Length == 2
+                        && m.Parameters[0].Type.SpecialType == SpecialType.System_Int32
+                    )
+            )
+                return true;
+        }
+
+        return false;
     }
 
     // A null owner shapes text as a plain value, not inlines.
@@ -458,6 +572,14 @@ sealed partial class XamlEmitter
         string local
     )
     {
+        if (XamlTypeResolver.NativeOwned(child.Name.NamespaceName))
+        {
+            Errors.Add(
+                $"<{local}> sets a property only the parser can name, on an element generated code builds itself"
+            );
+            return;
+        }
+
         var dot = local.IndexOf('.');
         var ownerName = local.Substring(0, dot);
         var propertyName = local.Substring(dot + 1);
@@ -476,11 +598,23 @@ sealed partial class XamlEmitter
 
             if (XamlTypeResolver.IsCollection(getter.ReturnType))
             {
+                var collection = $"{declaringFqn}.Get{propertyName}({target})";
                 foreach (var value in child.Elements().Where(e => !IsIgnorable(e)))
                 {
+                    if (IsResourceElement(value))
+                    {
+                        AddResourceItem(
+                            value,
+                            CollectionItemType(getter.ReturnType),
+                            getter.ReturnType,
+                            collection
+                        );
+                        continue;
+                    }
+
                     var name = EmitObject(value);
                     if (name is not null)
-                        _lines.Add($"{declaringFqn}.Get{propertyName}({target}).Add({name});");
+                        _lines.Add($"{collection}.Add({name});");
                 }
 
                 return;
@@ -503,13 +637,32 @@ sealed partial class XamlEmitter
                 return;
             }
 
-            StoreValue(
-                values[0],
-                resolver.FindAttachedValueType(declaring!, propertyName),
-                single => $"{declaringFqn}.Set{propertyName}({target}, {single});"
-            );
+            var slotType = resolver.FindAttachedValueType(declaring!, propertyName);
+            Func<string, string> write = single =>
+                $"{declaringFqn}.Set{propertyName}({target}, {single});";
+
+            if (IsResourceElement(values[0]))
+            {
+                if (ResourceElementCall(values[0]) is { } reference)
+                    ApplyAttachedResource(
+                        owner,
+                        target,
+                        type,
+                        declaring!,
+                        propertyName,
+                        slotType,
+                        reference,
+                        write
+                    );
+                return;
+            }
+
+            StoreValue(values[0], slotType, write);
             return;
         }
+
+        if (propertyName == "Value" && IsSetterLike(type) && _probedValues.Contains(target))
+            return;
 
         var property = resolver.FindProperty(type, propertyName);
         if (property is null)
@@ -573,19 +726,8 @@ sealed partial class XamlEmitter
             return;
         }
 
-        if (
-            elements.Length == 1
-            && (
-                elements[0].Name.LocalName == "DynamicResource"
-                || elements[0].Name.LocalName == "StaticResource"
-                    && !XamlTypeResolver.IsCollection(property.Type)
-            )
-        )
-        {
-            if (ResourceElementCall(elements[0]) is { } reference)
-                ApplyMarkup(owner, target, type, property, reference);
+        if (ApplyResourceElement(owner, target, type, property, elements))
             return;
-        }
 
         if (elements.Length == 1 && elements[0].Name.LocalName is "MultiBinding" or "Binding")
         {

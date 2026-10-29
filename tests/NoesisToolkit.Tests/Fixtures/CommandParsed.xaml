@@ -1,0 +1,11 @@
+<UserControl
+  x:Class="Sample.CommandParsedHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+>
+  <StackPanel>
+    <ui:Pad Depth="3" Go="ApplicationCommands.Copy" />
+    <ui:Pad Depth="4" Go="ui:Commands.Save" />
+  </StackPanel>
+</UserControl>

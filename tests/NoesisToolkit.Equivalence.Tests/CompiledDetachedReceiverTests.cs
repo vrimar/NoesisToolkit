@@ -86,6 +86,8 @@ public sealed class DrHost : Border
 
 public partial class DrRootFixture : UserControl { }
 
+public partial class DrRebuiltFixture : UserControl { }
+
 [NotInParallel("Noesis")]
 public sealed class CompiledDetachedReceiverTests
 {
@@ -128,6 +130,35 @@ public sealed class CompiledDetachedReceiverTests
                 )
             )
             .IsNull();
+    }
+
+    [Test]
+    public async Task A_rebuilt_root_binds_each_input_binding_its_builds_added()
+    {
+        NoesisRuntime.Start();
+
+        var parsedItem = new SpikeItem { Label = "a" };
+        var parsed = new DrRebuiltFixture { DataContext = parsedItem };
+        GUI.LoadComponent(parsed, "/Fixtures;Fixtures/DrRebuilt.xaml");
+        GUI.LoadComponent(parsed, "/Fixtures;Fixtures/DrRebuilt.xaml");
+
+        var compiledItem = new SpikeItem { Label = "a" };
+        var compiled = new DrRebuiltFixture { DataContext = compiledItem };
+        compiled.InitializeComponent();
+        compiled.InitializeComponent();
+
+        NoesisRuntime.Show(parsed, compiled);
+        parsedItem.Label = "b";
+        compiledItem.Label = "b";
+
+        await Assert.That(compiled.InputBindings.Count).IsEqualTo(parsed.InputBindings.Count);
+        for (var i = 0; i < parsed.InputBindings.Count; i++)
+        {
+            await Assert.That(parsed.InputBindings[i].CommandParameter).IsEqualTo("b");
+            await Assert
+                .That(compiled.InputBindings[i].CommandParameter)
+                .IsEqualTo(parsed.InputBindings[i].CommandParameter);
+        }
     }
 
     [Test]

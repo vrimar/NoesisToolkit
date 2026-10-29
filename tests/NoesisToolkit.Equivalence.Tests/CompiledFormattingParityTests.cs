@@ -24,6 +24,11 @@ public sealed class FmNamed
 
 public sealed class FmUnnamed { }
 
+public sealed class FmThrowing
+{
+    public override string ToString() => throw new InvalidOperationException("no text");
+}
+
 public sealed class FmModel
 {
     public static readonly DateTime Moment = new DateTime(2026, 1, 2, 3, 4, 5);
@@ -51,6 +56,7 @@ public sealed class FmModel
     public object Payload { get; } = new List<string> { "a" };
     public List<string> Items { get; } = new List<string> { "a" };
     public FmUnnamed Unnamed { get; } = new FmUnnamed();
+    public FmThrowing Throwing { get; } = new FmThrowing();
 }
 
 [NotInParallel("Noesis")]
@@ -179,6 +185,20 @@ public sealed class CompiledFormattingParityTests
         {
             CultureInfo.CurrentCulture = was;
         }
+    }
+
+    [Test]
+    public async Task A_part_whose_ToString_throws_shows_as_nothing_in_the_format()
+    {
+        NoesisRuntime.Start();
+
+        var (compiled, parsed) = Realize("Throwing");
+
+        await Assert.That(Block(parsed, "ThrowingJoined").Text).IsEqualTo("1234567-");
+        await Assert
+            .That(Block(compiled, "ThrowingJoined").Text)
+            .IsEqualTo(Block(parsed, "ThrowingJoined").Text);
+        await Assert.That(Bound(Block(compiled, "ThrowingJoined"))).IsFalse();
     }
 
     [Test]

@@ -16,9 +16,10 @@ sealed partial class XamlEmitter(
     string filePath = ""
 )
 {
-    /// <summary>False where the runtime the emitted graph names is not referenced, which makes a
-    /// compiled binding impossible rather than merely unresolvable.</summary>
-    public bool CompiledBindingsAvailable { get; init; } = true;
+    /// <summary>False where NoesisToolkit.Mvvm is not referenced at this compiler's version. The
+    /// emitted graph names its runtime for a compiled binding and for an image source, so without it
+    /// neither can be emitted, rather than merely failing to resolve.</summary>
+    public bool MvvmRuntimeReferenced { get; init; } = true;
 
     public System.Threading.CancellationToken Cancellation { get; init; }
 
@@ -52,6 +53,8 @@ sealed partial class XamlEmitter(
     readonly List<INamedTypeSymbol?> _styleTargets = new List<INamedTypeSymbol?>();
 
     readonly List<string> _templates = new List<string>();
+
+    int _keyedElements;
 
     INamedTypeSymbol? _rootClass;
 
@@ -229,6 +232,9 @@ sealed partial class XamlEmitter(
         if (_usesResourceLookup)
             _lines.Insert(1, ResourcesHelper);
 
+        if (_drawsBuild)
+            _lines.Insert(0, $"var {ReceiverBuildVar} = {CompiledBindingFqn}.NewBuild();");
+
         EmitLookupHelpers();
 
         if (_usesTemplated)
@@ -349,10 +355,13 @@ sealed class ErrorList(Func<(int Line, int Column)> site) : IEnumerable<string>
         _sites.Add(at);
     }
 
-    public void AddRange(IEnumerable<string> messages)
+    public void Add(string message, IXmlLineInfo at) =>
+        Add(message, at.HasLineInfo() ? (at.LineNumber, at.LinePosition) : site());
+
+    public void AddRange(IEnumerable<MarkupSite> sites)
     {
-        foreach (var message in messages)
-            Add(message);
+        foreach (var at in sites)
+            Add(at.Message, (at.Line, at.Column));
     }
 
     public void RemoveRange(int index, int count)

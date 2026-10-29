@@ -293,6 +293,55 @@ public sealed class CompiledBindingTests
         await Assert.That(compiled.Label).IsEqualTo("typed");
     }
 
+    [Test]
+    public async Task A_reload_writes_nothing_back_to_a_two_way_source_nobody_edited()
+    {
+        NoesisRuntime.Start();
+
+        var converter = new UpperConverter();
+        var native = new SpikeItem { Label = "Mixed" };
+        var nativeBox = new TextBox { DataContext = native };
+        nativeBox.SetBinding(
+            TextBox.TextProperty,
+            new Binding(nameof(SpikeItem.Label))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+                Converter = converter,
+            }
+        );
+
+        var compiled = new SpikeItem { Label = "Mixed" };
+        var compiledBox = new TextBox { DataContext = compiled };
+        CompiledBinding.Bind(
+            compiledBox,
+            TextBox.TextProperty,
+            new CompiledBindingSpec
+            {
+                Hops = [Hop.Label],
+                Write = (o, v) => ((SpikeItem)o).Label = (string)v!,
+                Mode = BindingMode.TwoWay,
+                Trigger = UpdateSourceTrigger.PropertyChanged,
+                Converter = converter,
+                TargetType = typeof(string),
+                SourceType = typeof(string),
+                Convert = v => v as string ?? "",
+            }
+        );
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, nativeBox, compiledBox);
+
+        root.Children.Clear();
+        NoesisRuntime.Pump(view, root);
+        root.Children.Add(nativeBox);
+        root.Children.Add(compiledBox);
+        NoesisRuntime.Pump(view, root);
+
+        await Assert.That(native.Label).IsEqualTo("Mixed");
+        await Assert.That(compiled.Label).IsEqualTo(native.Label);
+    }
+
     static bool? ClickedThenReloaded(Action<CheckBox> bind)
     {
         var box = new CheckBox

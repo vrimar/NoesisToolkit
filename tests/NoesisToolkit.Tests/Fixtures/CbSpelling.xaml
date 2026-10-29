@@ -1,0 +1,33 @@
+<UserControl
+  x:Class="Sample.CbSpellingHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="ui:ItemViewModel"
+>
+  <StackPanel>
+    <TextBlock Text="{Binding Def.Family, Mode=twoway, UpdateSourceTrigger=lostfocus}" />
+    <TextBlock Tag="{Binding Width, RelativeSource={RelativeSource self}}" />
+    <TextBlock>
+      <TextBlock.Text>
+        <MultiBinding Mode="Default" StringFormat="{}{0}!">
+          <Binding Path="DefIdInt" />
+        </MultiBinding>
+      </TextBlock.Text>
+    </TextBlock>
+    <ItemsControl>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate ntk:DataType="ui:ItemDef">
+          <TextBlock Name="Peer" />
+          <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding Family}" Value="gem">
+              <Setter TargetName="Peer" Property="Width" Value="7" />
+            </DataTrigger>
+          </DataTemplate.Triggers>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

@@ -79,6 +79,25 @@ public static class SlotConversion
         : value == 0 ? "0"
         : value.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>The text the native engine shows for <paramref name="value"/>: its own
+    /// <c>ToString</c>, or nothing where that throws, which is reported to
+    /// <see cref="Error.UnhandledException"/> as the engine reports it.</summary>
+    /// <param name="value">The value to show.</param>
+    /// <returns>What <c>ToString</c> returned, or empty where it threw.</returns>
+    public static string? Text(object value)
+    {
+        Guard.NotNull(value, nameof(value));
+        try
+        {
+            return value.ToString();
+        }
+        catch (Exception exception)
+        {
+            Error.UnhandledException(exception);
+            return "";
+        }
+    }
+
     /// <summary>The text the native engine formats <paramref name="value"/> to.</summary>
     /// <param name="value">The value to format.</param>
     /// <param name="format">An <c>F</c>, <c>N</c> or <c>P</c> format, with an optional precision.</param>

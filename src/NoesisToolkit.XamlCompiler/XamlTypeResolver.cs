@@ -56,14 +56,6 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             var symbol = TypeLookup.ByName(compilation, qualified);
             if (symbol is not null)
                 return symbol;
-
-            // GetTypeByMetadataName returns null when two referenced assemblies define the name.
-            var matches = compilation
-                .GetTypesByMetadataName(qualified)
-                .Where(t => t.DeclaredAccessibility == Accessibility.Public)
-                .ToArray();
-            if (matches.Length > 0)
-                return matches[0];
         }
 
         return null;
@@ -383,21 +375,35 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
 
         if (
             compilation.GetSemanticModel(registration.SyntaxTree).GetOperation(registration)
-            is not IInvocationOperation invocation
+                is not IInvocationOperation
+                {
+                    TargetMethod: { IsStatic: true, Name: "Register" or "RegisterAttached" } method,
+                } invocation
+            || Fqn(method.ContainingType) != "global::Noesis.DependencyProperty"
         )
             return null;
 
-        var metadata = invocation
-            .Arguments.Select(a => Unconverted(a.Value))
-            .OfType<IObjectCreationOperation>()
-            .FirstOrDefault(c =>
-                c.Type is { } type && DerivesFrom(type, "global::Noesis.PropertyMetadata")
-            );
-        if (metadata?.Type is not { } metadataType)
+        var passed = invocation
+            .Arguments.Where(a =>
+                a.ArgumentKind != ArgumentKind.DefaultValue
+                && a.Parameter?.Type is { } type
+                && DerivesFrom(type, "global::Noesis.PropertyMetadata")
+            )
+            .Select(a => Unconverted(a.Value))
+            .FirstOrDefault();
+        if (passed is null || passed.ConstantValue is { HasValue: true, Value: null })
             return 0;
+
+        // Metadata held anywhere but an inline construction is only known once it runs.
+        if (passed is not IObjectCreationOperation { Type: { } metadataType } metadata)
+            return null;
 
         if (!DerivesFrom(metadataType, "global::Noesis.FrameworkPropertyMetadata"))
             return 0;
+
+        // A subclass's constructor can set the options itself.
+        if (metadataType.ContainingAssembly?.Name != "Noesis.GUI")
+            return null;
 
         if (
             metadata.Initializer?.Initializers.Any(i =>

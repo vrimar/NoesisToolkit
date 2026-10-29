@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using NoesisToolkit.CodeGen;
@@ -13,7 +14,12 @@ namespace NoesisToolkit.Xaml;
 /// </summary>
 static class XamlCodeBehind
 {
-    internal readonly record struct NamedElement(string Name, string TypeFqn, string Modifier);
+    internal readonly record struct NamedElement(
+        string Name,
+        string TypeFqn,
+        string Modifier,
+        XAttribute Declared
+    );
 
     internal readonly record struct EventHook(
         string EventName,
@@ -32,7 +38,9 @@ static class XamlCodeBehind
 
         public readonly List<XAttribute> Unwireable = new List<XAttribute>();
 
-        public readonly List<string> Problems = new List<string>();
+        public readonly List<MarkupSite> Problems = new List<MarkupSite>();
+
+        public IXmlLineInfo ClassSite = null!;
 
         public XAttribute? LoaderAttribute;
 
@@ -48,7 +56,12 @@ static class XamlCodeBehind
     /// </summary>
     public static Scan Read(XElement root, INamedTypeSymbol rootClass, XamlTypeResolver resolver)
     {
-        var scan = new Scan();
+        var scan = new Scan
+        {
+            ClassSite =
+                (IXmlLineInfo?)root.Attribute(XName.Get("Class", XamlTypeResolver.DirectiveNs))
+                ?? root,
+        };
 
         if (
             root.Attribute(XName.Get("ClassModifier", XamlTypeResolver.DirectiveNs)) is { } modifier
@@ -56,11 +69,17 @@ static class XamlCodeBehind
         {
             if (Stated(modifier.Value) is not { } stated)
                 scan.Problems.Add(
-                    $"x:ClassModifier='{modifier.Value}' is not an accessibility C# can declare"
+                    At(
+                        modifier,
+                        $"x:ClassModifier='{modifier.Value}' is not an accessibility C# can declare"
+                    )
                 );
             else if (stated != rootClass.DeclaredAccessibility)
                 scan.Problems.Add(
-                    $"x:ClassModifier='{modifier.Value}' disagrees with how {rootClass.Name} is declared"
+                    At(
+                        modifier,
+                        $"x:ClassModifier='{modifier.Value}' disagrees with how {rootClass.Name} is declared"
+                    )
                 );
         }
 
@@ -105,7 +124,10 @@ static class XamlCodeBehind
                             )
                         )
                             scan.Problems.Add(
-                                $"x:Name='{attribute.Value}' is not a C# identifier, so no field can be generated for it"
+                                At(
+                                    attribute,
+                                    $"x:Name='{attribute.Value}' is not a C# identifier, so no field can be generated for it"
+                                )
                             );
                         else
                             scan.Names.Add(
@@ -117,7 +139,8 @@ static class XamlCodeBehind
                                         resolver.Nameable(type, rootClass),
                                         rootClass,
                                         scan
-                                    )
+                                    ),
+                                    attribute
                                 )
                             );
                     }
@@ -154,12 +177,20 @@ static class XamlCodeBehind
 
         if (scan.Events.Count > 0 && !HasConnectEvent(rootClass))
             scan.Problems.Add(
-                $"{rootClass.Name} is not a FrameworkElement, so the loader has no ConnectEvent to wire "
-                    + "the handlers its markup names; subscribe them in code"
+                At(
+                    (IXmlLineInfo?)scan.LoaderAttribute ?? root,
+                    $"{rootClass.Name} is not a FrameworkElement, so the loader has no ConnectEvent to wire "
+                        + "the handlers its markup names; subscribe them in code"
+                )
             );
 
         return scan;
     }
+
+    static MarkupSite At(IXmlLineInfo at, string message) =>
+        at.HasLineInfo()
+            ? new MarkupSite(message, at.LineNumber, at.LinePosition)
+            : new MarkupSite(message, 0, 0);
 
     static bool InTemplate(XElement element, XamlTypeResolver resolver)
     {
@@ -395,7 +426,10 @@ static class XamlCodeBehind
                 accessibility = stated;
             else
                 scan.Problems.Add(
-                    $"x:FieldModifier='{written.Value}' is not an accessibility C# can declare"
+                    At(
+                        written,
+                        $"x:FieldModifier='{written.Value}' is not an accessibility C# can declare"
+                    )
                 );
         }
 
@@ -473,16 +507,19 @@ static class XamlCodeBehind
     /// and two assignments, and a name equal to the class would emit a member that hides its own
     /// type.</summary>
     // With no resolvable handler no ConnectEvent is generated, and the class's own can wire these.
-    internal static IEnumerable<string> Unwired(Scan scan) =>
+    internal static IEnumerable<MarkupSite> Unwired(Scan scan) =>
         scan.Events.Count == 0
-            ? Enumerable.Empty<string>()
+            ? Enumerable.Empty<MarkupSite>()
             : scan.Unwireable.Select(a =>
-                $"<{a.Parent!.Name.LocalName} {a.Name.LocalName}=\"{a.Value}\"> names a handler on a type "
-                + "the compiler cannot resolve, so the generated ConnectEvent cannot wire it"
+                At(
+                    a,
+                    $"<{a.Parent!.Name.LocalName} {a.Name.LocalName}=\"{a.Value}\"> names a handler on a type "
+                        + "the compiler cannot resolve, so the generated ConnectEvent cannot wire it"
+                )
             );
 
     // The class's own source, before any generator adds to it.
-    internal static IEnumerable<string> Collisions(Scan scan, INamedTypeSymbol rootClass)
+    internal static IEnumerable<MarkupSite> Collisions(Scan scan, INamedTypeSymbol rootClass)
     {
         var generated = scan.NeedsLoader
             ? new[] { "InitializeComponent" }
@@ -493,31 +530,42 @@ static class XamlCodeBehind
         foreach (var member in generated)
         {
             if (!rootClass.GetMembers(member).IsEmpty)
-                yield return $"{rootClass.Name} declares {member}, which the compiler generates; remove it";
+                yield return At(
+                    scan.ClassSite,
+                    $"{rootClass.Name} declares {member}, which the compiler generates; remove it"
+                );
         }
 
-        foreach (var name in scan.Names.Select(n => n.Name).Distinct(StringComparer.Ordinal))
+        foreach (var named in Distinct(scan.Names))
         {
-            if (!rootClass.GetMembers(name).IsEmpty || !rootClass.GetMembers(Field(name)).IsEmpty)
-                yield return $"x:Name='{name}' collides with a member {rootClass.Name} declares";
+            if (
+                !rootClass.GetMembers(named.Name).IsEmpty
+                || !rootClass.GetMembers(Field(named.Name)).IsEmpty
+            )
+                yield return At(
+                    named.Declared,
+                    $"x:Name='{named.Name}' collides with a member {rootClass.Name} declares"
+                );
         }
     }
 
-    internal static string? NameConflict(Scan scan, INamedTypeSymbol rootClass)
+    internal static MarkupSite? NameConflict(Scan scan, INamedTypeSymbol rootClass)
     {
         foreach (var group in scan.Names.GroupBy(n => n.Name))
         {
+            var at = group.ElementAt(group.Count() > 1 ? 1 : 0).Declared;
+
             if (group.Select(n => n.TypeFqn).Distinct(StringComparer.Ordinal).Count() > 1)
-                return $"x:Name='{group.Key}' is used by elements of different types";
+                return At(at, $"x:Name='{group.Key}' is used by elements of different types");
 
             if (group.Count() > 1)
-                return $"x:Name='{group.Key}' is used more than once";
+                return At(at, $"x:Name='{group.Key}' is used more than once");
 
             if (group.Key == rootClass.Name)
-                return $"x:Name='{group.Key}' is the name of its own class";
+                return At(at, $"x:Name='{group.Key}' is the name of its own class");
 
             if (scan.Names.Any(n => Field(n.Name) == group.Key))
-                return $"x:Name='{group.Key}' is the field generated for another x:Name";
+                return At(at, $"x:Name='{group.Key}' is the field generated for another x:Name");
         }
 
         return null;

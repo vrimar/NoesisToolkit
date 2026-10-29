@@ -46,15 +46,17 @@ sealed partial class XamlEmitter
             return merged;
         }
 
-        if (element.Name.LocalName is "StaticResource" or "DynamicResource")
+        if (IsResourceElement(element))
         {
             if (ResourceElementKey(element) is not { } key)
                 return null;
 
             var resolved = NextName("resource");
-            var cast = CastPrefix(expected);
-
-            _lines.Add($"var {resolved} = {cast}{ResolveExpression(key)};");
+            _lines.Add(
+                expected is { IsReferenceType: true } && !TakesAnything(expected)
+                    ? $"var {resolved} = {ResolveExpression(key)} as {XamlTypeResolver.Fqn(expected)};"
+                    : $"var {resolved} = {CastPrefix(expected)}{ResolveExpression(key)};"
+            );
             return resolved;
         }
 
@@ -77,6 +79,7 @@ sealed partial class XamlEmitter
         if (
             NeedsParsedSetter(element, symbol)
             || SetterNamesWrapperless(element, symbol)
+            || SetterNamesNativeProperty(element, symbol)
             || SetterValueUnconvertible(element, symbol)
         )
             return EmitSetterProbe(element);
@@ -128,7 +131,7 @@ sealed partial class XamlEmitter
 
         var name = NextName(element.Name.LocalName);
         _elementVars[element] = name;
-        if (_grafts.TryGetValue(element, out var grafted))
+        if (Graft(element, symbol) is { } grafted)
         {
             _grafted.Add(element);
             _lines.Add($"var {name} = ({XamlTypeResolver.Fqn(symbol)}){grafted};");
@@ -199,6 +202,7 @@ sealed partial class XamlEmitter
         {
             _nameScopes.RemoveAt(_nameScopes.Count - 1);
             _templates.RemoveAt(_templates.Count - 1);
+            EndTemplateBindings();
         }
 
         return name;

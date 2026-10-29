@@ -60,7 +60,7 @@ public sealed class CompiledMultiBindingSpec
 /// <summary>A MultiBinding the compiler resolved into typed chains, watched the same way a
 /// <see cref="CompiledBinding"/> watches its one chain.</summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class CompiledMultiBinding : IPartSetOwner
+public sealed class CompiledMultiBinding : IPartSetOwner, IPropertyBinding
 {
     readonly ElementState _target;
     readonly DependencyProperty _property;
@@ -89,8 +89,11 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
         (_unset, _clearWhenUnset) = SlotDefault.For(target, property);
 
+        _target.Bind(property, this);
         _parts.Start();
     }
+
+    void IPropertyBinding.Stop() => _parts.Stop();
 
     /// <summary>Binds <paramref name="property"/> on <paramref name="target"/> as
     /// <paramref name="spec"/> describes.</summary>

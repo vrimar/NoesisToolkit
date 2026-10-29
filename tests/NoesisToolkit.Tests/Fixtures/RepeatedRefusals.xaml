@@ -10,9 +10,12 @@
   <StackPanel>
     <TextBlock Text="{Binding Family, Converter={StaticResource {x:Type ui:Missing}}}" />
     <NativeOnlyPanel>
-      <Border Tag="{StaticResource Nowhere}" Width="{StaticResource Nowhere}">
-        <TextBlock Tag="{StaticResource Nowhere}" />
+      <Border Tag="{StaticResource Outside}" Width="{StaticResource Outside}">
+        <TextBlock Tag="{StaticResource Outside}" />
       </Border>
     </NativeOnlyPanel>
+    <StackPanel.Resources>
+      <SolidColorBrush x:Key="Outside" />
+    </StackPanel.Resources>
   </StackPanel>
 </UserControl>

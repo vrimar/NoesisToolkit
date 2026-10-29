@@ -204,7 +204,8 @@ public sealed class CompiledBinding
     : IChainOwner,
         INotifierOwner,
         IElementLifecycleOwner,
-        IChangeListener
+        IChangeListener,
+        IPropertyBinding
 {
     readonly ElementState _target;
     readonly DependencyProperty _property;
@@ -214,6 +215,7 @@ public sealed class CompiledBinding
 
     readonly bool _twoWay;
     readonly bool _onLostFocus;
+    readonly LostFocusListener? _lostFocus;
 
     static readonly object NotBroke = new object();
     static readonly object NoSource = new object();
@@ -278,15 +280,34 @@ public sealed class CompiledBinding
 
         _life = new ElementLifecycle(_target, this);
 
+        // An attached object's property belongs to the receiver, not the anchor.
+        if (_receiverResolver is null)
+            _target.Bind(_property, this);
+
         if (_twoWay)
         {
             DependencyWatcher.Watch(_target, _property, this);
             if (_onLostFocus)
-                ElementEvents.WatchRouted(_target, LostFocus, new LostFocusListener(this));
+                ElementEvents.WatchRouted(
+                    _target,
+                    LostFocus,
+                    _lostFocus = new LostFocusListener(this)
+                );
         }
 
         Resolve();
         Rebuild();
+    }
+
+    void IPropertyBinding.Stop()
+    {
+        _life.Stop();
+        if (!_twoWay)
+            return;
+
+        DependencyWatcher.Unwatch(_target, _property, this);
+        if (_lostFocus is not null)
+            ElementEvents.UnwatchRouted(_target, LostFocus, _lostFocus);
     }
 
     /// <summary>Binds <paramref name="property"/> on <paramref name="target"/> as
@@ -342,23 +363,45 @@ public sealed class CompiledBinding
             new PropertyMetadata(null)
         );
 
+    /// <summary>The build <see cref="MarkReceiver"/> leaves on an attached object beside its key.</summary>
+    public static readonly DependencyProperty ReceiverBuildProperty =
+        DependencyProperty.RegisterAttached(
+            "ReceiverBuild",
+            typeof(int),
+            typeof(CompiledBinding),
+            new PropertyMetadata(0)
+        );
+
+    static int _builds;
+
+    /// <summary>A number no other build of a document draws. Building a root again adds its
+    /// attached objects beside the ones the first build left, under the same keys, so the build
+    /// tells each binding its own.</summary>
+    /// <returns>The build's number, never 0.</returns>
+    public static int NewBuild() => System.Threading.Interlocked.Increment(ref _builds);
+
     /// <summary>Marks the attached object a compiled binding writes, so it is found among whatever
     /// else its element holds, including objects the element's own code added.</summary>
     /// <param name="receiver">The behavior, input binding or trigger action.</param>
     /// <param name="key">Identifies the object among those on the same element.</param>
-    public static void MarkReceiver(DependencyObject receiver, string key)
+    /// <param name="build">The build that made it, from <see cref="NewBuild"/>; 0 for an object a
+    /// template carries, which each clone gets a copy of.</param>
+    public static void MarkReceiver(DependencyObject receiver, string key, int build)
     {
         Guard.NotNull(receiver, nameof(receiver));
         Guard.NotNull(key, nameof(key));
         receiver.SetValue(ReceiverProperty, key);
+        if (build != 0)
+            receiver.SetValue(ReceiverBuildProperty, build);
     }
 
     /// <summary>The behavior on <paramref name="element"/> marked <paramref name="key"/>, or null
     /// where none is attached yet.</summary>
     /// <param name="element">The element the behavior collection hangs off.</param>
     /// <param name="key">The mark the behavior carries.</param>
+    /// <param name="build">The build that marked it, as handed to <see cref="MarkReceiver"/>.</param>
     /// <returns>The behavior, or null.</returns>
-    public static DependencyObject? MarkedBehavior(FrameworkElement element, string key)
+    public static DependencyObject? MarkedBehavior(FrameworkElement element, string key, int build)
     {
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(key, nameof(key));
@@ -366,7 +409,7 @@ public sealed class CompiledBinding
         var behaviors = Noesis.Interactivity.Interaction.GetBehaviors(element);
         for (var i = 0; behaviors is not null && i < behaviors.Count; i++)
         {
-            if (Marked(behaviors[i], key))
+            if (Marked(behaviors[i], key, build))
                 return behaviors[i];
         }
 
@@ -377,8 +420,13 @@ public sealed class CompiledBinding
     /// null where none is there yet.</summary>
     /// <param name="element">The element the input bindings hang off.</param>
     /// <param name="key">The mark the input binding carries.</param>
+    /// <param name="build">The build that marked it, as handed to <see cref="MarkReceiver"/>.</param>
     /// <returns>The input binding, or null.</returns>
-    public static DependencyObject? MarkedInputBinding(FrameworkElement element, string key)
+    public static DependencyObject? MarkedInputBinding(
+        FrameworkElement element,
+        string key,
+        int build
+    )
     {
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(key, nameof(key));
@@ -386,7 +434,7 @@ public sealed class CompiledBinding
         var bindings = element.InputBindings;
         for (var i = 0; bindings is not null && i < bindings.Count; i++)
         {
-            if (Marked(bindings[i], key))
+            if (Marked(bindings[i], key, build))
                 return bindings[i];
         }
 
@@ -397,8 +445,9 @@ public sealed class CompiledBinding
     /// <paramref name="element"/>, or null where none is there yet.</summary>
     /// <param name="element">The element the trigger collection hangs off.</param>
     /// <param name="key">The mark the action carries.</param>
+    /// <param name="build">The build that marked it, as handed to <see cref="MarkReceiver"/>.</param>
     /// <returns>The action, or null.</returns>
-    public static DependencyObject? MarkedAction(FrameworkElement element, string key)
+    public static DependencyObject? MarkedAction(FrameworkElement element, string key, int build)
     {
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(key, nameof(key));
@@ -409,7 +458,7 @@ public sealed class CompiledBinding
             var actions = triggers[t].Actions;
             for (var a = 0; actions is not null && a < actions.Count; a++)
             {
-                if (Marked(actions[a], key))
+                if (Marked(actions[a], key, build))
                     return actions[a];
             }
         }
@@ -417,13 +466,14 @@ public sealed class CompiledBinding
         return null;
     }
 
-    static bool Marked(DependencyObject? candidate, string key) =>
+    static bool Marked(DependencyObject? candidate, string key, int build) =>
         candidate is not null
         && string.Equals(
             DependencyRead.Value(candidate, ReceiverProperty) as string,
             key,
             StringComparison.Ordinal
-        );
+        )
+        && DependencyRead.Int(candidate, ReceiverBuildProperty) == build;
 
     /// <summary>The nearest ancestor of <paramref name="element"/> the given type accepts, which is
     /// where a FindAncestor binding roots. The walk follows the visual tree, since the logical one
@@ -513,7 +563,7 @@ public sealed class CompiledBinding
         _chain.Detach();
         _writable = null;
         _writableRoot = null;
-        _written = null;
+        _written = Released.Of(_written);
         if (_brokeFor is not (null or WeakReference) && !IsMarker(_brokeFor))
             _brokeFor = new WeakReference(_brokeFor);
         _appliedFor = Released.Of(_appliedFor);
@@ -831,7 +881,7 @@ public sealed class CompiledBinding
 
         var edited = _spec.Lane is { } lane
             ? !lane.Same(lane.Read(_target.Handle, _property), _writtenSlot)
-            : !Equals(DependencyRead.Value(_target.Handle, _property), _written);
+            : !Equals(DependencyRead.Value(_target.Handle, _property), Kept(_written));
         if (edited)
             Push();
     }

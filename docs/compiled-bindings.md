@@ -12,6 +12,10 @@ A rename that misses the XAML then fails the build rather than rendering nothing
 still reach the binary: `PropertyChangedEventArgs.PropertyName` is a string, so change notification
 matches on it whatever the read path looks like.
 
+`CompiledBinding` is `NoesisToolkit.Mvvm`'s, so a compiled binding needs that package referenced at
+the same version as the compiler. Without it every binding stays native; at another version every
+binding stays native too, with `NTK1011`.
+
 Everything else stays a `Noesis.Binding`, because a compiled binding that guessed would be worse than
 a reflective one. A binding compiles when its source resolves, its path resolves hop by hop off the
 declared type, and the value reaching the target property is one that property's slot accepts
@@ -24,7 +28,8 @@ coercion, and an unshaped mismatch falls back.
 A compiled binding has to write what the engine would have written, not what .NET would. The two
 disagree on text: the engine shows numbers in its own invariant form whatever the current culture,
 rounds a formatted number from its shortest round-trip digits, and shows nothing for a value that is
-not a number and has no `ToString` of its own. So a number reaching a text slot, and a `StringFormat`
+not a number and has no `ToString` of its own, or whose `ToString` throws, which it hands to
+`Error.UnhandledException`. So a number reaching a text slot, and a `StringFormat`
 the compiler can reproduce exactly, are emitted through that rule; a source whose text depends on its
 run-time type, and a format the engine applies by rules of its own, keep their native binding.
 
@@ -129,8 +134,12 @@ settles, as the engine does as it applies each setter.
 
 ## Lifetime
 
-A compiled binding, MultiBinding or trigger set lives exactly as long as the native element it was
-bound to. Noesis holds a native element's managed proxy weakly: one is minted whenever managed code
+A compiled binding, MultiBinding or trigger set lives as long as the native element it was bound
+to, or until the element is bound again — the same property, or a style's or template's triggers —
+which replaces it as `SetBinding` replaces a native binding, so a document built again over the same
+root leaves none of the first build's bindings writing the root. The behaviors, input bindings and
+trigger actions a second build adds sit beside the first build's, as they do natively, and each build's
+bindings write their own. Noesis holds a native element's managed proxy weakly: one is minted whenever managed code
 asks for the element and collected once nothing managed holds it, while the element lives on in the
 tree. So what the toolkit keeps per element is keyed by the native handle, not the proxy, and ends
 when Noesis destroys the element.
@@ -156,6 +165,8 @@ context change until it loads, must hold nothing to match it.
 Subscriptions taken through `DependencyWatcher.Watch` and `Events.On` follow the same rule: they
 last until the element is destroyed, as one on a Noesis event does. Each handler is handed the
 element, because a handler that captured it, or the control that holds it, would keep both alive.
+A copy Noesis makes of the element, as a template makes of a keyed `ContextMenu` it places, raises
+nothing on them; the copy is wired from its own bindings.
 
 ## What does not compile
 
@@ -196,6 +207,7 @@ property should not also bind it.
 | a write back to a behavior, input binding or trigger action | boundary | the receiver is found again each time, so nothing stable can be watched |
 | `RelativeSource Self` on a behavior, input binding or trigger action | gap | the chain would have to root at the receiver, not its host |
 | `{TemplateBinding}` | boundary | a one-way expression that converts nothing; the parser builds it, see [xaml-compiler.md](xaml-compiler.md) |
+| a `{Binding}` in a `noesis:` attribute | boundary | only the parser can name the property, so it builds the binding too |
 | a binding on a template element that a template trigger names for the same property | boundary | the compiled local write would outrank the trigger |
 | a binding on `ContentPresenter.Content` inside a template | boundary | a presenter the template gives no `Content` takes the templated parent's content and template, and a compiled write arrives after that is decided |
 | a style trigger setter on a property the element sets itself — attribute, property element or content — or that a template trigger names | boundary | either one outranks a native style trigger, and a compiled local write would win |

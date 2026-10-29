@@ -94,7 +94,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
 
     public static class ImageSources
     {
-        public static Noesis.ImageSource From(string uri) => null!;
+        public static Noesis.ImageSource? From(string uri) => null;
     }
 
     public static class DependencyWrite
@@ -175,13 +175,15 @@ namespace NoesisToolkit.Mvvm.CodeGen
 
         public static Noesis.FrameworkElement? FindNamed(Noesis.FrameworkElement element, string name) => null;
 
-        public static void MarkReceiver(Noesis.DependencyObject receiver, string key) { }
+        public static int NewBuild() => 1;
 
-        public static Noesis.DependencyObject? MarkedBehavior(Noesis.FrameworkElement element, string key) => null;
+        public static void MarkReceiver(Noesis.DependencyObject receiver, string key, int build) { }
 
-        public static Noesis.DependencyObject? MarkedInputBinding(Noesis.FrameworkElement element, string key) => null;
+        public static Noesis.DependencyObject? MarkedBehavior(Noesis.FrameworkElement element, string key, int build) => null;
 
-        public static Noesis.DependencyObject? MarkedAction(Noesis.FrameworkElement element, string key) => null;
+        public static Noesis.DependencyObject? MarkedInputBinding(Noesis.FrameworkElement element, string key, int build) => null;
+
+        public static Noesis.DependencyObject? MarkedAction(Noesis.FrameworkElement element, string key, int build) => null;
     }
 
     public static class SlotConversion
@@ -193,6 +195,8 @@ namespace NoesisToolkit.Mvvm.CodeGen
         public static string Text(double value) => "";
 
         public static string Text(float value) => "";
+
+        public static string? Text(object value) => null;
 
         public static string Text(double value, string format) => "";
 

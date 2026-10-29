@@ -183,17 +183,14 @@ sealed partial class XamlEmitter
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.ImageSource"))
             return ImageUri(text) is not { } uri
                     ? Fail($"image source '{text}' is not a uri the parser is known to resolve")
-                : typeFqn == "global::Noesis.ImageSource" && CompiledBindingsAvailable
+                : typeFqn == "global::Noesis.ImageSource" && MvvmRuntimeReferenced
                     ? $"global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From({Quote(uri)})"
                 : $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))";
 
         if (typeFqn == "global::Noesis.RoutedEvent")
             return RoutedEventReference(scope, text);
 
-        if (
-            typeFqn == "global::System.Windows.Input.ICommand"
-            || XamlTypeResolver.DerivesFrom(type, "global::Noesis.RoutedCommand")
-        )
+        if (TakesCommand(type))
             return StaticMemberReference(scope, text);
 
         if (XamlTypeResolver.HasStringParse(type))
@@ -321,17 +318,11 @@ sealed partial class XamlEmitter
         var member = text.Substring(dot + 1);
         var owner = XamlTypeResolver.Fqn(ownerSymbol);
 
-        var named =
-            resolver.FindProperty(ownerSymbol, member) is not null ? member
-            : resolver.FindProperty(ownerSymbol, member + "Command") is not null
-                ? member + "Command"
-            : null;
-
-        if (named is null)
+        if (CommandMember(ownerSymbol, member) is not { } named)
             return Fail($"'{owner}' has no member '{member}'");
 
         return ParserReadsUnset(ownerSymbol, named)
-            ? Fail($"'{text}' names a command Noesis' parser cannot read; bind it instead")
+            ? Fail(UnreadCommand(text))
             : $"{owner}.{named}";
     }
 

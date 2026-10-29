@@ -30,6 +30,11 @@ interface IElementLifecycleOwner
     void Retry();
 }
 
+interface IPropertyBinding
+{
+    void Stop();
+}
+
 /// <summary>Owns a part set and hears its one combined change.</summary>
 interface IPartSetOwner
 {

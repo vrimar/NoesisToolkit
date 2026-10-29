@@ -70,4 +70,41 @@
       </TreeView>
     </StackPanel>
   </DataTemplate>
+
+  <DataTemplate x:Key="InlineRows" ntk:DataType="t:StForest">
+    <TreeView Height="280" ItemsSource="{Binding Branches}">
+      <TreeView.ItemTemplate>
+        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+          <ListView Height="60">
+            <t:StSub />
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem">
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                      <GridViewRowPresenter
+                        Columns="{TemplateBinding GridView.ColumnCollection}"
+                        Content="{TemplateBinding Content}"
+                      />
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.View>
+              <GridView>
+                <GridViewColumn>
+                  <GridViewColumn.CellTemplate>
+                    <DataTemplate>
+                      <TextBlock x:Name="Cell" Text="{Binding Name}" />
+                    </DataTemplate>
+                  </GridViewColumn.CellTemplate>
+                </GridViewColumn>
+              </GridView>
+            </ListView.View>
+          </ListView>
+        </HierarchicalDataTemplate>
+      </TreeView.ItemTemplate>
+    </TreeView>
+  </DataTemplate>
 </ResourceDictionary>

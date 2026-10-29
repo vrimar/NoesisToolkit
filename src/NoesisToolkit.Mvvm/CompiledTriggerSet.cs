@@ -80,6 +80,8 @@ public sealed class CompiledTriggerSet : IPartSetOwner
     /// <summary>What the compiler resolved, in document order.</summary>
     public IReadOnlyList<CompiledTriggerSpec> Specs => _triggers;
 
+    bool TemplateScoped => _triggers.Length > 0 && _triggers[0].TemplateScoped;
+
     readonly ElementState _target;
     readonly CompiledTriggerSpec[] _triggers;
     readonly PartSet _parts;
@@ -166,11 +168,11 @@ public sealed class CompiledTriggerSet : IPartSetOwner
         var bound = _target.TriggerSets ??= new List<CompiledTriggerSet>();
         foreach (var replaced in bound)
         {
-            if (ReferenceEquals(replaced._triggers, triggers))
+            if (replaced.TemplateScoped == TemplateScoped)
                 replaced.Stop();
         }
 
-        bound.RemoveAll(set => ReferenceEquals(set._triggers, triggers));
+        bound.RemoveAll(set => set.TemplateScoped == TemplateScoped);
         bound.Add(this);
 
         _parts.Start();

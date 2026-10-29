@@ -250,6 +250,17 @@ public class XamlTrimRootsTests
     }
 
     [Test]
+    public async Task A_binding_in_a_Noesis_extension_attribute_roots_its_path()
+    {
+        var run = Run("RootsExtension.xaml", Host("ExtensionHost"));
+
+        await Assert.That(Text(run.Errors)).IsEmpty();
+        await Assert
+            .That(run.Source("RootsExtension"))
+            .Contains(Member("Note", "global::Sample.Roots.InnerViewModel"));
+    }
+
+    [Test]
     public async Task A_converter_inside_a_parsed_binding_element_is_rooted_with_what_it_sets()
     {
         var source = ParsedRun.Value.Source("RootsParsed");
@@ -341,6 +352,51 @@ public class XamlTrimRootsTests
             .That(native[0].GetMessage())
             .IsEqualTo("RootsLoaded.xaml :: binding stays native: document-left-to-the-loader");
         await Assert.That(native[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(10);
+    }
+
+    [Test]
+    public async Task Items_shaped_by_a_converter_leave_their_template_untyped()
+    {
+        var run = Run(
+            "RootsConvertedItems.xaml",
+            """
+            namespace Sample.Roots;
+
+            public partial class ConvertedItemsHost : global::Noesis.UserControl
+            {
+                public ConvertedItemsHost() => InitializeComponent();
+
+                void OnGo(object sender, System.EventArgs e) { }
+            }
+
+            public class Volume
+            {
+                public string Title { get; set; } = "";
+            }
+
+            public class Library
+            {
+                public System.Collections.Generic.List<Volume> Volumes { get; } = new();
+            }
+
+            public class Passthrough : global::Noesis.IValueConverter
+            {
+                public object? Convert(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture) => value;
+
+                public object? ConvertBack(object? value, System.Type targetType, object? parameter, System.Globalization.CultureInfo culture) => value;
+            }
+            """
+        );
+
+        await Assert.That(UnrootedLines(run, "Title")).IsEquivalentTo([21]);
+    }
+
+    [Test]
+    public async Task A_keyed_elements_own_data_context_binding_reads_an_undeclared_context()
+    {
+        var run = Run("RootsKeyedContext.xaml", Host("KeyedContextHost"));
+
+        await Assert.That(UnrootedLines(run, "Inner")).IsEquivalentTo([10]);
     }
 
     static readonly Lazy<GeneratorRun> ParsedElementsRun = new(() =>

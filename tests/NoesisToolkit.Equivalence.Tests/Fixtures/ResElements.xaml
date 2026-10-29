@@ -1,0 +1,26 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+>
+  <sys:String x:Key="Res.ElementText">text</sys:String>
+  <Border x:Key="Res.MistypedChild">
+    <StaticResource ResourceKey="Res.ElementText" />
+  </Border>
+  <StackPanel x:Key="Res.MistypedItem">
+    <StaticResource ResourceKey="Res.ElementText" />
+    <TextBlock Text="after" />
+  </StackPanel>
+  <ItemsControl x:Key="Res.OutsideItems">
+    <StaticResource ResourceKey="Accent" />
+    <sys:String>between</sys:String>
+    <StaticResource ResourceKey="Muted" />
+  </ItemsControl>
+  <ContentControl x:Key="Res.AheadContent">
+    <StaticResource ResourceKey="Res.LaterText" />
+  </ContentControl>
+  <sys:String x:Key="Res.LaterText">later</sys:String>
+  <ContentControl x:Key="Res.LiveContent">
+    <DynamicResource ResourceKey="Res.LiveText" />
+  </ContentControl>
+</ResourceDictionary>

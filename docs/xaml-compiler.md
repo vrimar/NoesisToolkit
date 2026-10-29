@@ -46,6 +46,12 @@ Resolution has exactly one correct moment, and it differs by document kind:
 `SharedByKey` deliberately builds a separate value-source copy per merge point. Sharing one resolved
 dictionary across merge points changes style resolution.
 
+A compiled lookup that finds nothing in the installed graph or the application resources falls back to
+`SharedByKey`, which answers from any dictionary this assembly compiled — including one the installed
+graph does not hold. The parser would leave that key unresolved, or take the theme's value for an
+implicit style. A dictionary loaded on demand relies on this; keep keys you mean to stay
+theme-resolved out of compiled dictionaries the app never installs.
+
 `{StaticResource}` and `{DynamicResource}` are not interchangeable, and the compiler keeps them apart.
 A `StaticResource` is resolved once, against the dictionaries enclosing the place it is written, and
 the value it found is assigned; a later change to that key does not reach it. A `DynamicResource` on a
@@ -65,9 +71,22 @@ way, such as a markup extension's argument, is reported as dead markup.
 
 An attribute in Noesis' own extensions namespace, `clr-namespace:NoesisGUIExtensions` — such as
 `noesis:Text.Stroke` or `noesis:Element.PPAAMode` — names a property no managed type declares, so the
-element carrying it is built by the parser the same way, from those attributes alone. Where the
-parser cannot build it so — on the document's root, or with a `{StaticResource}` value it would have
-to resolve alone — the attribute is refused with `NTK1001`.
+element carrying it is built by the parser the same way, from those attributes alone; an element
+setting one as a property element is left to the parser whole. A `Setter` naming such a property is
+parsed inside a probe `Style`, and a `Trigger` or `Condition` takes the property and its converted
+value from one. On the document's root, which the parser cannot build, the property is refused with
+`NTK1001`, and so is a `{StaticResource}` value the parser cannot resolve alone.
+
+Markup handed to the parser — a setter, a resource entry, an element left to it whole — is parsed
+alone, so every `{StaticResource}` key it names has to resolve there. A setter or a resource entry
+carries a copy of each declaration its own file holds; an element left whole has to declare the key
+below itself, and its own attributes cannot read its own resources. A key the file does not declare
+at all is left to the parser in an `x:Class` document: it is built after install, so the parser reads
+the installed application resources, as the document's own parse would. In a dictionary that key is
+refused with `NTK1001` — the dictionary is built before its graph is installed, a parser running alone
+sees none of that graph, and what it parses is sealed, so the value cannot be supplied later. A
+converter declared in `App.xaml` or another merged file, named by a setter's binding, is the common
+case: declare it in the setter's own file.
 
 A binding left to the engine is built in code, where no xmlns is in scope, so an attached property in
 its path names its owner by CLR name — `(ui:Badge.Count)` is emitted as
@@ -77,6 +96,9 @@ A template holds constructed prototypes, and a clone copies their local values. 
 its own content in its constructor would carry that content into every clone on top of the content
 its own constructor loads there, so inside a template its `Content` is cleared after construction,
 which is what a parsed template holds.
+
+A template also clones a keyed element it places, such as a `ContextMenu` resource, so the compiled
+bindings inside a keyed element are wired per clone, as a template's own are.
 
 ## Trimming
 

@@ -70,6 +70,12 @@ static class ElementEvents
         entry.Routed.Add(new RoutedWatch(routed, listener));
     }
 
+    internal static void UnwatchRouted(ElementState element, nint routed, IChangeListener listener)
+    {
+        element.Events?.RoutedIfAny?.Remove(new RoutedWatch(routed, listener));
+        Release(element, routed, 0);
+    }
+
     internal static void DispatchLoaded(ElementState element) => element.Events?.OnLoaded();
 
     internal static void DispatchUnloaded(ElementState element) => element.Events?.OnUnloaded();
@@ -229,6 +235,13 @@ static class ElementEvents
     {
         internal nint Routed => routed;
         internal IChangeListener Listener => listener;
+
+        public override bool Equals(object? obj) =>
+            obj is RoutedWatch other
+            && other.Routed == routed
+            && ReferenceEquals(other.Listener, listener);
+
+        public override int GetHashCode() => listener.GetHashCode();
     }
 
     internal sealed class Entry
@@ -299,6 +312,8 @@ static class ElementEvents
         internal NamedEvent? LayoutUpdatedIfAny => _layoutUpdated;
 
         internal HandlerList<RoutedWatch> Routed => _routed ??= new HandlerList<RoutedWatch>();
+
+        internal HandlerList<RoutedWatch>? RoutedIfAny => _routed;
 
         internal HandlerList<Subscription> Subscriptions =>
             _subscriptions ??= new HandlerList<Subscription>();
