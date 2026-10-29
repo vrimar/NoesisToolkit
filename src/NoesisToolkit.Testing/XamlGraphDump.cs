@@ -417,7 +417,8 @@ static class XamlGraphDump
             if (condition.Part.SourceProperty is { } property)
                 segments.Add(SourceSegment(property));
 
-            segments.AddRange(condition.Part.Hops.Select(h => h.Name));
+            if (condition.Path.Length > 0)
+                segments.Add(condition.Path);
             return $"path={string.Join(".", segments)} value={Plain(condition.Value)}";
         }
 

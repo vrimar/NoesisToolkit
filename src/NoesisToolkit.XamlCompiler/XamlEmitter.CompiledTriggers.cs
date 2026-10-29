@@ -538,6 +538,7 @@ sealed partial class XamlEmitter
 
         return $"new {TriggerConditionFqn} {{ "
             + $"Part = {PartExpression(source, resolved)}, "
+            + $"Path = {Quote(string.Join(".", resolved.Hops.Select(h => h.Name)))}, "
             + $"Value = {constant} }}";
     }
 

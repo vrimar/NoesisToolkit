@@ -12,4 +12,13 @@
       <TextBlock x:Name="Boxed" Tag="{Binding Tally.Hits}" />
     </StackPanel>
   </DataTemplate>
+
+  <DataTemplate x:Key="StructTrigger" DataType="{x:Type t:SpTallyModel}">
+    <TextBlock x:Name="Hits" />
+    <DataTemplate.Triggers>
+      <DataTrigger Binding="{Binding Tally.Hits}" Value="3">
+        <Setter TargetName="Hits" Property="Opacity" Value="0.5" />
+      </DataTrigger>
+    </DataTemplate.Triggers>
+  </DataTemplate>
 </ResourceDictionary>

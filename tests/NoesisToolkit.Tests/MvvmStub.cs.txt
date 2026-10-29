@@ -236,6 +236,7 @@ namespace NoesisToolkit.Mvvm.CodeGen
     public sealed class CompiledTriggerCondition
     {
         public CompiledBindingPart Part { get; set; } = new CompiledBindingPart();
+        public string Path { get; set; } = "";
         public object? Value { get; set; }
     }
 

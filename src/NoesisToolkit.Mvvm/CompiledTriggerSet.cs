@@ -14,6 +14,10 @@ public sealed class CompiledTriggerCondition
     /// <summary>Where the condition reads, shaped exactly like a MultiBinding part.</summary>
     public CompiledBindingPart Part { get; set; } = new CompiledBindingPart();
 
+    /// <summary>The path past the source property as the document wrote it, which the hops stop
+    /// spelling once a struct member folds into the hop that reads its owner.</summary>
+    public string Path { get; set; } = "";
+
     /// <summary>The constant the chain value must equal, already converted to the chain's
     /// type.</summary>
     public object? Value { get; set; }
