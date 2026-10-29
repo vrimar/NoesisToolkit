@@ -622,7 +622,7 @@ sealed partial class XamlEmitter
                         m.GetAttributes()
                             .Any(a =>
                                 a.AttributeClass?.ToDisplayString()
-                                == "NoesisToolkit.Mvvm.DelegateCommandAttribute"
+                                == RuntimeNames.DelegateCommandAttribute.Type
                             )
                     )
             )

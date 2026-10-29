@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/NoesisSlots.cs" LinkBase="Shared" />
+    <Compile Include="../Shared/RuntimeNames.cs" LinkBase="Shared" />
   </ItemGroup>
 
   <ItemGroup>

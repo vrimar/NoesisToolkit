@@ -60,7 +60,7 @@ NTK1009 | NoesisToolkit | Warning | A referenced assembly's resources cannot be 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1010 | NoesisToolkit | Warning | A list column's DisplayMemberBinding stays native
-NTK1011 | NoesisToolkit | Warning | NoesisToolkit.Mvvm is another version than the XAML compiler
+NTK1011 | NoesisToolkit | Warning | NoesisToolkit.Mvvm implements another contract than the XAML compiler
 
 ### Removed Rules
 

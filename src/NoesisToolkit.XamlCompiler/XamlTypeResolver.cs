@@ -215,8 +215,6 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             .OfType<IPropertySymbol>()
             .FirstOrDefault(p => p.DeclaredAccessibility == Accessibility.Public);
 
-    const string DelegateCommandAttribute = "NoesisToolkit.Mvvm.DelegateCommandAttribute";
-
     /// <summary>The type of the command property <c>[DelegateCommand]</c> asks for. That generator
     /// runs in this same pass, so what it emits is never in the compilation to look up; the
     /// attribute on the method is the only statement that the property will exist.</summary>
@@ -236,18 +234,27 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
             if (
                 !method
                     .GetAttributes()
-                    .Any(a => a.AttributeClass?.ToDisplayString() == DelegateCommandAttribute)
+                    .Any(a =>
+                        a.AttributeClass?.ToDisplayString()
+                        == RuntimeNames.DelegateCommandAttribute.Type
+                    )
             )
                 continue;
 
-            var kind = method.ReturnsVoid
-                ? "NoesisToolkit.Mvvm.DelegateCommand"
-                : "NoesisToolkit.Mvvm.AsyncDelegateCommand";
-
             if (method.Parameters.Length == 0)
-                return compilation.GetTypeByMetadataName(kind);
+                return compilation.GetTypeByMetadataName(
+                    method.ReturnsVoid
+                        ? RuntimeNames.DelegateCommand.Type
+                        : RuntimeNames.AsyncDelegateCommand.Type
+                );
 
-            return compilation.GetTypeByMetadataName(kind + "`1") is { } generic
+            return
+                compilation.GetTypeByMetadataName(
+                    method.ReturnsVoid
+                        ? RuntimeNames.DelegateCommand.Generic
+                        : RuntimeNames.AsyncDelegateCommand.Generic
+                )
+                    is { } generic
                 ? generic.Construct(method.Parameters[0].Type)
                 : null;
         }
@@ -255,7 +262,7 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         return null;
     }
 
-    const string DependencyPropertyAttribute = "NoesisToolkit.Mvvm.DependencyPropertyAttribute";
+    const string DependencyPropertyAttribute = RuntimeNames.DependencyPropertyAttribute.Type;
 
     /// <summary>The type that declares <c>{name}Property</c>, for qualifying the emitted reference.
     /// A type in this same compilation may only be promised one by <c>[DependencyProperty]</c>,
@@ -349,7 +356,8 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         for (var i = 0; i < constructor.Parameters.Length; i++)
         {
             if (
-                constructor.Parameters[i].Name == "metadataOptions"
+                constructor.Parameters[i].Name
+                    == RuntimeNames.DependencyPropertyAttribute.Ctor.MetadataOptions
                 && i < attribute.ConstructorArguments.Length
             )
                 return attribute.ConstructorArguments[i].Value is { } value

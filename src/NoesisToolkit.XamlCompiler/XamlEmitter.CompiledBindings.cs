@@ -11,22 +11,6 @@ namespace NoesisToolkit.Xaml;
 // would be worse than a reflective one.
 sealed partial class XamlEmitter
 {
-    const string CompiledBindingFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBinding";
-
-    const string BindingHopFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingHop";
-    const string SourceRootFqn = "global::NoesisToolkit.Mvvm.CodeGen.SourceRoot";
-
-    const string SetupFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBindingSetup";
-
-    const string SpecFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBindingSpec";
-
-    const string CompiledMultiBindingFqn =
-        "global::NoesisToolkit.Mvvm.CodeGen.CompiledMultiBinding";
-
-    const string PartFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledBindingPart";
-
-    const string MultiSpecFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledMultiBindingSpec";
-
     int _setups;
 
     /// <summary>The dependency property a binding writes, named the same way whether the document
@@ -451,48 +435,61 @@ sealed partial class XamlEmitter
 
         if (lane is not null)
         {
-            fields.Add($"Lane = {lane}");
+            fields.Add($"{RuntimeNames.CompiledBindingSpec.Lane} = {lane}");
         }
         else
         {
-            fields.Add($"Convert = {convert}");
+            fields.Add($"{RuntimeNames.CompiledBindingSpec.Convert} = {convert}");
 
             if (slot.Assign is not null)
-                fields.Add($"Assign = {slot.Assign}");
+                fields.Add($"{RuntimeNames.CompiledBindingSpec.Assign} = {slot.Assign}");
 
             if (converter is not null)
             {
-                fields.Add($"Converter = {converter}");
-                fields.Add($"ConverterParameter = {ConverterParameter(call)}");
-                fields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
+                fields.Add($"{RuntimeNames.CompiledBindingSpec.Converter} = {converter}");
+                fields.Add(
+                    $"{RuntimeNames.CompiledBindingSpec.ConverterParameter} = {ConverterParameter(call)}"
+                );
+                fields.Add(
+                    $"{RuntimeNames.CompiledBindingSpec.TargetType} = typeof({ConverterTargetType(slot)})"
+                );
                 if (write is not null)
-                    fields.Add($"SourceType = typeof({XamlTypeResolver.Fqn(resolved.Type)})");
+                    fields.Add(
+                        $"{RuntimeNames.CompiledBindingSpec.SourceType} = typeof({XamlTypeResolver.Fqn(resolved.Type)})"
+                    );
             }
 
             if (write is not null)
-                fields.Add($"Write = {write}");
+                fields.Add($"{RuntimeNames.CompiledBindingSpec.Write} = {write}");
         }
 
         if (mode.Length > 0)
-            fields.Add($"Mode = global::Noesis.BindingMode.{mode}");
+            fields.Add(
+                $"{RuntimeNames.CompiledBindingSpec.Mode} = global::Noesis.BindingMode.{mode}"
+            );
 
         if (trigger.Length > 0)
-            fields.Add($"Trigger = global::Noesis.UpdateSourceTrigger.{trigger}");
+            fields.Add(
+                $"{RuntimeNames.CompiledBindingSpec.Trigger} = global::Noesis.UpdateSourceTrigger.{trigger}"
+            );
 
-        var spec = Shared("spec", $"new {SpecFqn} {{ {string.Join(", ", fields.ToArray())} }}");
+        var spec = Shared(
+            "spec",
+            $"new {RuntimeNames.CompiledBindingSpec.Fqn} {{ {string.Join(", ", fields.ToArray())} }}"
+        );
         Tally.Compiled++;
 
         if (receiver is not null && _markedReceivers.Add(element))
             _lines.Add(
-                $"{CompiledBindingFqn}.MarkReceiver({target}, {ReceiverKey(element)}, {ReceiverBuild()});"
+                $"{RuntimeNames.CompiledBinding.MarkReceiver}({target}, {ReceiverKey(element)}, {ReceiverBuild()});"
             );
 
         EmitCompiledBind(
             anchor,
             r =>
                 receiver is null
-                    ? $"{CompiledBindingFqn}.Bind({r}, {slot.Reference}, {spec})"
-                    : $"{CompiledBindingFqn}.Bind({r}, {receiver}, {slot.Reference}, {spec})"
+                    ? $"{RuntimeNames.CompiledBinding.Bind}({r}, {slot.Reference}, {spec})"
+                    : $"{RuntimeNames.CompiledBinding.Bind}({r}, {receiver}, {slot.Reference}, {spec})"
         );
         return true;
     }
@@ -531,13 +528,9 @@ sealed partial class XamlEmitter
             : "null";
         var guarded = steps.Count == 1 ? "true" : "false";
 
-        return $"{BindingLaneFqn}.Of<{owner}, {fromFqn}, {slotFqn}>("
+        return $"{RuntimeNames.BindingLane.Of}<{owner}, {fromFqn}, {slotFqn}>("
             + $"static __o => __o.{last.Read}, static __t => {convert}, {writeBack}, {guarded})";
     }
-
-    const string BindingLaneFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingLane";
-
-    const string SlotTextFqn = "global::NoesisToolkit.Mvvm.CodeGen.SlotText";
 
     // A number shown as text is formatted into a buffer and handed to Noesis without a string; a
     // format with an aligned hole keeps the string route, whose padding the writer does not do.
@@ -599,7 +592,9 @@ sealed partial class XamlEmitter
 
                 if (literal.Length > 0)
                 {
-                    pieces.Add($"__s.Literal({Quote(literal.ToString())});");
+                    pieces.Add(
+                        $"__s.{RuntimeNames.SlotText.Literal}({Quote(literal.ToString())});"
+                    );
                     literal.Clear();
                 }
 
@@ -608,18 +603,18 @@ sealed partial class XamlEmitter
             }
 
             if (literal.Length > 0)
-                pieces.Add($"__s.Literal({Quote(literal.ToString())});");
+                pieces.Add($"__s.{RuntimeNames.SlotText.Literal}({Quote(literal.ToString())});");
         }
 
         var owner = XamlTypeResolver.Fqn(last.Owner);
         var fromFqn = XamlTypeResolver.Fqn(from);
         var guarded = steps.Count == 1 ? "true" : "false";
 
-        return $"{BindingLaneFqn}.Text<{owner}, {fromFqn}>("
+        return $"{RuntimeNames.BindingLane.Text}<{owner}, {fromFqn}>("
             + $"static __o => __o.{last.Read}, "
             + $"static ({fromFqn} __t, global::System.Span<char> __d, out int __w) => "
-            + $"{{ var __s = new {SlotTextFqn}(__d); {string.Join(" ", pieces.ToArray())} "
-            + "return __s.Done(out __w); }, "
+            + $"{{ var __s = new {RuntimeNames.SlotText.Fqn}(__d); {string.Join(" ", pieces.ToArray())} "
+            + $"return __s.{RuntimeNames.SlotText.Done}(out __w); }}, "
             + $"{guarded})";
     }
 
@@ -629,18 +624,20 @@ sealed partial class XamlEmitter
         if (type.SpecialType is SpecialType.System_Single or SpecialType.System_Double)
         {
             if (spec.Length == 0)
-                return "__s.Number(__t);";
+                return $"__s.{RuntimeNames.SlotText.Number}(__t);";
 
-            return NumberFormat(spec, "NFP") ? $"__s.Fixed(__t, {Quote(spec)});" : null;
+            return NumberFormat(spec, "NFP")
+                ? $"__s.{RuntimeNames.SlotText.Fixed}(__t, {Quote(spec)});"
+                : null;
         }
 
         if (spec.Length == 0)
-            return "__s.Integer(__t);";
+            return $"__s.{RuntimeNames.SlotText.Integer}(__t);";
 
         return
             NumberFormat(spec, "DNFPX")
             && !(type.SpecialType == SpecialType.System_SByte && spec[0] is 'X' or 'x')
-            ? $"__s.Integer(__t, {Quote(spec)});"
+            ? $"__s.{RuntimeNames.SlotText.Integer}(__t, {Quote(spec)});"
             : null;
     }
 
@@ -701,7 +698,7 @@ sealed partial class XamlEmitter
         return (
             anchor,
             anchorType,
-            $"__a => {CompiledBindingFqn}.{attached.Lookup}(__a, {ReceiverKey(element)}, {ReceiverBuild()})"
+            $"__a => {attached.Lookup}(__a, {ReceiverKey(element)}, {ReceiverBuild()})"
         );
     }
 
@@ -711,19 +708,19 @@ sealed partial class XamlEmitter
             return null;
 
         if (parent.Name.LocalName == "Interaction.Behaviors" && parent.Parent is { } behaved)
-            return (behaved, "MarkedBehavior");
+            return (behaved, RuntimeNames.CompiledBinding.MarkedBehavior);
 
         if (
             parent.Name.LocalName.EndsWith(".InputBindings", StringComparison.Ordinal)
             && parent.Parent is { } bound
         )
-            return (bound, "MarkedInputBinding");
+            return (bound, RuntimeNames.CompiledBinding.MarkedInputBinding);
 
         if (
             parent.Parent is { Name.LocalName: "Interaction.Triggers" } wrapper
             && wrapper.Parent is { } triggered
         )
-            return (triggered, "MarkedAction");
+            return (triggered, RuntimeNames.CompiledBinding.MarkedAction);
 
         return null;
     }
@@ -821,7 +818,7 @@ sealed partial class XamlEmitter
         _wires.Remove(target);
         var key = Quote($"{XamlPaths.LogicalName(filePath, packPrefix, projectDir)}#{_setups++}");
         _lines.Add(
-            $"{SetupFqn}.SetIndex({target}, {SetupFqn}.Register({key}, "
+            $"{RuntimeNames.CompiledBindingSetup.SetIndex}({target}, {RuntimeNames.CompiledBindingSetup.Register}({key}, "
                 + $"__e => {{ {string.Join(" ", wires.ToArray())} }}));"
         );
     }
@@ -842,8 +839,8 @@ sealed partial class XamlEmitter
                         HopExpression(
                             h,
                             i > 0 ? null
-                                : source.Resolver is null ? "Checked"
-                                : "Guarded"
+                                : source.Resolver is null ? CheckedHop
+                                : GuardedHop
                         )
                 )
                 .ToArray()
@@ -852,19 +849,21 @@ sealed partial class XamlEmitter
         var fields = new List<string>();
 
         if (source.Root is not null)
-            fields.Add($"Root = {SourceRootFqn}.{source.Root}");
+            fields.Add($"{RuntimeNames.CompiledBindingPart.Root} = {source.Root}");
         else if (source.Resolver is not null)
-            fields.Add($"Source = {source.Resolver}");
+            fields.Add($"{RuntimeNames.CompiledBindingPart.Source} = {source.Resolver}");
 
         if (resolved.Slot is not null)
-            fields.Add($"SourceProperty = {resolved.Slot}");
+            fields.Add($"{RuntimeNames.CompiledBindingPart.SourceProperty} = {resolved.Slot}");
 
-        fields.Add($"Hops = new {BindingHopFqn}[] {{ {chain} }}");
+        fields.Add(
+            $"{RuntimeNames.CompiledBindingPart.Hops} = new {RuntimeNames.BindingHop.Fqn}[] {{ {chain} }}"
+        );
         return fields;
     }
 
     string PartExpression(BindingSource source, ResolvedPath resolved) =>
-        $"new {PartFqn} {{ {string.Join(", ", SourceFields(source, resolved).ToArray())} }}";
+        $"new {RuntimeNames.CompiledBindingPart.Fqn} {{ {string.Join(", ", SourceFields(source, resolved).ToArray())} }}";
 
     readonly struct ResolvedPath(string? slot, List<Hop> hops, ITypeSymbol type)
     {
@@ -1074,7 +1073,7 @@ sealed partial class XamlEmitter
         if (!type.IsValueType)
             return $"{value} as {fqn}";
 
-        var back = $"{SlotConversionFqn}.Back<{fqn}>({value})";
+        var back = $"{RuntimeNames.SlotConversion.Back}<{fqn}>({value})";
         return Wrapped(type) is { } inner
             ? $"{value} is {XamlTypeResolver.Fqn(inner)} {temp} ? ({fqn}){temp} : {back}"
             : $"{value} is {fqn} {temp} ? {temp} : {back}";
@@ -1225,7 +1224,7 @@ sealed partial class XamlEmitter
             // by walking past it; a name declared inward is not reachable at all.
             return declared is null || element.Ancestors().Any(a => ReferenceEquals(a, declared))
                 ? new BindingSource(
-                    $"__s => {CompiledBindingFqn}.FindNamed(__s, {Quote(name)})",
+                    $"__s => {RuntimeNames.CompiledBinding.FindNamed}(__s, {Quote(name)})",
                     scope
                 )
                 : null;
@@ -1250,12 +1249,12 @@ sealed partial class XamlEmitter
     BindingSource? TemplatedSource(XElement element) =>
         TemplatedTarget(element) is { } target
             ? new BindingSource(
-                $"__s => {CompiledBindingFqn}.TemplatedParent(__s)",
+                $"__s => {RuntimeNames.CompiledBinding.TemplatedParent}(__s)",
                 element,
                 target,
                 structural: true,
                 templated: true,
-                root: "TemplatedParent"
+                root: RuntimeNames.SourceRoot.TemplatedParent
             )
             : null;
 
@@ -1270,7 +1269,12 @@ sealed partial class XamlEmitter
             return TemplatedSource(element);
 
         if (mode == "Self")
-            return new BindingSource("__s => __s", element, structural: true, root: "Target");
+            return new BindingSource(
+                "__s => __s",
+                element,
+                structural: true,
+                root: RuntimeNames.SourceRoot.Target
+            );
 
         // A deeper ancestor has no compiled walk, so it stays native.
         if (level != "1")
@@ -1280,9 +1284,10 @@ sealed partial class XamlEmitter
             return null;
 
         // A walk from an attached object counts the element it hangs off.
-        var walk = AttachedTo(element) is null ? "FindAncestor" : "FindAncestorOrSelf";
-        var lookup =
-            $"__s => {CompiledBindingFqn}.{walk}(__s, typeof({XamlTypeResolver.Fqn(type)}))";
+        var walk = AttachedTo(element) is null
+            ? RuntimeNames.CompiledBinding.FindAncestor
+            : RuntimeNames.CompiledBinding.FindAncestorOrSelf;
+        var lookup = $"__s => {walk}(__s, typeof({XamlTypeResolver.Fqn(type)}))";
         // Typed as the walk states it: a container the markup never shows can be what it lands on.
         if (AncestorScope(element, type) is { } scope)
             return new BindingSource(lookup, scope, type);
@@ -1363,28 +1368,40 @@ sealed partial class XamlEmitter
         return tail.Length > 0;
     }
 
+    static readonly (string Any, string Bool, string Value) CheckedHop = (
+        RuntimeNames.BindingHop.Checked,
+        RuntimeNames.BindingHop.CheckedBool,
+        RuntimeNames.BindingHop.CheckedValue
+    );
+
+    static readonly (string Any, string Bool, string Value) GuardedHop = (
+        RuntimeNames.BindingHop.Guarded,
+        RuntimeNames.BindingHop.GuardedBool,
+        RuntimeNames.BindingHop.GuardedValue
+    );
+
     // Only a first hop's owner can be wrong at run time, and off a picked element that is by design.
-    string HopExpression(Hop hop, string? check)
+    string HopExpression(Hop hop, (string Any, string Bool, string Value)? check)
     {
         var owner = XamlTypeResolver.Fqn(hop.Owner);
         var name = Quote(hop.Name);
 
         if (hop.Type.SpecialType == SpecialType.System_Boolean)
-            return check is not null
-                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{hop.Read})"
-                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{hop.Read})";
+            return check is { } checkedBool
+                ? $"{checkedBool.Bool}<{owner}>({name}, __c => __c.{hop.Read})"
+                : $"{RuntimeNames.BindingHop.Bool}({name}, __o => (({owner})__o).{hop.Read})";
 
         if (BoxesOnRead(hop.Type))
         {
             var value = XamlTypeResolver.Fqn(hop.Type);
-            return check is not null
-                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{hop.Read})"
-                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{hop.Read})";
+            return check is { } checkedValue
+                ? $"{checkedValue.Value}<{owner}, {value}>({name}, __c => __c.{hop.Read})"
+                : $"{RuntimeNames.BindingHop.Value}<{value}>({name}, __o => (({owner})__o).{hop.Read})";
         }
 
-        return check is not null
-            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{hop.Read})"
-            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{hop.Read})";
+        return check is { } checkedAny
+            ? $"{checkedAny.Any}<{owner}>({name}, __c => __c.{hop.Read})"
+            : $"new {RuntimeNames.BindingHop.Fqn}({name}, __o => (({owner})__o).{hop.Read})";
     }
 
     // A nullable already boxes to its value or null, and a ref struct cannot be a type argument.
@@ -2074,8 +2091,6 @@ sealed partial class XamlEmitter
 
     const string UnsetValueFqn = "global::Noesis.DependencyProperty.UnsetValue";
 
-    const string SlotConversionFqn = "global::NoesisToolkit.Mvvm.CodeGen.SlotConversion";
-
     const string InvariantFqn = "global::System.Globalization.CultureInfo.InvariantCulture";
 
     // StringFormat runs after the converter, and only where the slot actually holds a string.
@@ -2223,7 +2238,7 @@ sealed partial class XamlEmitter
         )
         {
             return NumberFormat(spec, "NFP")
-                ? $"{SlotConversionFqn}.Text(({fqn}){value}, {Quote(spec)})"
+                ? $"{RuntimeNames.SlotConversion.Text}(({fqn}){value}, {Quote(spec)})"
                 : SpecUnlikeNative();
         }
 
@@ -2254,13 +2269,13 @@ sealed partial class XamlEmitter
             return $"((bool){value} ? \"True\" : \"False\")";
 
         if (type.SpecialType == SpecialType.System_Int32)
-            return $"{SlotConversionFqn}.Text((int){value})";
+            return $"{RuntimeNames.SlotConversion.Text}((int){value})";
 
         if (IsInteger(type))
             return $"(({fqn}){value}).ToString({InvariantFqn})";
 
         if (type.SpecialType is SpecialType.System_Single or SpecialType.System_Double)
-            return $"{SlotConversionFqn}.Text(({fqn}){value})";
+            return $"{RuntimeNames.SlotConversion.Text}(({fqn}){value})";
 
         if (type.TypeKind == TypeKind.Enum && OrdinaryEnum(type))
             return $"(global::System.Enum.IsDefined(typeof({fqn}), {value})"
@@ -2274,7 +2289,7 @@ sealed partial class XamlEmitter
             && !XamlTypeResolver.DerivesFrom(type, "global::System.Type")
             && (type.IsValueType || OverridesToString(type))
         )
-            return $"{SlotConversionFqn}.Text({value})";
+            return $"{RuntimeNames.SlotConversion.Text}({value})";
 
         Note("text-conversion-unlike-native");
         return null;
@@ -2337,7 +2352,7 @@ sealed partial class XamlEmitter
             return "__v => __v";
 
         return $"__v => __v is {XamlTypeResolver.Fqn(Wrapped(slot) ?? slot)} ? __v"
-            + $" : __v is null ? {NullInto(slot)} : {SlotConversionFqn}.Unconverted";
+            + $" : __v is null ? {NullInto(slot)} : {RuntimeNames.SlotConversion.Unconverted}";
     }
 
     // A multi-binding's result reaches the slot only where the registered type accepts it as is.
@@ -2401,7 +2416,7 @@ sealed partial class XamlEmitter
 
     // The source value arrives boxed as its own type, and the conversion runs off __t.
     static string Cached(ITypeSymbol from, string convert, string fallback) =>
-        $"{SlotConversionFqn}.Cached<{XamlTypeResolver.Fqn(from)}>(static __t => {convert}, {fallback})";
+        $"{RuntimeNames.SlotConversion.Cached}<{XamlTypeResolver.Fqn(from)}>(static __t => {convert}, {fallback})";
 
     // The slots the native binding fills through a type converter; the constructor is that
     // converter's whole job, so the compiled form calls it directly.
@@ -2410,8 +2425,7 @@ sealed partial class XamlEmitter
         var toFqn = XamlTypeResolver.Fqn(slot);
         if (toFqn == "global::Noesis.ImageSource")
             return from.SpecialType == SpecialType.System_String
-                ? "__v => __v is string __t"
-                    + " ? global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From(__t) : null"
+                ? $"__v => __v is string __t ? {RuntimeNames.ImageSources.From}(__t) : null"
                 : null;
 
         if (!IsNumeric(from))
@@ -2659,14 +2673,18 @@ sealed partial class XamlEmitter
 
         var specFields = new List<string>
         {
-            $"Parts = new {PartFqn}[] {{ {string.Join(", ", parts.ToArray())} }}",
+            $"{RuntimeNames.CompiledMultiBindingSpec.Parts} = new {RuntimeNames.CompiledBindingPart.Fqn}[] {{ {string.Join(", ", parts.ToArray())} }}",
         };
 
         if (converter is not null)
         {
-            specFields.Add($"Converter = {converter}");
-            specFields.Add($"ConverterParameter = {parameter ?? "null"}");
-            specFields.Add($"TargetType = typeof({ConverterTargetType(slot)})");
+            specFields.Add($"{RuntimeNames.CompiledMultiBindingSpec.Converter} = {converter}");
+            specFields.Add(
+                $"{RuntimeNames.CompiledMultiBindingSpec.ConverterParameter} = {parameter ?? "null"}"
+            );
+            specFields.Add(
+                $"{RuntimeNames.CompiledMultiBindingSpec.TargetType} = typeof({ConverterTargetType(slot)})"
+            );
         }
         else
         {
@@ -2683,22 +2701,27 @@ sealed partial class XamlEmitter
                 args.Add($"__vs[{index}] is null ? (object)\"\" : {arg}");
             }
 
-            specFields.Add($"Format = __vs => {FormatCall(parsed.Format, args)}");
+            specFields.Add(
+                $"{RuntimeNames.CompiledMultiBindingSpec.Format} = __vs => {FormatCall(parsed.Format, args)}"
+            );
         }
 
-        specFields.Add($"Convert = {(converter is not null ? MultiFit(slot) : Coerce(slot.Type))}");
+        specFields.Add(
+            $"{RuntimeNames.CompiledMultiBindingSpec.Convert} = {(converter is not null ? MultiFit(slot) : Coerce(slot.Type))}"
+        );
 
         if (slot.Assign is not null)
-            specFields.Add($"Assign = {slot.Assign}");
+            specFields.Add($"{RuntimeNames.CompiledMultiBindingSpec.Assign} = {slot.Assign}");
 
         var spec = Shared(
             "multispec",
-            $"new {MultiSpecFqn} {{ {string.Join(", ", specFields.ToArray())} }}"
+            $"new {RuntimeNames.CompiledMultiBindingSpec.Fqn} {{ {string.Join(", ", specFields.ToArray())} }}"
         );
         Tally.Compiled++;
         EmitCompiledBind(
             target,
-            receiver => $"{CompiledMultiBindingFqn}.Bind({receiver}, {slot.Reference}, {spec})"
+            receiver =>
+                $"{RuntimeNames.CompiledMultiBinding.Bind}({receiver}, {slot.Reference}, {spec})"
         );
         return true;
     }

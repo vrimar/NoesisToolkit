@@ -11,10 +11,10 @@ All notable changes to this project are documented here. The format follows
   text block it makes itself, so the compiler cannot reach it: the engine reads its path by
   reflection and boxes the value for every row it fills, again each time a recycling list reuses
   the row. A `CellTemplate` holding the same binding is typed off the list's items and compiles.
-- **`NTK1011` keeps every binding native when `NoesisToolkit.Mvvm` is another version than the
-  XAML compiler.** Compiled bindings are emitted against the runtime API of the compiler's own
-  version, so a project that pinned the two apart built code calling members the runtime it ran
-  against did not have.
+- **`NTK1011` warns when `NoesisToolkit.Mvvm` implements another contract than the XAML compiler.**
+  Generated code calls the runtime's code-generation API, whose revision `RuntimeContract.Version`
+  states; against another revision it would not build, so every binding stays native instead. A
+  runtime from before 0.7.4 declares no contract and gets the same.
 - **`NTK3004` and `NTK3005` report a `[DependencyProperty]` instance property that is not
   `partial`, or that already has an implementing declaration.** Nothing is generated for it; the
   generator used to emit an implementation that failed to compile far from the declaration.

@@ -12,9 +12,7 @@ namespace NoesisToolkit.Mvvm.Generators;
 [Generator(LanguageNames.CSharp)]
 public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 {
-    private const string AttributeMetadataName = "NoesisToolkit.Mvvm.DependencyPropertyAttribute";
-
-    private const string WatcherFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyWatcher";
+    private const string AttributeMetadataName = RuntimeNames.DependencyPropertyAttribute.Type;
 
     private static readonly DiagnosticDescriptor NotPartial = new(
         id: "NTK3001",
@@ -166,11 +164,11 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                 var argument = attr.ConstructorArguments[i];
                 switch (constructor.Parameters[i].Name)
                 {
-                    case "defaultValue":
+                    case RuntimeNames.DependencyPropertyAttribute.Ctor.DefaultValue:
                         if (!argument.IsNull && Literal(argument) is { } literal)
                             defaultValue = $"({typeFqn})({literal})";
                         break;
-                    case "propertyChanged":
+                    case RuntimeNames.DependencyPropertyAttribute.Ctor.PropertyChanged:
                         if (argument.Value is string { Length: > 0 } callback)
                             propertyChanged = CallbackReference(
                                 attr,
@@ -180,7 +178,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                                 model
                             );
                         break;
-                    case "metadataOptions":
+                    case RuntimeNames.DependencyPropertyAttribute.Ctor.MetadataOptions:
                         if (
                             argument.Type is INamedTypeSymbol options
                             && argument.Value is { } flags
@@ -231,7 +229,11 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     )
     {
         if (
-            ArgumentSyntax(attr, parameter, "propertyChanged")
+            ArgumentSyntax(
+                attr,
+                parameter,
+                RuntimeNames.DependencyPropertyAttribute.Ctor.PropertyChanged
+            )
                 is InvocationExpressionSyntax
                 {
                     Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
@@ -369,30 +371,31 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     {
         // Noesis reads a null string as empty, so an annotated one reads the same way.
         if (type.SpecialType == SpecialType.System_String)
-            return "String";
+            return RuntimeNames.DependencyRead.String;
 
         // An object slot holding text unboxes a fresh string per read; the toolkit's shares it.
         if (type.SpecialType == SpecialType.System_Object)
-            return "Value";
+            return RuntimeNames.DependencyRead.Value;
 
         if (type.NullableAnnotation == NullableAnnotation.Annotated)
             return null;
 
         return type.SpecialType switch
         {
-            SpecialType.System_Boolean => "Bool",
-            SpecialType.System_Int32 => "Int",
-            SpecialType.System_Int64 => "Long",
-            SpecialType.System_Single => "Float",
-            SpecialType.System_Double => "Double",
-            _ when type.TypeKind == TypeKind.Enum => $"Enum<{type.Fq()}>",
+            SpecialType.System_Boolean => RuntimeNames.DependencyRead.Bool,
+            SpecialType.System_Int32 => RuntimeNames.DependencyRead.Int,
+            SpecialType.System_Int64 => RuntimeNames.DependencyRead.Long,
+            SpecialType.System_Single => RuntimeNames.DependencyRead.Float,
+            SpecialType.System_Double => RuntimeNames.DependencyRead.Double,
+            _ when type.TypeKind == TypeKind.Enum =>
+                $"{RuntimeNames.DependencyRead.Enum}<{type.Fq()}>",
             _ => type.ToDisplayString() switch
             {
-                "Noesis.Thickness" => "Thickness",
-                "Noesis.CornerRadius" => "CornerRadius",
-                "Noesis.Point" => "Point",
-                "Noesis.Size" => "Size",
-                "Noesis.Color" => "Color",
+                "Noesis.Thickness" => RuntimeNames.DependencyRead.Thickness,
+                "Noesis.CornerRadius" => RuntimeNames.DependencyRead.CornerRadius,
+                "Noesis.Point" => RuntimeNames.DependencyRead.Point,
+                "Noesis.Size" => RuntimeNames.DependencyRead.Size,
+                "Noesis.Color" => RuntimeNames.DependencyRead.Color,
                 _ => null,
             },
         };
@@ -568,34 +571,31 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     // GetValue boxes every value type anew.
     private static string Read(Model m, string target) =>
         m.TypedRead is { } typed
-            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"
-        : m.Misrouted ? $"({m.TypeFqnNullable}){ReadFqn}.Value({target}, {m.PropertyName}Property)!"
+            ? $"{typed}({target}, {m.PropertyName}Property){(typed == RuntimeNames.DependencyRead.Value ? "!" : "")}"
+        : m.Misrouted
+            ? $"({m.TypeFqnNullable}){RuntimeNames.DependencyRead.Value}({target}, {m.PropertyName}Property)!"
         : $"({m.TypeFqnNullable}){target}.GetValue({m.PropertyName}Property)";
 
-    private const string ReadFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyRead";
+    private const string HandleMetadataName = RuntimeNames.ElementHandle.Type;
 
-    private const string HandleMetadataName = "NoesisToolkit.Mvvm.ElementHandle";
-
-    private const string HandleFqn = "global::" + HandleMetadataName;
+    private const string HandleFqn = RuntimeNames.ElementHandle.Fqn;
 
     // What a change callback that takes its object by handle reads its sibling properties with.
     private static string ReadByHandle(Model m, string target) =>
         m.TypedRead is { } typed
-            ? $"{ReadFqn}.{typed}({target}, {m.PropertyName}Property){(typed == "Value" ? "!" : "")}"
-            : $"({m.TypeFqnNullable}){ReadFqn}.Value({target}, {m.PropertyName}Property)!";
+            ? $"{typed}({target}, {m.PropertyName}Property){(typed == RuntimeNames.DependencyRead.Value ? "!" : "")}"
+            : $"({m.TypeFqnNullable}){RuntimeNames.DependencyRead.Value}({target}, {m.PropertyName}Property)!";
 
     private static string Write(Model m, string target) =>
         m.WritesTyped
-            ? $"{WriteFqn}.Value({target}, {m.PropertyName}Property, value)"
+            ? $"{RuntimeNames.DependencyWrite.Value}({target}, {m.PropertyName}Property, value)"
             : $"{target}.SetValue({m.PropertyName}Property, value)";
-
-    private const string WriteFqn = "global::NoesisToolkit.Mvvm.CodeGen.DependencyWrite";
 
     private static void WriteRegistration(CodeWriter w, Model m, bool attached)
     {
         using (w.Indented())
         {
-            w.Line($"{WatcherFqn}.SelfNotifying(");
+            w.Line($"{RuntimeNames.DependencyWatcher.SelfNotifying}(");
             using (w.Indented())
             {
                 w.Line($"DependencyProperty.Register{(attached ? "Attached" : "")}(");
@@ -669,10 +669,10 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
         // A null callback would not pick between the object and the handle overloads.
         var metadata = m.PropertyChanged is { } changed
-            ? $"{WatcherFqn}.Metadata({def}, {opts}, {changed})"
-            : $"{WatcherFqn}.Metadata({def}, {opts})";
+            ? $"{RuntimeNames.DependencyWatcher.Metadata}({def}, {opts}, {changed})"
+            : $"{RuntimeNames.DependencyWatcher.Metadata}({def}, {opts})";
 
-        return m.Misrouted ? $"{ReadFqn}.Capturing({metadata})" : metadata;
+        return m.Misrouted ? $"{RuntimeNames.DependencyRead.Capturing}({metadata})" : metadata;
     }
 
     private readonly record struct Model(

@@ -6,6 +6,7 @@
     <NoesisSharedFile Include="XamlScopeRules" />
     <NoesisSharedFile Include="TypeLookup" />
     <NoesisSharedFile Include="NoesisSlots" />
+    <NoesisSharedFile Include="RuntimeNames" />
   </ItemGroup>
 
   <Import Project="../../build/Analyzer.props" />

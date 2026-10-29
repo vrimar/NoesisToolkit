@@ -12,7 +12,7 @@
 | `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
 | `NTK1008` | Warning | a `DisplayMemberPath`, `SelectedValuePath` or `EventName` names a member its type does not have |
 | `NTK1010` | Warning | a `GridViewColumn.DisplayMemberBinding` stays native, boxing its value for every row it fills; a `CellTemplate` compiles |
-| `NTK1011` | Warning | `NoesisToolkit.Mvvm` is another version than the XAML compiler, so every binding stays native |
+| `NTK1011` | Warning | `NoesisToolkit.Mvvm` implements another contract than the XAML compiler emits against, so every binding stays native |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve, or names a static Noesis' parser loads unset |

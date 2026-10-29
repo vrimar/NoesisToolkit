@@ -11,15 +11,6 @@ namespace NoesisToolkit.Xaml;
 // setter may not touch a property any remaining native trigger also sets.
 sealed partial class XamlEmitter
 {
-    const string TriggerSetFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledTriggerSet";
-
-    const string TriggerSpecFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledTriggerSpec";
-
-    const string TriggerConditionFqn =
-        "global::NoesisToolkit.Mvvm.CodeGen.CompiledTriggerCondition";
-
-    const string CompiledSetterFqn = "global::NoesisToolkit.Mvvm.CodeGen.CompiledSetter";
-
     readonly HashSet<XElement> _suppressed = new HashSet<XElement>();
 
     void PlanCompiledTriggers(XElement owner, string target, INamedTypeSymbol type, XElement style)
@@ -35,8 +26,14 @@ sealed partial class XamlEmitter
         if (specs is null)
             return;
 
-        var shared = Shared("triggers", $"new {TriggerSpecFqn}[] {{ {specs} }}");
-        EmitCompiledBind(target, receiver => $"{TriggerSetFqn}.Bind({receiver}, {shared})");
+        var shared = Shared(
+            "triggers",
+            $"new {RuntimeNames.CompiledTriggerSpec.Fqn}[] {{ {specs} }}"
+        );
+        EmitCompiledBind(
+            target,
+            receiver => $"{RuntimeNames.CompiledTriggerSet.Bind}({receiver}, {shared})"
+        );
     }
 
     // Wires before content: the trigger set has to join the content root's one wiring slot, and
@@ -74,8 +71,8 @@ sealed partial class XamlEmitter
 
         // Inside the wire this would allocate per clone, and a re-bind could never recognise it.
         var shared = NextName("triggers");
-        _lines.Add($"var {shared} = new {TriggerSpecFqn}[] {{ {specs} }};");
-        AddPendingWire(content, $"{TriggerSetFqn}.Bind(__e, {shared});");
+        _lines.Add($"var {shared} = new {RuntimeNames.CompiledTriggerSpec.Fqn}[] {{ {specs} }};");
+        AddPendingWire(content, $"{RuntimeNames.CompiledTriggerSet.Bind}(__e, {shared});");
     }
 
     bool OptedIn(XElement scope, XElement wrapper)
@@ -363,14 +360,16 @@ sealed partial class XamlEmitter
             properties.Add(plan.Key);
         }
 
-        var scoped = templateScoped ? "TemplateScoped = true, " : "";
+        var scoped = templateScoped
+            ? $"{RuntimeNames.CompiledTriggerSpec.TemplateScoped} = true, "
+            : "";
         if (driven)
-            scoped += "PropertyDriven = true, ";
+            scoped += $"{RuntimeNames.CompiledTriggerSpec.PropertyDriven} = true, ";
 
         var spec =
-            $"new {TriggerSpecFqn} {{ {scoped}"
-            + $"Conditions = new {TriggerConditionFqn}[] {{ {string.Join(", ", conditions.ToArray())} }}, "
-            + $"Setters = new {CompiledSetterFqn}[] {{ {string.Join(", ", setters.ToArray())} }} }}";
+            $"new {RuntimeNames.CompiledTriggerSpec.Fqn} {{ {scoped}"
+            + $"{RuntimeNames.CompiledTriggerSpec.Conditions} = new {RuntimeNames.CompiledTriggerCondition.Fqn}[] {{ {string.Join(", ", conditions.ToArray())} }}, "
+            + $"{RuntimeNames.CompiledTriggerSpec.Setters} = new {RuntimeNames.CompiledSetter.Fqn}[] {{ {string.Join(", ", setters.ToArray())} }} }}";
         return (spec, properties);
     }
 
@@ -406,9 +405,9 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        return $"new {TriggerConditionFqn} {{ "
-            + $"Part = {PartExpression(from, resolved)}, "
-            + $"Value = {constant} }}";
+        return $"new {RuntimeNames.CompiledTriggerCondition.Fqn} {{ "
+            + $"{RuntimeNames.CompiledTriggerCondition.Part} = {PartExpression(from, resolved)}, "
+            + $"{RuntimeNames.CompiledTriggerCondition.Value} = {constant} }}";
     }
 
     string? TriggerCondition(
@@ -536,10 +535,10 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        return $"new {TriggerConditionFqn} {{ "
-            + $"Part = {PartExpression(source, resolved)}, "
-            + $"Path = {Quote(string.Join(".", resolved.Hops.Select(h => h.Name)))}, "
-            + $"Value = {constant} }}";
+        return $"new {RuntimeNames.CompiledTriggerCondition.Fqn} {{ "
+            + $"{RuntimeNames.CompiledTriggerCondition.Part} = {PartExpression(source, resolved)}, "
+            + $"{RuntimeNames.CompiledTriggerCondition.Path} = {Quote(string.Join(".", resolved.Hops.Select(h => h.Name)))}, "
+            + $"{RuntimeNames.CompiledTriggerCondition.Value} = {constant} }}";
     }
 
     bool SelfRelative(MarkupCall call) =>
@@ -566,8 +565,8 @@ sealed partial class XamlEmitter
             return null;
 
         return new BindingSource(
-            $"__s => {CompiledBindingFqn}.TemplatedParent(__s) is {{ }} __p"
-                + $" ? {CompiledBindingFqn}.FindAncestor(__p, typeof({XamlTypeResolver.Fqn(type)}))"
+            $"__s => {RuntimeNames.CompiledBinding.TemplatedParent}(__s) is {{ }} __p"
+                + $" ? {RuntimeNames.CompiledBinding.FindAncestor}(__p, typeof({XamlTypeResolver.Fqn(type)}))"
                 + " : null",
             owner,
             type,
@@ -670,13 +669,17 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        var fields = $"Property = {slot.Reference}, Value = {value}";
+        var fields =
+            $"{RuntimeNames.CompiledSetter.Property} = {slot.Reference}, {RuntimeNames.CompiledSetter.Value} = {value}";
         if (slot.Assign is not null)
-            fields += $", Assign = {slot.Assign}";
+            fields += $", {RuntimeNames.CompiledSetter.Assign} = {slot.Assign}";
         if (targetName is not null)
-            fields += $", TargetName = {Quote(targetName)}";
+            fields += $", {RuntimeNames.CompiledSetter.TargetName} = {Quote(targetName)}";
 
-        return ($"new {CompiledSetterFqn} {{ {fields} }}", SetterKey(targetName, propertyName));
+        return (
+            $"new {RuntimeNames.CompiledSetter.Fqn} {{ {fields} }}",
+            SetterKey(targetName, propertyName)
+        );
     }
 
     // Each of these ranks above a native style trigger, which a compiled local write would beat.

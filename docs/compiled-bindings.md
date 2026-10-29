@@ -13,8 +13,8 @@ still reach the binary: `PropertyChangedEventArgs.PropertyName` is a string, so 
 matches on it whatever the read path looks like.
 
 `CompiledBinding` is `NoesisToolkit.Mvvm`'s, so a compiled binding needs that package referenced at
-the same version as the compiler. Without it every binding stays native; at another version every
-binding stays native too, with `NTK1011`.
+the contract the compiler emits against, which `RuntimeContract.Version` states. Without it every
+binding stays native; at another contract every binding stays native too, with `NTK1011`.
 
 Everything else stays a `Noesis.Binding`, because a compiled binding that guessed would be worse than
 a reflective one. A binding compiles when its source resolves, its path resolves hop by hop off the

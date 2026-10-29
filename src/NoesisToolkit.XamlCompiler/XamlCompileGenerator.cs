@@ -106,15 +106,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
 
     static readonly DiagnosticDescriptor OtherRuntime = new(
         "NTK1011",
-        "NoesisToolkit.Mvvm is another version than the XAML compiler",
-        "NoesisToolkit.Mvvm {0} is referenced, but the XAML compiler is {1}; every binding stays native until both are the same version",
+        "NoesisToolkit.Mvvm implements another contract than the XAML compiler",
+        "NoesisToolkit.Mvvm {0} is referenced, but the XAML compiler {1} emits against another contract; every binding stays native until both implement the same one",
         "NoesisToolkit",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "A compiled binding is emitted against the runtime API of the NoesisToolkit.Mvvm "
-            + "release the compiler shipped with, and that API changes from release to release. "
-            + "Against another version the generated code would not build, so the compiler leaves "
-            + "every binding to the engine, as it does when the package is absent."
+        description: "A compiled binding is emitted against the revision of the NoesisToolkit.Mvvm "
+            + "API the compiler shipped with, which RuntimeContract.Version states. Against another "
+            + "revision the generated code would not build, so the compiler leaves every binding to "
+            + "the engine, as it does when the package is absent."
     );
 
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
@@ -174,9 +174,7 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     // The emitted graph names the runtime by string. Without it the generated file
                     // would not compile, so a project that installed the compiler alone gets the
                     // native parser rather than a build error.
-                    var runtime =
-                        compilation.GetTypeByMetadataName(RuntimeType) is not null
-                        && RuntimeOtherThanOwn(compilation) is null;
+                    var runtime = RuntimeMatches(compilation);
 
                     return Guarded(
                         path,
@@ -377,22 +375,33 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             GeneratedNamespace(compilation),
             LinkName(compilation.AssemblyName ?? "Assembly"),
             chain,
-            RuntimeOtherThanOwn(compilation)?.ToString()
+            OtherRuntimeVersion(compilation)
         );
     }
 
-    const string RuntimeType = "NoesisToolkit.Mvvm.CodeGen.CompiledBinding";
-
-    // A release builds every package at one version, so only the runtime cut with this compiler matches.
     static readonly Version CompilerVersion = typeof(XamlCompileGenerator)
         .Assembly.GetName()
         .Version!;
 
-    static Version? RuntimeOtherThanOwn(Compilation compilation) =>
-        compilation.GetTypeByMetadataName(RuntimeType)?.ContainingAssembly is { } runtime
-        && !SymbolEqualityComparer.Default.Equals(runtime, compilation.Assembly)
-        && runtime.Identity.Version != CompilerVersion
-            ? runtime.Identity.Version
+    static bool RuntimeMatches(Compilation compilation) =>
+        compilation
+            .GetTypeByMetadataName(RuntimeNames.RuntimeContract.Type)
+            ?.GetMembers(RuntimeNames.RuntimeContract.Version)
+            .OfType<IFieldSymbol>()
+            .FirstOrDefault()
+            ?.ConstantValue
+            is int contract
+        && contract == RuntimeNames.ContractVersion;
+
+    // A runtime from before the contract existed still declares CompiledBinding.
+    static string? OtherRuntimeVersion(Compilation compilation) =>
+        !RuntimeMatches(compilation)
+        && (
+            compilation.GetTypeByMetadataName(RuntimeNames.RuntimeContract.Type)
+            ?? compilation.GetTypeByMetadataName(RuntimeNames.CompiledBinding.Type)
+        )
+            is { } runtime
+            ? runtime.ContainingAssembly.Identity.Version.ToString()
             : null;
 
     static CompiledDocument EmitRegistry(IReadOnlyList<CompiledDocument> all, RegistryScope scope)

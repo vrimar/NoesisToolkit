@@ -24,8 +24,7 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
     private const string FrameworkElementMetadataName = "Noesis.FrameworkElement";
     private const string DependencyObjectMetadataName = "Noesis.DependencyObject";
     private const string CommandMetadataName = "System.Windows.Input.ICommand";
-    private const string CommandAttributeMetadataName =
-        "NoesisToolkit.Mvvm.DelegateCommandAttribute";
+    private const string CommandAttributeMetadataName = RuntimeNames.DelegateCommandAttribute.Type;
 
     private static readonly DiagnosticDescriptor SelfCapturingCommandRule = new(
         SelfCapturingCommandId,

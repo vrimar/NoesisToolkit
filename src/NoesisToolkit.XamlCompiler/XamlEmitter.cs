@@ -4,6 +4,7 @@ using System.Linq;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
+using NoesisToolkit.CodeGen;
 
 namespace NoesisToolkit.Xaml;
 
@@ -16,7 +17,7 @@ sealed partial class XamlEmitter(
     string filePath = ""
 )
 {
-    /// <summary>False where NoesisToolkit.Mvvm is not referenced at this compiler's version. The
+    /// <summary>False where NoesisToolkit.Mvvm is not referenced at this compiler's contract. The
     /// emitted graph names its runtime for a compiled binding and for an image source, so without it
     /// neither can be emitted, rather than merely failing to resolve.</summary>
     public bool MvvmRuntimeReferenced { get; init; } = true;
@@ -233,7 +234,10 @@ sealed partial class XamlEmitter(
             _lines.Insert(1, ResourcesHelper);
 
         if (_drawsBuild)
-            _lines.Insert(0, $"var {ReceiverBuildVar} = {CompiledBindingFqn}.NewBuild();");
+            _lines.Insert(
+                0,
+                $"var {ReceiverBuildVar} = {RuntimeNames.CompiledBinding.NewBuild}();"
+            );
 
         EmitLookupHelpers();
 

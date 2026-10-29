@@ -12,7 +12,7 @@ namespace NoesisToolkit.Mvvm.Generators;
 [Generator]
 public sealed class DelegateCommandGenerator : IIncrementalGenerator
 {
-    const string AttributeMetadataName = "NoesisToolkit.Mvvm.DelegateCommandAttribute";
+    const string AttributeMetadataName = RuntimeNames.DelegateCommandAttribute.Type;
 
     static readonly DiagnosticDescriptor NotPartial = new(
         id: "NTK3101",
@@ -139,8 +139,8 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
                 }
 
                 var kind = command.ReturnsVoid
-                    ? "global::NoesisToolkit.Mvvm.DelegateCommand"
-                    : "global::NoesisToolkit.Mvvm.AsyncDelegateCommand";
+                    ? RuntimeNames.DelegateCommand.Fqn
+                    : RuntimeNames.AsyncDelegateCommand.Fqn;
                 var commandType = command.FirstParameterFqn is null
                     ? kind
                     : $"{kind}<{command.FirstParameterFqn}>";

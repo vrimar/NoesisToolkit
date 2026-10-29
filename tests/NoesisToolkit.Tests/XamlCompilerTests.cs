@@ -453,7 +453,7 @@ public partial class XamlCompilerTests
     }
 
     [Test]
-    public async Task A_runtime_of_another_version_leaves_every_binding_native()
+    public async Task A_runtime_of_another_contract_leaves_every_binding_native()
     {
         var run = GeneratorHarness.Run(
             new XamlCompileGenerator(),
@@ -464,7 +464,8 @@ public partial class XamlCompilerTests
             [
                 GeneratorHarness.Reference(
                     "NoesisToolkit.Mvvm",
-                    "[assembly: System.Reflection.AssemblyVersion(\"0.0.0.1\")]\n" + Stubs.Mvvm
+                    "namespace NoesisToolkit.Mvvm.CodeGen { public static class RuntimeContract "
+                        + "{ public const int Version = int.MaxValue; } }"
                 ),
             ]
         );

@@ -184,7 +184,7 @@ sealed partial class XamlEmitter
             return ImageUri(text) is not { } uri
                     ? Fail($"image source '{text}' is not a uri the parser is known to resolve")
                 : typeFqn == "global::Noesis.ImageSource" && MvvmRuntimeReferenced
-                    ? $"global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From({Quote(uri)})"
+                    ? $"{RuntimeNames.ImageSources.From}({Quote(uri)})"
                 : $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))";
 
         if (typeFqn == "global::Noesis.RoutedEvent")
