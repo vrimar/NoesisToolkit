@@ -229,8 +229,9 @@ public async Task Compiled_xaml_matches_the_parser()
 ```
 
 Run it on the Noesis thread with a `XamlProvider` that serves the documents and with your application
-resources installed. A merged dictionary that names another document by `Source` is compared where
-that document is, not again inside each one that merges it; `XamlParity.Compare` takes
+resources installed. A merged dictionary that names another document by `Source` is named rather
+than walked again where both sides merge the same contents in the same place, and walked where it is
+merged anywhere else; `XamlParity.Compare` takes
 `expandMerged: true` for a whole application graph, and an `x:Class` root the parser filled against
 one `InitializeComponent` filled.
 

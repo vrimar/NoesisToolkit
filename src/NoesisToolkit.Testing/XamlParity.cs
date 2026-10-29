@@ -11,8 +11,7 @@ namespace NoesisToolkit.Testing;
 /// each graph is realized and rendered as text, and the two texts must match.
 /// <para>
 /// Templates are applied to a host and laid out before they are walked, so what is compared is
-/// what the engine instantiates. A tree deeper than the walk goes fails rather than passing on the
-/// levels above. Values are compared as the engine reads them back, with no data
+/// what the engine instantiates. Values are compared as the engine reads them back, with no data
 /// context, so a binding shows the value it holds while unresolved. Timing is not compared: both
 /// sides are compared after the application resources are installed, so a lookup the compiled path
 /// performs too early still resolves here.
@@ -33,8 +32,9 @@ public static class XamlParity
     /// <param name="dumps">A directory to write both renderings of every document to, or null.</param>
     /// <returns>One failure per document that differs, plus one where no document rendered
     /// anything at all; empty when every document matches.</returns>
-    /// <remarks>A merged dictionary that names another document by <c>Source</c> is compared where
-    /// that document is, not again inside every document that merges it.</remarks>
+    /// <remarks>A merged dictionary that names another document by <c>Source</c> is named rather
+    /// than walked again where both sides merge the same contents in the same place; anywhere else
+    /// its contents are walked where it is merged.</remarks>
     public static IReadOnlyList<XamlParityFailure> Check(
         IEnumerable<(string Path, string Logical, Func<ResourceDictionary> Build)> documents,
         Action<ResourceDictionary> flush,
@@ -85,7 +85,8 @@ public static class XamlParity
     /// <param name="parsed">What the parser built.</param>
     /// <param name="compiled">What the compiled builder built, already flushed.</param>
     /// <param name="expandMerged">True to walk every merged dictionary, as for a whole application
-    /// graph; false to name a merged document instead of walking it again.</param>
+    /// graph; false to name a merged document instead of walking it again where both sides merge
+    /// the same contents in the same place.</param>
     /// <param name="dumps">A directory to write both renderings to, or null.</param>
     /// <returns>The first difference, or null where the two match.</returns>
     public static XamlParityFailure? Compare(
@@ -146,12 +147,7 @@ public static class XamlParity
         }
 
         if (expected == actual)
-            return XamlGraphDump.Truncated(expected)
-                ? new XamlParityFailure(
-                    document,
-                    $"the tree is deeper than {XamlGraphDump.Deepest} levels, and what lies below is not compared"
-                )
-                : null;
+            return null;
 
         var left = expected.Split('\n');
         var right = actual.Split('\n');

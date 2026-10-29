@@ -15,20 +15,13 @@ static class XamlGraphDump
 {
     const int Frames = 6;
 
-    internal const int Deepest = 30;
-
-    const string Truncation = "<deeper than the walk>";
-
-    internal static bool Truncated(string dump) =>
-        dump.Split('\n').Any(line => line.Trim() == Truncation);
-
     internal static (string Parsed, string Compiled) Dump(
         ResourceDictionary parsed,
         ResourceDictionary compiled,
         bool expandMerged
     )
     {
-        var named = new Dictionary<nint, string>();
+        var named = new Dictionary<nint, Merged>();
         if (!expandMerged)
             Pair(parsed, compiled, named);
 
@@ -40,52 +33,42 @@ static class XamlGraphDump
         FrameworkElement compiled
     ) => (DumpRoot(parsed), DumpRoot(compiled));
 
-    // A document merged in is compared on its own, so a matching pair of it is named, not walked.
+    sealed class Merged(string source, bool walk)
+    {
+        public string Source { get; } = source;
+        public bool Walk { get; } = walk;
+    }
+
+    // A compiled merged dictionary reads back with no Source, so both sides take the parser's.
     static void Pair(
         ResourceDictionary parsed,
         ResourceDictionary compiled,
-        Dictionary<nint, string> named
+        Dictionary<nint, Merged> named
     )
     {
         var left = parsed.MergedDictionaries;
         var right = compiled.MergedDictionaries;
-        for (var i = 0; i < left.Count && i < right.Count; i++)
+        for (var i = 0; i < left.Count; i++)
         {
-            if (left[i].Source is { } source && SameShape(left[i], right[i]))
-                named[Handle(left[i])] = named[Handle(right[i])] = source.OriginalString;
-            else
-                Pair(left[i], right[i], named);
+            var other = i < right.Count ? right[i] : null;
+            if (other is not null)
+                Pair(left[i], other, named);
+
+            if (left[i].Source?.OriginalString is not { Length: > 0 } source)
+                continue;
+
+            var walk = other is null || Dump(left[i], named) != Dump(other, named);
+            named[Handle(left[i])] = new Merged(source, walk);
+            if (other is not null)
+                named[Handle(other)] = new Merged(source, walk);
         }
     }
-
-    static bool SameShape(ResourceDictionary a, ResourceDictionary b)
-    {
-        if (
-            a.MergedDictionaries.Count != b.MergedDictionaries.Count
-            || !KeysOf(a).SequenceEqual(KeysOf(b), StringComparer.Ordinal)
-        )
-            return false;
-
-        for (var i = 0; i < a.MergedDictionaries.Count; i++)
-        {
-            if (!SameShape(a.MergedDictionaries[i], b.MergedDictionaries[i]))
-                return false;
-        }
-
-        return true;
-    }
-
-    static IEnumerable<string> KeysOf(ResourceDictionary dictionary) =>
-        dictionary
-            .Keys.Cast<object?>()
-            .Select(k => k?.ToString() ?? "")
-            .OrderBy(k => k, StringComparer.Ordinal);
 
     static nint Handle(BaseComponent component) => BaseComponent.getCPtr(component).Handle;
 
-    static readonly Dictionary<nint, string> Unnamed = new Dictionary<nint, string>();
+    static readonly Dictionary<nint, Merged> Unnamed = new Dictionary<nint, Merged>();
 
-    static string Dump(ResourceDictionary dictionary, Dictionary<nint, string> named)
+    static string Dump(ResourceDictionary dictionary, Dictionary<nint, Merged> named)
     {
         var sb = new StringBuilder();
         DumpEntries(dictionary, named, sb, 0);
@@ -94,18 +77,22 @@ static class XamlGraphDump
 
     static void DumpEntries(
         ResourceDictionary dictionary,
-        Dictionary<nint, string> named,
+        Dictionary<nint, Merged> named,
         StringBuilder sb,
         int depth
     )
     {
         var entries = new List<(string Text, object Key, ResourceDictionary Owner)>();
-        var merged = new List<string>();
+        var merged = new List<(Merged Slot, ResourceDictionary Inner)>();
         Flatten(dictionary, named, entries, merged);
 
         var pad = new string(' ', depth * 2);
-        foreach (var source in merged)
-            sb.AppendLine($"{pad}MERGED {source}");
+        foreach (var (slot, inner) in merged)
+        {
+            sb.AppendLine($"{pad}MERGED {slot.Source}");
+            if (slot.Walk)
+                DumpEntries(inner, named, sb, depth + 1);
+        }
 
         foreach (var (text, key, owner) in entries.OrderBy(e => e.Text, StringComparer.Ordinal))
         {
@@ -117,9 +104,9 @@ static class XamlGraphDump
     // A key routed through a merged dictionary resolves the same way, so the rest is flattened.
     static void Flatten(
         ResourceDictionary dictionary,
-        Dictionary<nint, string> named,
+        Dictionary<nint, Merged> named,
         List<(string Text, object Key, ResourceDictionary Owner)> into,
-        List<string> merged
+        List<(Merged Slot, ResourceDictionary Inner)> merged
     )
     {
         foreach (var key in dictionary.Keys)
@@ -127,8 +114,8 @@ static class XamlGraphDump
 
         foreach (var inner in dictionary.MergedDictionaries)
         {
-            if (named.TryGetValue(Handle(inner), out var source))
-                merged.Add(source);
+            if (named.TryGetValue(Handle(inner), out var slot))
+                merged.Add((slot, inner));
             else
                 Flatten(inner, named, into, merged);
         }
@@ -136,15 +123,17 @@ static class XamlGraphDump
 
     static string DumpRoot(FrameworkElement root)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine(root.GetType().Name);
-        DumpObject(root, sb, 1, new HashSet<nint>());
+        // Read before the size below overwrites the document's.
+        var locals = LocalValues(root);
 
         root.Width = 800;
         root.Height = 600;
         Realize(root);
 
-        WalkVisual(root, sb, 1);
+        var sb = new StringBuilder();
+        sb.AppendLine(root.GetType().Name);
+        DumpObject(root, locals, sb, 1, new HashSet<nint>());
+        WalkVisual(root, sb, 1, new HashSet<nint>());
         return sb.ToString();
     }
 
@@ -205,7 +194,7 @@ static class XamlGraphDump
             h => ((ContentControl)h).ContentTemplate = template
         );
         DumpTriggers(template.Triggers, CompiledSetsUnder(PresentedRoot(host)), sb, depth);
-        WalkVisual(host, sb, depth);
+        WalkVisual(host, sb, depth, new HashSet<nint>());
     }
 
     // A template applies only to a host of its TargetType; anywhere else it is ignored.
@@ -213,7 +202,7 @@ static class XamlGraphDump
     {
         var host = RealizeTemplate(HostFor(targetType), h => h.Template = control);
         DumpTriggers(control.Triggers, CompiledSetsUnder(host), sb, depth);
-        WalkVisual(host, sb, depth);
+        WalkVisual(host, sb, depth, new HashSet<nint>());
     }
 
     static void DumpHeld(object value, Type? targetType, StringBuilder sb, int depth)
@@ -229,7 +218,7 @@ static class XamlGraphDump
             case Style style:
                 DumpValue(style, sb, depth);
                 return;
-            case DependencyObject node and not Visual:
+            case DependencyObject node when !InTree(node):
                 DumpObject(node, sb, depth, new HashSet<nint>());
                 return;
         }
@@ -564,28 +553,36 @@ static class XamlGraphDump
         root.UpdateLayout();
     }
 
-    static void WalkVisual(DependencyObject node, StringBuilder sb, int depth)
+    static void WalkVisual(
+        DependencyObject node,
+        StringBuilder sb,
+        int depth,
+        HashSet<nint> expanding
+    )
     {
         var count = VisualTreeHelper.GetChildrenCount(node);
-        if (depth > Deepest)
-        {
-            if (count > 0)
-                sb.AppendLine(new string(' ', depth * 2) + Truncation);
-            return;
-        }
-
         for (var i = 0; i < count; i++)
         {
             var child = VisualTreeHelper.GetChild(node, i);
             sb.AppendLine(new string(' ', depth * 2) + child.GetType().Name);
-            DumpObject(child, sb, depth + 1, new HashSet<nint>());
-            WalkVisual(child, sb, depth + 1);
+            DumpObject(child, sb, depth + 1, expanding);
+            WalkVisual(child, sb, depth + 1, expanding);
         }
     }
 
-    // A visual value is walked where it sits in the tree; expanding it here would count it twice.
+    static bool InTree(DependencyObject node) =>
+        node is Visual && VisualTreeHelper.GetParent(node) is not null;
+
     static void DumpObject(
         DependencyObject node,
+        StringBuilder sb,
+        int depth,
+        HashSet<nint> expanding
+    ) => DumpObject(node, LocalValues(node), sb, depth, expanding);
+
+    static void DumpObject(
+        DependencyObject node,
+        List<(string Name, string Text, object? Value)> locals,
         StringBuilder sb,
         int depth,
         HashSet<nint> expanding
@@ -595,10 +592,10 @@ static class XamlGraphDump
             return;
 
         var pad = new string(' ', depth * 2);
-        foreach (var (name, text, value) in LocalValues(node))
+        foreach (var (name, text, value) in locals)
         {
             sb.AppendLine(pad + $".{name} = {text}");
-            if (value is DependencyObject nested and not Visual)
+            if (value is DependencyObject nested && !InTree(nested))
                 DumpObject(nested, sb, depth + 1, expanding);
         }
 
@@ -609,10 +606,13 @@ static class XamlGraphDump
             foreach (var item in items)
             {
                 sb.AppendLine(pad + $"- {Describe(item)}");
-                if (item is DependencyObject nested and not Visual)
+                if (item is DependencyObject nested && !InTree(nested))
                     DumpObject(nested, sb, depth + 1, expanding);
             }
         }
+
+        if (node is Visual && !InTree(node))
+            WalkVisual(node, sb, depth, expanding);
 
         expanding.Remove(Handle(node));
     }
@@ -639,6 +639,17 @@ static class XamlGraphDump
 
         if (node is not FrameworkElement element)
             return;
+
+        if (element is ItemsControl { Items.Count: > 0 } itemsControl)
+        {
+            sb.AppendLine(pad + "Items");
+            foreach (var item in itemsControl.Items)
+            {
+                sb.AppendLine(pad + $"  - {Describe(item)}");
+                if (item is DependencyObject nested && !InTree(nested))
+                    DumpObject(nested, sb, depth + 2, expanding);
+            }
+        }
 
         if (
             element.Resources is { } resources
@@ -906,15 +917,19 @@ static class XamlGraphDump
             _ => Text(value),
         };
 
-    // An application's ToString may name the instance, so it differs between the two builds.
+    // An application's ToString may name the instance, and a visual's native one quotes its content's.
     static string Text(object value)
     {
         var type = value.GetType();
         var declaring = type.GetMethod("ToString", Type.EmptyTypes)?.DeclaringType?.Assembly;
         return
-            declaring == typeof(object).Assembly
-            || declaring == typeof(DependencyObject).Assembly
-            || declaring?.GetName().Name?.StartsWith("System.", StringComparison.Ordinal) == true
+            value is not Visual
+            && (
+                declaring == typeof(object).Assembly
+                || declaring == typeof(DependencyObject).Assembly
+                || declaring?.GetName().Name?.StartsWith("System.", StringComparison.Ordinal)
+                    == true
+            )
             ? value.ToString() ?? ""
             : type.FullName ?? type.Name;
     }

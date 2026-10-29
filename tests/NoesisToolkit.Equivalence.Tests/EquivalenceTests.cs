@@ -67,6 +67,107 @@ public sealed class EquivalenceTests
         static Border Stamped() => new() { Tag = new Stamp(), Child = new TextBlock() };
 
         await Assert.That(XamlParity.Compare("Stamped", Stamped(), Stamped())?.ToString()).IsNull();
+
+        static Border Held() =>
+            new()
+            {
+                Tag = new ContentControl { Content = new Stamp() },
+                Child = new TextBlock(),
+            };
+
+        await Assert.That(XamlParity.Compare("Held", Held(), Held())?.ToString()).IsNull();
+    }
+
+    [Test]
+    public async Task A_visual_held_off_the_tree_is_compared()
+    {
+        Live();
+
+        static Border Menu(string header) =>
+            new()
+            {
+                ContextMenu = new ContextMenu { Items = { new MenuItem { Header = header } } },
+                Child = new Border(),
+            };
+
+        await Assert.That(XamlParity.Compare("Menu", Menu("Open"), Menu("Close"))).IsNotNull();
+
+        static ResourceDictionary Panel(int width) =>
+            Dictionary($"""<StackPanel x:Key="Panel"><Border Width="{width}" /></StackPanel>""");
+
+        await Assert.That(XamlParity.Compare("Panel", Panel(1), Panel(2))).IsNotNull();
+    }
+
+    [Test]
+    public async Task A_root_is_compared_at_its_own_size()
+    {
+        Live();
+
+        static Border Sized(float width) => new() { Width = width, Child = new Border() };
+
+        await Assert.That(XamlParity.Compare("Sized", Sized(100), Sized(200))).IsNotNull();
+    }
+
+    [Test]
+    public async Task A_merged_dictionary_is_compared_by_its_contents_and_its_place()
+    {
+        Live();
+
+        static ResourceDictionary Merging(params ResourceDictionary[] documents)
+        {
+            var dictionary = new ResourceDictionary();
+            foreach (var document in documents)
+                dictionary.MergedDictionaries.Add(document);
+            return dictionary;
+        }
+
+        static ResourceDictionary Loaded(string document) =>
+            (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/" + document);
+
+        var sourced = Dictionary(
+            """
+            <ResourceDictionary.MergedDictionaries>
+              <ResourceDictionary Source="/Fixtures;Fixtures/Palette.xaml" />
+              <ResourceDictionary Source="/Fixtures;Fixtures/Values.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            """
+        );
+
+        await Assert
+            .That(
+                XamlParity
+                    .Compare(
+                        "Same",
+                        sourced,
+                        Merging(Loaded("Palette.xaml"), Loaded("Values.xaml"))
+                    )
+                    ?.ToString()
+            )
+            .IsNull();
+
+        await Assert
+            .That(
+                XamlParity.Compare(
+                    "Swapped",
+                    sourced,
+                    Merging(Loaded("Values.xaml"), Loaded("Palette.xaml"))
+                )
+            )
+            .IsNotNull();
+
+        var repainted = Dictionary(
+            """
+            <SolidColorBrush x:Key="Accent" Color="Green" />
+            <SolidColorBrush x:Key="Muted" Color="Green" />
+            <Thickness x:Key="Pad">0</Thickness>
+            """
+        );
+
+        await Assert
+            .That(
+                XamlParity.Compare("Repainted", sourced, Merging(repainted, Loaded("Values.xaml")))
+            )
+            .IsNotNull();
     }
 
     [Test]
@@ -234,11 +335,11 @@ public sealed class EquivalenceTests
     }
 
     [Test]
-    public async Task A_tree_deeper_than_the_walk_is_reported()
+    public async Task A_deep_tree_is_compared_to_its_leaves()
     {
         Live();
 
-        static Border Nested(int depth)
+        static Border Nested(int depth, float leaf)
         {
             var root = new Border();
             var at = root;
@@ -249,10 +350,14 @@ public sealed class EquivalenceTests
                 at = next;
             }
 
+            at.Width = leaf;
             return root;
         }
 
-        await Assert.That(XamlParity.Compare("Nested", Nested(40), Nested(40))).IsNotNull();
+        await Assert
+            .That(XamlParity.Compare("Nested", Nested(100, 1), Nested(100, 1))?.ToString())
+            .IsNull();
+        await Assert.That(XamlParity.Compare("Nested", Nested(100, 1), Nested(100, 2))).IsNotNull();
     }
 
     static ResourceDictionary Dictionary(string entries) =>
