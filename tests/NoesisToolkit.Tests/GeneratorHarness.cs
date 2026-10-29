@@ -1,7 +1,5 @@
 using System.Collections.Immutable;
 using System.Linq;
-using System.Reflection;
-using System.Runtime.Loader;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -29,36 +27,21 @@ sealed record GeneratorRun(
 
 static class GeneratorHarness
 {
-    // Its own assembly, not a syntax tree: the implicit-style key depends on the declaring assembly.
-    static readonly CSharpCompilation StubCompilation = BuildStub();
+    static readonly string[] ReferencePaths = File.ReadAllLines(
+        Path.Combine(AppContext.BaseDirectory, "harness.references")
+    );
 
-    public static readonly MetadataReference NoesisReference =
-        StubCompilation.ToMetadataReference();
+    public static readonly MetadataReference[] Framework = ReferencePaths
+        .Where(p => Path.GetFileName(p) is not ("Noesis.GUI.dll" or "NoesisToolkit.Mvvm.dll"))
+        .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p))
+        .ToArray();
 
-    static CSharpCompilation BuildStub()
-    {
-        var compilation = CSharpCompilation.Create(
-            "Noesis.GUI",
-            [CSharpSyntaxTree.ParseText(Embedded("NoesisStub.cs.txt"), Parse)],
-            Basic.Reference.Assemblies.Net80.References.All,
-            new CSharpCompilationOptions(
-                OutputKind.DynamicallyLinkedLibrary,
-                nullableContextOptions: NullableContextOptions.Enable
-            )
-        );
+    public static readonly MetadataReference NoesisReference = Only("Noesis.GUI.dll");
 
-        var errors = compilation
-            .GetDiagnostics()
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .ToArray();
-        if (errors.Length > 0)
-            throw new InvalidOperationException(
-                "NoesisStub.cs.txt does not compile: "
-                    + string.Join("; ", errors.Select(d => d.ToString()))
-            );
+    public static readonly MetadataReference MvvmReference = Only("NoesisToolkit.Mvvm.dll");
 
-        return compilation;
-    }
+    static MetadataReference Only(string file) =>
+        MetadataReference.CreateFromFile(ReferencePaths.Single(p => Path.GetFileName(p) == file));
 
     static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
 
@@ -70,7 +53,7 @@ static class GeneratorHarness
         var compilation = CSharpCompilation.Create(
             assemblyName,
             [CSharpSyntaxTree.ParseText(source, Parse)],
-            [.. Basic.Reference.Assemblies.Net80.References.All, NoesisReference],
+            [.. Framework, NoesisReference],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
 
@@ -87,13 +70,17 @@ static class GeneratorHarness
         string assemblyName,
         IEnumerable<SyntaxTree> trees,
         bool referenceNoesis = true,
+        bool referenceMvvm = false,
         IEnumerable<MetadataReference>? extraReferences = null,
         OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
     )
     {
-        List<MetadataReference> references = [.. Basic.Reference.Assemblies.Net80.References.All];
+        List<MetadataReference> references = [.. Framework];
         if (referenceNoesis)
             references.Add(NoesisReference);
+
+        if (referenceMvvm)
+            references.Add(MvvmReference);
 
         references.AddRange(extraReferences ?? []);
 
@@ -123,8 +110,8 @@ static class GeneratorHarness
             .ToImmutableArray();
 
     /// <summary>
-    /// Compiles the stub Noesis surface plus <paramref name="extraSources"/>, runs the generator over
-    /// the named fixtures, then compiles the result: emitted C# that does not bind is a test failure.
+    /// Compiles <paramref name="extraSources"/> against Noesis.GUI, runs the generator over the named
+    /// fixtures, then compiles the result: emitted C# that does not bind is a test failure.
     /// </summary>
     public static GeneratorRun Run(
         IIncrementalGenerator generator,
@@ -134,7 +121,8 @@ static class GeneratorHarness
         string assemblyName = "SampleApp",
         bool referenceNoesis = true,
         IEnumerable<MetadataReference>? extraReferences = null,
-        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
+        bool referenceMvvm = false
     ) =>
         Run(
             [generator],
@@ -144,7 +132,8 @@ static class GeneratorHarness
             assemblyName,
             referenceNoesis,
             extraReferences,
-            outputKind
+            outputKind,
+            referenceMvvm
         );
 
     /// <summary>
@@ -159,7 +148,8 @@ static class GeneratorHarness
         string assemblyName = "SampleApp",
         bool referenceNoesis = true,
         IEnumerable<MetadataReference>? extraReferences = null,
-        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary,
+        bool referenceMvvm = false
     )
     {
         var parse = Parse;
@@ -168,6 +158,7 @@ static class GeneratorHarness
             assemblyName,
             trees,
             referenceNoesis,
+            referenceMvvm,
             extraReferences,
             outputKind
         );
@@ -200,11 +191,12 @@ static class GeneratorHarness
         IEnumerable<string> fixtures,
         IEnumerable<string>? extraSources,
         IDictionary<string, string>? buildProperties,
-        IReadOnlyCollection<string> trackedSteps
+        IReadOnlyCollection<string> trackedSteps,
+        bool referenceMvvm = false
     )
     {
         var parse = Parse;
-        var compilation = Compile("SampleApp", Trees(extraSources));
+        var compilation = Compile("SampleApp", Trees(extraSources), referenceMvvm: referenceMvvm);
         var additional = Additional(fixtures);
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
@@ -233,62 +225,6 @@ static class GeneratorHarness
             .SelectMany(s => s.Outputs)
             .Select(o => o.Reason)
             .ToList();
-    }
-
-    /// <summary>
-    /// Emits the fixture compilation plus its generated sources and loads the result, so a test can
-    /// call the generated code. The stub's ResourceDictionary is a working in-memory implementation,
-    /// which is what makes the resource-timing invariants observable.
-    /// </summary>
-    public static Assembly Execute(
-        IIncrementalGenerator generator,
-        IEnumerable<string> fixtures,
-        IDictionary<string, string>? buildProperties = null
-    )
-    {
-        var parse = Parse;
-        var compilation = Compile("SampleApp", []);
-        var additional = Additional(fixtures);
-
-        CSharpGeneratorDriver
-            .Create([generator.AsSourceGenerator()], parseOptions: parse)
-            .AddAdditionalTexts(additional)
-            .WithUpdatedAnalyzerConfigOptions(new OptionsProvider(buildProperties))
-            .RunGeneratorsAndUpdateCompilation(
-                compilation,
-                out var output,
-                out var generatorDiagnostics
-            );
-
-        using var stubStream = new MemoryStream();
-        Succeeded(StubCompilation.Emit(stubStream), "the Noesis stub", []);
-        using var stream = new MemoryStream();
-        Succeeded(output.Emit(stream), "the generated assembly", generatorDiagnostics);
-
-        var context = new AssemblyLoadContext("fixtures", isCollectible: true);
-        stubStream.Position = 0;
-        context.LoadFromStream(stubStream);
-        stream.Position = 0;
-        return context.LoadFromStream(stream);
-    }
-
-    static void Succeeded(
-        Microsoft.CodeAnalysis.Emit.EmitResult result,
-        string what,
-        ImmutableArray<Diagnostic> generatorDiagnostics
-    )
-    {
-        if (result.Success)
-            return;
-
-        var reported = generatorDiagnostics
-            .Concat(result.Diagnostics)
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .Select(d => d.ToString());
-
-        throw new InvalidOperationException(
-            $"could not emit {what}: " + string.Join("; ", reported)
-        );
     }
 
     static string Embedded(string name) =>

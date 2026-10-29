@@ -113,7 +113,7 @@
     <TextBlock x:Name="Outer" DataContext="{Binding Def}" />
     <TextBlock Text="{Binding ElementName=Sibling, Path=DataContext.Family}" />
     <TextBlock Text="{Binding ElementName=Sibling, Path=Text}" />
-    <TextBlock Text="{Binding ElementName=Sibling, Path=Name}" />
+    <TextBlock Text="{Binding ElementName=Sibling, Path=IsLoaded}" />
     <TextBlock Text="{Binding Def.Family, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
     <TextBlock Text="{Binding Def.Family, Mode=OneTime}" />
     <TextBlock Text="{Binding ReadOnlyName, Mode=TwoWay}" />

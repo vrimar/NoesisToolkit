@@ -82,7 +82,7 @@ public class XamlElementTypeAnalyzerTests
                         $"namespace Sample.Copies {{ {accessibility} class Badge {{ }} }}"
                     ),
                 ],
-                Basic.Reference.Assemblies.Net80.References.All,
+                GeneratorHarness.Framework,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
             )
             .ToMetadataReference();

@@ -52,7 +52,7 @@ public class OverrideRootsTests
         var source = Run(Controls).Source("NoesisOverrideRoots");
 
         await Assert.That(source).DoesNotContain("global::Sample.SpriteRenderer");
-        await Assert.That(source).DoesNotContain("OnPropertyChanged");
+        await Assert.That(source).DoesNotContain("CreateCPtr");
     }
 
     [Test]
@@ -169,7 +169,8 @@ public class OverrideRootsTests
 
                 public override void OnApplyTemplate() { }
 
-                protected override void OnPropertyChanged(Noesis.DependencyPropertyChangedEventArgs args) { }
+                protected override nint CreateCPtr(System.Type type, out bool registerExtend) =>
+                    base.CreateCPtr(type, out registerExtend);
             }
 
             public class RowViewModel

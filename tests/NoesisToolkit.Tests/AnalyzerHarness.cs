@@ -22,7 +22,7 @@ static class AnalyzerHarness
         var parse = new CSharpParseOptions(LanguageVersion.Preview);
         var trees = (sources ?? []).Select(s => CSharpSyntaxTree.ParseText(s, parse));
 
-        List<MetadataReference> references = [.. Basic.Reference.Assemblies.Net80.References.All];
+        List<MetadataReference> references = [.. GeneratorHarness.Framework];
         references.Add(GeneratorHarness.NoesisReference);
         references.AddRange(libraries ?? []);
 

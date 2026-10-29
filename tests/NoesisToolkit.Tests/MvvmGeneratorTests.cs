@@ -10,7 +10,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, PropertyOwner]
+            [PropertyOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -27,7 +28,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, CommandOwner]
+            [CommandOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -42,7 +44,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, CommandOwner]
+            [CommandOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -57,7 +60,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, SealedOwner]
+            [SealedOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.GeneratorDiagnostics.Select(d => d.Id)).Contains("NTK3101");
@@ -69,7 +73,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, RecordCommandOwner]
+            [RecordCommandOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -84,7 +89,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NestedPropertyOwner]
+            [NestedPropertyOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -99,7 +105,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, InternalCommandOwner]
+            [InternalCommandOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -114,7 +121,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, NestedCommandOwner]
+            [NestedCommandOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -128,7 +136,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, AttachedOwner]
+            [AttachedOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -149,7 +158,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, LongOwner]
+            [LongOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -170,7 +180,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, MetadataOwner]
+            [MetadataOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -185,7 +196,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, HandleCallbackOwner]
+            [HandleCallbackOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -202,7 +214,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, AttachedOwner, HandleCallbackOwner]
+            [AttachedOwner, HandleCallbackOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -229,7 +242,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, AttachedOwner]
+            [AttachedOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -246,7 +260,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NullCallbackOwner]
+            [NullCallbackOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -263,7 +278,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NamedArgOwner]
+            [NamedArgOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -279,7 +295,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NonPartialPropertyOwner]
+            [NonPartialPropertyOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.GeneratorDiagnostics.Select(d => d.Id)).Contains("NTK3001");
@@ -291,7 +308,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, GridLengthOwner]
+            [GridLengthOwner],
+            referenceMvvm: true
         );
 
         var misrouted = run.GeneratorDiagnostics.Where(d => d.Id == "NTK3002").ToList();
@@ -305,7 +323,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, MatrixOwner]
+            [MatrixOwner],
+            referenceMvvm: true
         );
 
         var ids = run.GeneratorDiagnostics.Select(d => d.Id).ToList();
@@ -319,7 +338,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, ImplicitlyPrivateOwner]
+            [ImplicitlyPrivateOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -331,7 +351,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, InheritanceModifiersOwner]
+            [InheritanceModifiersOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -343,7 +364,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, RedeclaringOwner]
+            [RedeclaringOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -356,7 +378,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, RedeclaringAttachedOwner]
+            [RedeclaringAttachedOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -371,7 +394,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, ImplementedPropertyOwner]
+            [ImplementedPropertyOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors.Select(d => d.Id)).IsEquivalentTo(["NTK3005", "NTK3005"]);
@@ -383,7 +407,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             [new DependencyPropertyGenerator(), new DelegateCommandGenerator()],
             [],
-            [Stubs.Mvvm, LookalikeOwners]
+            [LookalikeOwners],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -395,7 +420,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NonPartialPropertyMember]
+            [NonPartialPropertyMember],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors.Select(d => d.Id)).IsEquivalentTo(["NTK3004"]);
@@ -407,7 +433,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, GenericOuterOwners]
+            [GenericOuterOwners],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -419,7 +446,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DelegateCommandGenerator(),
             [],
-            [Stubs.Mvvm, InternalParameterOwner]
+            [InternalParameterOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -431,7 +459,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             [new DependencyPropertyGenerator(), new DelegateCommandGenerator()],
             [],
-            [Stubs.Mvvm, KeywordOwner]
+            [KeywordOwner],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -444,7 +473,8 @@ public class MvvmGeneratorTests
         var run = GeneratorHarness.Run(
             new DependencyPropertyGenerator(),
             [],
-            [Stubs.Mvvm, NonPartialOuterOwner]
+            [NonPartialOuterOwner],
+            referenceMvvm: true
         );
 
         var span = run.GeneratorDiagnostics.Single(d => d.Id == "NTK3001").Location.SourceSpan;

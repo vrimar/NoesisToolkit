@@ -23,11 +23,11 @@ public class NoesisEventLeakAnalyzerTests
 
                     {{body}}
 
-                    void OnClick(object sender, System.EventArgs e) { }
+                    void OnClick(object sender, global::Noesis.RoutedEventArgs e) { }
 
-                    void OnOther(object sender, System.EventArgs e) { }
+                    void OnOther(object sender, global::Noesis.RoutedEventArgs e) { }
 
-                    static void OnStatic(object sender, System.EventArgs e) { }
+                    static void OnStatic(object sender, global::Noesis.RoutedEventArgs e) { }
                 }
                 """,
             ]
@@ -46,11 +46,11 @@ public class NoesisEventLeakAnalyzerTests
     )]
     [Arguments("void Hook() { _button.Click += OnStatic; }", 0)]
     [Arguments(
-        "static readonly System.EventHandler Held = OnStatic; void Hook() { _button.Click += Held; }",
+        "static readonly global::Noesis.RoutedEventHandler Held = OnStatic; void Hook() { _button.Click += Held; }",
         0
     )]
     [Arguments(
-        "static System.EventHandler Held = OnStatic; void Hook() { Held = OnClick; _button.Click += Held; }",
+        "static global::Noesis.RoutedEventHandler Held = OnStatic; void Hook() { Held = OnClick; _button.Click += Held; }",
         1
     )]
     [Arguments("void Hook() { _button.Click += (s, e) => _count++; }", 1)]
@@ -65,7 +65,7 @@ public class NoesisEventLeakAnalyzerTests
         1
     )]
     [Arguments(
-        "sealed class Helper { public void OnClick(object s, System.EventArgs e) { } } readonly Helper _helper = new Helper(); void Hook() { _button.Click += _helper.OnClick; }",
+        "sealed class Helper { public void OnClick(object s, global::Noesis.RoutedEventArgs e) { } } readonly Helper _helper = new Helper(); void Hook() { _button.Click += _helper.OnClick; }",
         0
     )]
     public async Task A_subscription_is_reported_only_when_it_pins_the_element(
@@ -95,7 +95,10 @@ public class NoesisEventLeakAnalyzerTests
     )]
     [Arguments("void Hook() { _button.Click += OnClick; _button.Click -= OnClick; }", 0)]
     // A handler behind a parameter may be static or not, so its guard still has to be called out.
-    [Arguments("void Hook(System.EventHandler h) { _button.Click -= h; _button.Click += h; }", 1)]
+    [Arguments(
+        "void Hook(global::Noesis.RoutedEventHandler h) { _button.Click -= h; _button.Click += h; }",
+        1
+    )]
     public async Task An_unsubscribe_the_same_flow_re_attaches_is_not_a_teardown(
         string body,
         int expected
@@ -108,18 +111,21 @@ public class NoesisEventLeakAnalyzerTests
 
     [Test]
     [Arguments(
-        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.AddHandler(global::Noesis.Thumb.DragStartedEvent, (System.EventHandler)OnClick); }",
+        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.AddHandler(global::Noesis.Thumb.DragStartedEvent, (global::Noesis.DragStartedEventHandler)OnClick); }",
         1
     )]
     [Arguments(
-        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.DragStarted += OnClick; } void Drop() { _thumb.RemoveHandler(global::Noesis.Thumb.DragStartedEvent, (System.EventHandler)OnClick); }",
+        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.DragStarted += OnClick; } void Drop() { _thumb.RemoveHandler(global::Noesis.Thumb.DragStartedEvent, (global::Noesis.DragStartedEventHandler)OnClick); }",
         0
     )]
     [Arguments(
-        "public static readonly global::Noesis.RoutedEvent PingEvent = new global::Noesis.RoutedEvent(); public event System.EventHandler Ping { add => AddHandler(PingEvent, value); remove => RemoveHandler(PingEvent, value); } void Hook() { AddHandler(PingEvent, (System.EventHandler)OnClick); } void Drop() { Ping -= OnClick; }",
+        "public static readonly global::Noesis.RoutedEvent PingEvent = global::Noesis.EventManager.RegisterRoutedEvent(\"Ping\", global::Noesis.RoutingStrategy.Bubble, typeof(global::Noesis.RoutedEventHandler), typeof(Panel)); public event global::Noesis.RoutedEventHandler Ping { add => AddHandler(PingEvent, value); remove => RemoveHandler(PingEvent, value); } void Hook() { AddHandler(PingEvent, (global::Noesis.RoutedEventHandler)OnClick); } void Drop() { Ping -= OnClick; }",
         0
     )]
-    [Arguments("public event System.EventHandler? Plain; void Hook() { Plain += OnClick; }", 0)]
+    [Arguments(
+        "public event System.EventHandler? Plain; void OnPlain(object? s, System.EventArgs e) { } void Hook() { Plain += OnPlain; }",
+        0
+    )]
     public async Task A_routed_handler_is_one_subscription_whichever_form_adds_or_removes_it(
         string body,
         int expected
@@ -147,7 +153,7 @@ public class NoesisEventLeakAnalyzerTests
 
                     void Hook() { _button.Click -= OnClick; _button.Click += OnClick; }
 
-                    void OnClick(object sender, System.EventArgs e) { }
+                    void OnClick(object sender, global::Noesis.RoutedEventArgs e) { }
                 }
                 """,
                 """

@@ -25,9 +25,10 @@ public class IncrementalityTests
             GeneratorHarness.RunAfterUnrelatedEdit(
                 new DelegateCommandGenerator(),
                 [],
-                [Stubs.Mvvm, CommandOwner],
+                [CommandOwner],
                 null,
-                [DelegateCommandGenerator.CommandsStep]
+                [DelegateCommandGenerator.CommandsStep],
+                referenceMvvm: true
             )
         );
     }
@@ -39,9 +40,10 @@ public class IncrementalityTests
             GeneratorHarness.RunAfterUnrelatedEdit(
                 new DependencyPropertyGenerator(),
                 [],
-                [Stubs.Mvvm, PropertyOwner],
+                [PropertyOwner],
                 null,
-                [DependencyPropertyGenerator.PropertiesStep]
+                [DependencyPropertyGenerator.PropertiesStep],
+                referenceMvvm: true
             )
         );
     }

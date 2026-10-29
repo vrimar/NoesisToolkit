@@ -5,11 +5,11 @@
     <IsPackable>false</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <PackageReference Include="Basic.Reference.Assemblies.Net80" />
     <!-- The driver hosts generators built against 4.8; running them on a newer Roslyn is the point. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="5.6.0" />
   </ItemGroup>
@@ -21,12 +21,30 @@
     </ProjectReference>
     <ProjectReference Include="../../src/NoesisToolkit.Analyzers/NoesisToolkit.Analyzers.csproj" />
     <ProjectReference Include="../../src/NoesisToolkit.Mvvm.Generators/NoesisToolkit.Mvvm.Generators.csproj" />
+    <ProjectReference Include="../../src/NoesisToolkit.Mvvm/NoesisToolkit.Mvvm.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="Fixtures/**/*.xaml" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="NoesisStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="MvvmStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="SampleStub.cs.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <Target Name="WriteHarnessReferences" AfterTargets="FindReferenceAssembliesForReferences">
+    <ItemGroup>
+      <_HarnessReference
+        Include="@(ReferencePathWithRefAssemblies)"
+        Condition="'%(ReferencePathWithRefAssemblies.FrameworkReferenceName)' == 'Microsoft.NETCore.App' or '%(ReferencePathWithRefAssemblies.NuGetPackageId)' == 'Noesis.GUI' or '%(ReferencePathWithRefAssemblies.Filename)' == 'NoesisToolkit.Mvvm'"
+      />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)" />
+    <WriteLinesToFile
+      File="$(OutDir)harness.references"
+      Lines="@(_HarnessReference->'%(FullPath)')"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+    />
+    <ItemGroup>
+      <FileWrites Include="$(OutDir)harness.references" />
+    </ItemGroup>
+  </Target>
 </Project>

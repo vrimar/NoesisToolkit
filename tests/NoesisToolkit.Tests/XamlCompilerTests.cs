@@ -28,14 +28,16 @@ public partial class XamlCompilerTests
     static GeneratorRun Run(
         IEnumerable<string> fixtures,
         IEnumerable<string>? sources = null,
-        IDictionary<string, string>? properties = null
+        IDictionary<string, string>? properties = null,
+        bool referenceMvvm = false
     ) =>
         GeneratorHarness.Run(
             new XamlCompileGenerator(),
             fixtures,
             sources,
             properties
-                ?? new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+                ?? new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            referenceMvvm: referenceMvvm
         );
 
     [Test]
@@ -123,7 +125,6 @@ public partial class XamlCompilerTests
             [new XamlCompileGenerator(), new DependencyPropertyGenerator()],
             ["CbTwoWayDefault.xaml"],
             [
-                Stubs.Mvvm,
                 Host("KnobHost"),
                 """
                 namespace Sample.Ui;
@@ -138,7 +139,8 @@ public partial class XamlCompilerTests
                 }
                 """,
             ],
-            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -154,7 +156,6 @@ public partial class XamlCompilerTests
         var run = Run(
             ["RegisteredTwoWay.xaml"],
             [
-                Stubs.Mvvm,
                 Host("RegisteredTwoWayHost"),
                 """
                 namespace Sample.Ui;
@@ -181,7 +182,8 @@ public partial class XamlCompilerTests
                     }
                 }
                 """,
-            ]
+            ],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -194,7 +196,6 @@ public partial class XamlCompilerTests
         var run = Run(
             ["RegisteredTwoWay.xaml"],
             [
-                Stubs.Mvvm,
                 Host("RegisteredTwoWayHost"),
                 """
                 namespace Sample.Ui;
@@ -224,7 +225,8 @@ public partial class XamlCompilerTests
                     }
                 }
                 """,
-            ]
+            ],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -503,7 +505,8 @@ public partial class XamlCompilerTests
     {
         var run = Run(
             ["MultiBindingKnobs.xaml"],
-            [Host("MultiBindingKnobsHost"), SampleUi, Stubs.Mvvm]
+            [Host("MultiBindingKnobsHost"), SampleUi],
+            referenceMvvm: true
         );
 
         var messages = run.GeneratorDiagnostics.Select(d => d.GetMessage()).ToList();
@@ -523,7 +526,7 @@ public partial class XamlCompilerTests
     }
 
     static readonly Lazy<GeneratorRun> SpellingRun = new(() =>
-        Run(["CbSpelling.xaml"], [Host("CbSpellingHost"), SampleUi, Stubs.Mvvm])
+        Run(["CbSpelling.xaml"], [Host("CbSpellingHost"), SampleUi], referenceMvvm: true)
     );
 
     [Test]
@@ -564,7 +567,7 @@ public partial class XamlCompilerTests
         string fixture
     )
     {
-        var run = Run([$"{fixture}.xaml"], [Host($"{fixture}Host"), SampleUi, Stubs.Mvvm]);
+        var run = Run([$"{fixture}.xaml"], [Host($"{fixture}Host"), SampleUi], referenceMvvm: true);
 
         var messages = run
             .GeneratorDiagnostics.Where(d => d.Id == "NTK1001")
@@ -633,7 +636,7 @@ public partial class XamlCompilerTests
         var source = run.AllSources;
 
         // Only a dependency property of an element can be watched.
-        await Assert.That(source).Contains("new global::Noesis.Binding(\"Name\")");
+        await Assert.That(source).Contains("new global::Noesis.Binding(\"IsLoaded\")");
 
         // Nothing in the document is a Border, so the walk has no element to resolve against.
         await Assert
@@ -666,8 +669,7 @@ public partial class XamlCompilerTests
         await Assert
             .That(source)
             .Contains(
-                "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Of<global::Sample.Ui.ItemViewModel, bool, bool>("
-                    + "static __o => __o.Ticked, static __t => __t, static (__o, __w) => __o.Ticked = __w, true)"
+                "Write = (__o, __v) => ((global::Sample.Ui.ItemViewModel)__o).Ticked = __v is bool __w"
             );
     }
 
@@ -688,8 +690,9 @@ public partial class XamlCompilerTests
         var run = GeneratorHarness.Run(
             [new XamlCompileGenerator(), new DependencyPropertyGenerator()],
             ["GeneratedProperty.xaml"],
-            [Host("GeneratedPropertyHost"), BadgeControl, SampleUi, Stubs.Mvvm],
-            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+            [Host("GeneratedPropertyHost"), BadgeControl, SampleUi],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -706,8 +709,9 @@ public partial class XamlCompilerTests
         GeneratorHarness.Run(
             [new XamlCompileGenerator(), new DependencyPropertyGenerator()],
             ["Misrouted.xaml"],
-            [Host("MisroutedHost"), GutterControl, SampleUi, Stubs.Mvvm],
-            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" }
+            [Host("MisroutedHost"), GutterControl, SampleUi],
+            new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
+            referenceMvvm: true
         )
     );
 
@@ -925,9 +929,7 @@ public partial class XamlCompilerTests
         await Assert.That(LeftNativeAt(33)).IsEmpty();
         await Assert
             .That(LeftNativeAt(35))
-            .IsEquivalentTo([
-                "NativeSites.xaml :: binding stays native: target-is-not-a-dependency-property",
-            ]);
+            .IsEquivalentTo(["NativeSites.xaml :: binding stays native: target-not-an-element"]);
     }
 
     [Test]
@@ -1095,11 +1097,11 @@ public partial class XamlCompilerTests
                 {
                     public TrExtension(string key) { }
 
-                    public override object? ProvideValue(object? provider) => null;
+                    public override object? ProvideValue(System.IServiceProvider provider) => null;
                 }
                 """,
-                Stubs.Mvvm,
-            ]
+            ],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -1124,11 +1126,11 @@ public partial class XamlCompilerTests
                 {
                     public ThemedExtension(string key) { }
 
-                    public override object? ProvideValue(object? provider) => null;
+                    public override object? ProvideValue(System.IServiceProvider provider) => null;
                 }
                 """,
-                Stubs.Mvvm,
-            ]
+            ],
+            referenceMvvm: true
         );
 
         await Assert.That(run.Errors).IsEmpty();
@@ -1294,7 +1296,7 @@ public partial class XamlCompilerTests
                 {
                     public HandlerTheme() => InitializeComponent();
 
-                    void OnClick(object sender, System.EventArgs e) { }
+                    void OnClick(object sender, global::Noesis.RoutedEventArgs e) { }
                 }
                 """,
             ]
@@ -1344,7 +1346,7 @@ public partial class XamlCompilerTests
 
         await Assert
             .That(run.GeneratorDiagnostics.Select(d => d.GetMessage()))
-            .Contains(m => m.Contains("<Ellipse Click=\"OnGo\">") && m.Contains("cannot wire it"));
+            .Contains(m => m.Contains("<Widget Click=\"OnGo\">") && m.Contains("cannot wire it"));
     }
 
     [Test]
@@ -1820,7 +1822,8 @@ public partial class XamlCompilerTests
     {
         var run = Run(
             ["RepeatedRefusals.xaml"],
-            [Host("RepeatedRefusalsHost"), SampleUi, Stubs.Mvvm]
+            [Host("RepeatedRefusalsHost"), SampleUi],
+            referenceMvvm: true
         );
 
         var refused = run
@@ -1843,7 +1846,7 @@ public partial class XamlCompilerTests
                 {
                     public StaticLoaderHost() => InitializeComponent();
 
-                    void OnGo(object sender, System.EventArgs e) { }
+                    void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
                 }
                 """,
                 StaticOwners,
@@ -1916,7 +1919,7 @@ public partial class XamlCompilerTests
         {
             public UnresolvedHost() => InitializeComponent();
 
-            void OnGo(object sender, System.EventArgs e) { }
+            void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
         }
         """;
 
@@ -2023,11 +2026,11 @@ public partial class XamlCompilerTests
     }
 
     static readonly Lazy<GeneratorRun> CompiledBindingsRun = new(() =>
-        Run(["CompiledBindings.xaml"], [Host("CompiledHost"), SampleUi, Stubs.Mvvm])
+        Run(["CompiledBindings.xaml"], [Host("CompiledHost"), SampleUi], referenceMvvm: true)
     );
 
     static readonly Lazy<GeneratorRun> NativeSitesRun = new(() =>
-        Run(["NativeSites.xaml"], [Host("NativeSitesHost"), SampleUi, Stubs.Mvvm])
+        Run(["NativeSites.xaml"], [Host("NativeSitesHost"), SampleUi], referenceMvvm: true)
     );
 
     static readonly Lazy<GeneratorRun> ThemeRun = new(() => Run(["Theme.xaml"]));
@@ -2117,7 +2120,7 @@ public partial class XamlCompilerTests
         {
             public SharedHandler() => InitializeComponent();
 
-            void OnGo(object sender, System.EventArgs e) { }
+            void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
         }
         """;
 
@@ -2128,7 +2131,7 @@ public partial class XamlCompilerTests
         {
             public WithHandlers() => InitializeComponent();
 
-            void OnGo(object sender, System.EventArgs e) { }
+            void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
         }
         """;
 

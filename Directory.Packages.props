@@ -13,6 +13,5 @@
 
   <ItemGroup>
     <PackageVersion Include="TUnit" Version="0.25.21" />
-    <PackageVersion Include="Basic.Reference.Assemblies.Net80" Version="1.7.9" />
   </ItemGroup>
 </Project>

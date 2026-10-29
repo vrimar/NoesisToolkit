@@ -5,6 +5,6 @@
 >
   <StackPanel>
     <Button Click="OnGo" />
-    <Ellipse Click="OnGo" />
+    <Widget Click="OnGo" />
   </StackPanel>
 </UserControl>

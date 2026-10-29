@@ -54,10 +54,11 @@ public class XamlTrimRootsTests
         return GeneratorHarness.Run(
             new XamlCompileGenerator(),
             [fixture],
-            [Model, Stubs.Mvvm, .. sources],
+            [Model, .. sources],
             properties,
             extraReferences: [Other.Value],
-            outputKind: outputKind
+            outputKind: outputKind,
+            referenceMvvm: true
         );
     }
 
@@ -369,7 +370,7 @@ public class XamlTrimRootsTests
             {
                 public ConvertedItemsHost() => InitializeComponent();
 
-                void OnGo(object sender, System.EventArgs e) { }
+                void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
             }
 
             public class Volume
@@ -756,9 +757,10 @@ public class XamlTrimRootsTests
         var run = GeneratorHarness.Run(
             new XamlCompileGenerator(),
             ["RootsOverrides.xaml"],
-            [Model, Stubs.Mvvm, Shapes, Host("OverridesHost")],
+            [Model, Shapes, Host("OverridesHost")],
             new Dictionary<string, string> { ["build_property.ProjectDir"] = "/repo/App" },
-            extraReferences: [Lib.Value]
+            extraReferences: [Lib.Value],
+            referenceMvvm: true
         );
 
         await Assert.That(Text(run.Errors)).IsEmpty();
@@ -838,7 +840,7 @@ public class XamlTrimRootsTests
         {
             public ContentHost() => InitializeComponent();
 
-            void OnGo(object sender, System.EventArgs e) { }
+            void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
         }
         """;
 
@@ -956,7 +958,7 @@ public class XamlTrimRootsTests
             {
                 public string Format { get; set; } = "";
 
-                public override object? ProvideValue(object? provider) => null;
+                public override object? ProvideValue(System.IServiceProvider provider) => null;
             }
         }
         """;
@@ -1014,7 +1016,7 @@ public class XamlTrimRootsTests
         {
             public LoadedHost() => InitializeComponent();
 
-            void OnGo(object sender, System.EventArgs e) { }
+            void OnGo(object sender, global::Noesis.RoutedEventArgs e) { }
         }
         """;
 
