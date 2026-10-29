@@ -817,9 +817,7 @@ public partial class XamlCompilerTests
             ]);
         await Assert
             .That(LeftNativeAt(34))
-            .IsEquivalentTo([
-                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
-            ]);
+            .IsEquivalentTo(["NativeSites.xaml :: binding stays native: display-member-binding"]);
     }
 
     [Test]
@@ -839,7 +837,7 @@ public partial class XamlCompilerTests
         await Assert
             .That(LeftNativeAt(55))
             .IsEquivalentTo([
-                "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
+                "NativeSites.xaml :: binding stays native: display-member-binding",
                 "NativeSites.xaml :: binding stays native: element-left-to-the-parser",
             ]);
     }
@@ -906,6 +904,36 @@ public partial class XamlCompilerTests
         await Assert
             .That(messages.Count(m => m.Contains(":: trigger stays native: ")))
             .IsEqualTo(Counted(survey, @"// triggers: compiled \d+   fallback (\d+)"));
+    }
+
+    [Test]
+    public async Task A_binding_handed_to_the_parser_counts_as_a_survey_fallback()
+    {
+        var run = NativeSitesRun.Value;
+        var survey = run.Source("XamlCompileSurvey");
+        var bindings = run
+            .GeneratorDiagnostics.Where(d => d.Id == "NTK1007")
+            .Count(d => d.GetMessage().Contains(":: binding stays native: "));
+
+        await Assert
+            .That(Counted(survey, @"// bindings: compiled \d+   fallback (\d+)"))
+            .IsEqualTo(bindings);
+        await Assert.That(survey).Contains("Author    display-member-binding");
+    }
+
+    [Test]
+    public async Task A_DisplayMemberBinding_is_a_warning_where_it_is_written()
+    {
+        var cells = NativeSitesRun
+            .Value.GeneratorDiagnostics.Where(d => d.Id == "NTK1010")
+            .ToList();
+
+        await Assert
+            .That(cells.Select(d => d.Location.GetLineSpan().StartLinePosition.Line))
+            .IsEquivalentTo([34, 55]);
+        await Assert
+            .That(cells.Select(d => d.Severity).Distinct())
+            .IsEquivalentTo([DiagnosticSeverity.Warning]);
     }
 
     static int Counted(string survey, string pattern) =>

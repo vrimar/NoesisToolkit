@@ -293,6 +293,7 @@ sealed partial class XamlEmitter(
         readonly int _errors;
         readonly int _dead;
         readonly int _native;
+        readonly int _cells;
         readonly int _walked;
         readonly int _heldBack;
         readonly string? _refusal;
@@ -305,6 +306,7 @@ sealed partial class XamlEmitter(
             _errors = emitter.Errors.Count;
             _dead = emitter.DeadMarkup.Count;
             _native = emitter.LeftNative.Count;
+            _cells = emitter.NativeCells.Count;
             _walked = emitter._walked.Count;
             _heldBack = emitter._heldBack.Count;
             _refusal = emitter._refusal;
@@ -317,6 +319,7 @@ sealed partial class XamlEmitter(
             _emitter.Errors.RemoveRange(_errors, _emitter.Errors.Count - _errors);
             _emitter.DeadMarkup.RemoveRange(_dead, _emitter.DeadMarkup.Count - _dead);
             _emitter.LeftNative.RemoveRange(_native, _emitter.LeftNative.Count - _native);
+            _emitter.NativeCells.RemoveRange(_cells, _emitter.NativeCells.Count - _cells);
             _emitter._walked.Truncate(_walked);
             _emitter._heldBack.Truncate(_heldBack);
             _emitter._refusal = _refusal;

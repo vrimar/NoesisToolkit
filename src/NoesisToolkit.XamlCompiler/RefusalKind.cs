@@ -77,6 +77,12 @@ static class Refusals
         ["hop-getter-inaccessible"] = RefusalKind.Boundary,
         ["hop-is-ref-like"] = RefusalKind.Boundary,
 
+        ["element-left-to-the-parser"] = RefusalKind.Boundary,
+        ["setter-left-to-the-parser"] = RefusalKind.Boundary,
+        ["resource-left-to-the-parser"] = RefusalKind.Boundary,
+        ["document-left-to-the-loader"] = RefusalKind.Author,
+        ["display-member-binding"] = RefusalKind.Author,
+
         ["opted-out"] = RefusalKind.Author,
         ["data-context-undeclared"] = RefusalKind.Author,
         ["ancestor-data-context-undeclared"] = RefusalKind.Author,

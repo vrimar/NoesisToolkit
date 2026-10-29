@@ -20,6 +20,8 @@ sealed partial class XamlEmitter
 
     public readonly List<MarkupSite> LeftNative = new List<MarkupSite>();
 
+    public readonly List<MarkupSite> NativeCells = new List<MarkupSite>();
+
     public readonly List<XAttribute> UnresolvedTypes = new List<XAttribute>();
 
     XAttribute? _attribute;
@@ -56,6 +58,8 @@ sealed partial class XamlEmitter
 
     const string AncestorContextUndeclared =
         "reads an ancestor's DataContext whose type is not declared; state it with ntk:AncestorDataType";
+
+    const string DisplayMemberBindingLeftNative = "display-member-binding";
 
     const string RowUndeclared =
         "reads a row whose type is not declared; bind the list's ItemsSource to a typed path, or state the row type with ntk:ItemType on the column";
@@ -871,7 +875,7 @@ sealed partial class XamlEmitter
             if (BindingElementCall(element) is { } call)
             {
                 RootBinding(element, call, SlotAround(element));
-                ReportParsedBinding(element);
+                ReportParsedBinding(element, SlotAround(element));
             }
 
             foreach (var child in element.Elements())
@@ -1048,7 +1052,7 @@ sealed partial class XamlEmitter
         {
             case "Binding":
                 RootBinding(element, call, slot);
-                ReportParsedBinding(element);
+                ReportParsedBinding(element, slot);
                 RootNestedMarkup(element, call);
                 return;
             case "x:Type" or "Type":
@@ -1215,12 +1219,23 @@ sealed partial class XamlEmitter
         return false;
     }
 
-    void ReportParsedBinding(XElement element)
+    void ReportParsedBinding(XElement element, string? slot)
     {
         if (_parsedBy is null || (_attribute is { } attribute && _heldBack.Contains(attribute)))
             return;
 
-        LeftNative.Add(SiteOf(element, $"binding stays native: {_parsedBy}"));
+        var reason = slot == "DisplayMemberBinding" ? DisplayMemberBindingLeftNative : _parsedBy;
+        Tally.Fell(reason);
+        LeftNative.Add(SiteOf(element, $"binding stays native: {reason}"));
+
+        if (reason == DisplayMemberBindingLeftNative)
+            NativeCells.Add(
+                SiteOf(
+                    element,
+                    "a DisplayMemberBinding stays native: the engine reads its path by reflection and "
+                        + "boxes the value for every row it fills; give the column a CellTemplate instead"
+                )
+            );
     }
 
     void ReportParsedStatic(XElement element, MarkupCall call)

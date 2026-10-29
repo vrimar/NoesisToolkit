@@ -202,6 +202,7 @@ property should not also bind it.
 | `Mode=OneTime` or `OneWayToSource`, `UpdateSourceTrigger=Explicit` | gap | not implemented |
 | `FallbackValue`, `TargetNullValue` | gap | not implemented |
 | `RelativeSource PreviousData`, or `AncestorLevel` past 1 | gap | not resolved yet |
+| a `GridViewColumn.DisplayMemberBinding`, raised as `NTK1010` | author | the row presenter applies it to a text block it makes itself; a `CellTemplate` compiles |
 | a path stepping through an open generic | gap | not resolved yet |
 | `Mode=TwoWay` on a path that genuinely has no setter | author | there is nothing to write back to |
 | a `DataTemplate` with no declared `ntk:DataType` | author | falls back until the type is stated |

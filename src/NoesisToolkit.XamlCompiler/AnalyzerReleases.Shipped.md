@@ -52,3 +52,11 @@ NTK1008 | NoesisToolkit | Warning | A name the engine is handed as text does not
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK1009 | NoesisToolkit | Warning | A referenced assembly's resources cannot be chained
+
+## Release 0.7.4
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK1010 | NoesisToolkit | Warning | A list column's DisplayMemberBinding stays native

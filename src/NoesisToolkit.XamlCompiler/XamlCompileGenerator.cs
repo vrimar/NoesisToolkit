@@ -91,6 +91,19 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             + "one to the engine, with the reason, for an audit of what is left."
     );
 
+    static readonly DiagnosticDescriptor NativeCell = new(
+        "NTK1010",
+        "A list column's DisplayMemberBinding stays native",
+        "{0}",
+        "NoesisToolkit",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The row presenter applies a DisplayMemberBinding to a text block it makes "
+            + "itself, so the binding cannot be compiled: the engine reads its path by reflection and "
+            + "boxes the value for every row it fills, again each time a recycling list reuses the "
+            + "row. A CellTemplate is typed off the list's items and compiles."
+    );
+
     // Roslyn reports a throwing generator as a bare exception type, naming no file.
     static readonly DiagnosticDescriptor Crashed = new(
         "NTK1003",
@@ -262,6 +275,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                     LeftNative,
                     native.Location?.ToLocation(),
                     $"{document.File} :: {native.Message}"
+                )
+            );
+
+        foreach (var cell in document.NativeCells)
+            spc.ReportDiagnostic(
+                Diagnostic.Create(
+                    NativeCell,
+                    cell.Location?.ToLocation(),
+                    $"{document.File} :: {cell.Message}"
                 )
             );
 
@@ -777,6 +799,12 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
             .ToList();
         document.LeftNative = emitter
             .LeftNative.Select(n => new MarkupDiagnostic(
+                n.Message,
+                LocationIn(path, text, n.Line, n.Column)
+            ))
+            .ToList();
+        document.NativeCells = emitter
+            .NativeCells.Select(n => new MarkupDiagnostic(
                 n.Message,
                 LocationIn(path, text, n.Line, n.Column)
             ))
