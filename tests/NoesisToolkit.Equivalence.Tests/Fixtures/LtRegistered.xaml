@@ -1,0 +1,16 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <Style x:Key="Lt.Alternating" TargetType="ListBoxItem">
+    <Style.Triggers>
+      <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+        <Setter Property="Opacity" Value="0.5" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <Style x:Key="Lt.Columns" TargetType="UniformGrid">
+    <Setter Property="Columns" Value="3" />
+  </Style>
+</ResourceDictionary>

@@ -11,6 +11,13 @@ public partial class ResLaterRoot : UserControl { }
 
 public partial class ResEscapedOrderRoot : UserControl { }
 
+public partial class ResLiveRoot : UserControl { }
+
+public sealed class ResThemeDictionary : ResourceDictionary
+{
+    public string Mode { get; set; } = "Light";
+}
+
 public sealed class ResContext
 {
     public string Name { get; set; } = "context-name";
@@ -61,6 +68,33 @@ public sealed class CompiledResourceParityTests
 
     static Thickness SetterValue(object style) =>
         (Thickness)((Setter)((Style)style).Setters[0]).Value;
+
+    [Test]
+    public async Task A_dictionary_root_keeps_its_own_type_and_attributes()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResThemedRoot.xaml");
+        var compiled = Generated.FixturesResThemedRootxamlXaml.Build();
+
+        foreach (var (dictionary, side) in new[] { (parsed, "parsed"), (compiled, "compiled") })
+            await Assert
+                .That((dictionary as ResThemeDictionary)?.Mode)
+                .IsEqualTo("Dark")
+                .Because(side);
+    }
+
+    [Test]
+    public async Task A_dictionary_root_with_a_source_holds_what_the_source_declares()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResSourcedRoot.xaml");
+        var compiled = Generated.FixturesResSourcedRootxamlXaml.Build();
+
+        foreach (var (dictionary, side) in new[] { (parsed, "parsed"), (compiled, "compiled") })
+            await Assert.That(dictionary.Contains("Accent")).IsTrue().Because(side);
+    }
 
     [Test]
     public async Task A_sourced_dictionary_keeps_the_entries_written_inside_it()
@@ -456,5 +490,86 @@ public sealed class CompiledResourceParityTests
         await Assert.That(expected.Text).IsEqualTo("context-name");
         await Assert.That(actual.Context).IsSameReferenceAs(compiled["Res.Context"]);
         await Assert.That(actual.Text).IsEqualTo(expected.Text);
+    }
+
+    [Test]
+    public async Task A_resource_of_another_type_leaves_the_slot_as_it_was()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResMistypedEntry.xaml");
+        var compiled = Generated.FixturesResMistypedEntryxamlXaml.Build();
+        Generated.XamlResources.Flush(compiled);
+
+        static object Local(ResourceDictionary dictionary) =>
+            ((Border)dictionary["Res.MistypedHost"]).ReadLocalValue(Border.BackgroundProperty);
+
+        await Assert.That(Local(parsed)).IsSameReferenceAs(DependencyProperty.UnsetValue);
+        await Assert.That(Local(compiled)).IsSameReferenceAs(DependencyProperty.UnsetValue);
+    }
+
+    [Test]
+    public async Task A_resource_key_given_by_name_resolves_as_a_positional_one_does()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResNamedKey.xaml");
+        var compiled = Generated.FixturesResNamedKeyxamlXaml.Build();
+        Generated.XamlResources.Flush(compiled);
+
+        static string? Fill(ResourceDictionary dictionary) =>
+            ColorOf(((Border)dictionary["Res.NamedKeyHost"]).Background);
+
+        await Assert.That(Fill(parsed)).IsEqualTo("#FF3366CC");
+        await Assert.That(Fill(compiled)).IsEqualTo(Fill(parsed));
+    }
+
+    [Test]
+    public async Task An_empty_string_entry_is_the_empty_string()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResEmptyString.xaml");
+        var compiled = Generated.FixturesResEmptyStringxamlXaml.Build();
+
+        await Assert.That(parsed["Res.Empty"]).IsEqualTo("");
+        await Assert.That(compiled["Res.Empty"]).IsEqualTo(parsed["Res.Empty"]);
+    }
+
+    [Test]
+    public async Task An_ignorable_merged_dictionary_is_not_merged()
+    {
+        NoesisRuntime.Start();
+
+        var parsed = Parsed("ResIgnorableMerged.xaml");
+        var compiled = Generated.FixturesResIgnorableMergedxamlXaml.Build();
+
+        await Assert.That(parsed.MergedDictionaries.Count).IsEqualTo(0);
+        await Assert.That(compiled.MergedDictionaries.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task A_dynamic_resource_the_root_holds_outside_any_element_follows_the_key()
+    {
+        NoesisRuntime.Start();
+
+        static string Followed(ResLiveRoot root)
+        {
+            var host = new StackPanel { Width = 100, Height = 100 };
+            host.Resources = new ResourceDictionary();
+            host.Resources["Res.LiveAccent"] = Colors.Red;
+            var view = NoesisRuntime.Show(host, root);
+            var first = ColorOf(root.Background);
+            host.Resources["Res.LiveAccent"] = Colors.Blue;
+            NoesisRuntime.Pump(view, host);
+            return $"{first} -> {ColorOf(root.Background)}";
+        }
+
+        var parsed = (ResLiveRoot)GUI.LoadXaml("/Fixtures;Fixtures/ResLiveRoot.xaml");
+        var compiled = new ResLiveRoot();
+        compiled.InitializeComponent();
+
+        await Assert.That(Followed(parsed)).IsEqualTo("#FFFF0000 -> #FF0000FF");
+        await Assert.That(Followed(compiled)).IsEqualTo("#FFFF0000 -> #FF0000FF");
     }
 }

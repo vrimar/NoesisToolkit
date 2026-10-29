@@ -139,12 +139,42 @@ public sealed class CompiledMarkupParityTests
     }
 
     [Test]
+    public async Task An_owner_qualified_property_on_another_type_is_the_value_it_names()
+    {
+        NoesisRuntime.Start();
+
+        var native = (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/MkQualified.xaml");
+        var compiled =
+            XamlGenerated.NoesisToolkitEquivalenceTests.FixturesMkQualifiedxamlXaml.Build();
+        XamlGenerated.NoesisToolkitEquivalenceTests.XamlResources.Flush(compiled);
+
+        foreach (var (dictionary, side) in new[] { (native, "native"), (compiled, "compiled") })
+        {
+            DependencyObject Entry(string key) => (DependencyObject)dictionary[key];
+
+            await Assert
+                .That(TextElement.GetFontSize(Entry("Mk.QualifiedLiteral")))
+                .IsEqualTo(14f)
+                .Because(side);
+            await Assert
+                .That(MkDescribe.Value(TextElement.GetForeground(Entry("Mk.QualifiedResource"))))
+                .IsEqualTo(Brush)
+                .Because(side);
+            await Assert
+                .That(TextElement.GetFontWeight(Entry("Mk.QualifiedEnum")))
+                .IsEqualTo(FontWeight.Bold)
+                .Because(side);
+        }
+    }
+
+    [Test]
     [Arguments("SourceKnob", "from-resource")]
     [Arguments("ParameterKnob", Brush)]
     [Arguments("MultiNullParameter", "<null>")]
     [Arguments("MultiResourceParameter", Brush)]
     [Arguments("MultiTypeParameter", "RuntimeType Noesis.Border")]
     [Arguments("MultiFormat", "[context]")]
+    [Arguments("ScopedParameter", "String inner")]
     public async Task Markup_on_a_binding_knob_renders_what_the_parser_renders(
         string name,
         string expected
@@ -154,6 +184,18 @@ public sealed class CompiledMarkupParityTests
 
         await Assert.That(Named<TextBlock>(native, name).Text).IsEqualTo(expected);
         await Assert.That(Named<TextBlock>(compiled, name).Text).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task Text_in_an_attached_property_element_is_its_value()
+    {
+        var (native, compiled) = Roots();
+
+        var expected = ToolTipService.GetToolTip(Named<Border>(native, "TextTip"));
+        await Assert.That(expected).IsEqualTo("Save");
+        await Assert
+            .That(ToolTipService.GetToolTip(Named<Border>(compiled, "TextTip")))
+            .IsEqualTo(expected);
     }
 
     [Test]

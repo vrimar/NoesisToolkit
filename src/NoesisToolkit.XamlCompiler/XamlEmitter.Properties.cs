@@ -57,6 +57,20 @@ sealed partial class XamlEmitter
         if (ns == XamlTypeResolver.ToolkitNs || ns == XNamespace.Xml.NamespaceName)
             return;
 
+        if (XamlTypeResolver.NativeOwned(ns))
+        {
+            if (!_grafted.Contains(element) || !ParserSets(element, attribute))
+                Errors.Add(
+                    $"<{element.Name.LocalName} {local}=...> sets a property only the parser can name, "
+                        + (
+                            NamesAResource(attribute.Value)
+                                ? "from a resource the parser building it alone cannot resolve"
+                                : "on an element generated code builds itself"
+                        )
+                );
+            return;
+        }
+
         if (ns == XamlTypeResolver.DirectiveNs)
         {
             switch (local)
@@ -123,6 +137,10 @@ sealed partial class XamlEmitter
     {
         if (resolver.FindProperty(type, "Name")?.SetMethod is not null)
             _lines.Add($"{target}.Name = {Quote(name)};");
+        else if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.DependencyObject"))
+            _lines.Add(
+                $"{target}.SetValue(global::Noesis.FrameworkElement.NameProperty, {Quote(name)});"
+            );
 
         if (_templates.Count > 0)
         {
@@ -314,15 +332,26 @@ sealed partial class XamlEmitter
             return SlotReference(styled, name);
         }
 
-        valueType = property.Type;
-        var declaring =
-            resolver.FindDependencyPropertyOwner(styled, name) ?? property.ContainingType;
+        valueType = RegisteredType(property);
+        if (resolver.FindDependencyPropertyOwner(styled, name) is not { } declaring)
+        {
+            return Fail(
+                $"'{name}' on {XamlTypeResolver.Fqn(styled)} is not a dependency property, "
+                    + "so a Setter cannot set it"
+            );
+        }
+
         return SlotReference(declaring, name);
     }
 
     ITypeSymbol? AttachedValueTypeOf(ITypeSymbol owner, string property) =>
         resolver.FindAttachedSetter(owner, property)?.Parameters[1].Type
-        ?? resolver.FindProperty(owner, property)?.Type;
+        ?? (resolver.FindProperty(owner, property) is { } wrapper ? RegisteredType(wrapper) : null)
+        ?? resolver.FindAttachedGetter(owner, property)?.ReturnType;
+
+    // A Setter holds the value as is, and the native side rejects one not of the registered type.
+    ITypeSymbol RegisteredType(IPropertySymbol property) =>
+        MismatchedSlot(property) ? resolver.UInt32Type : property.Type;
 
     void ApplyAttachedAttribute(
         XElement element,
@@ -355,6 +384,29 @@ sealed partial class XamlEmitter
         // an error: another generator in this same pass may be the one that emits it.
         if (valueType is null && resolver.FindEvent(owner, propertyName) is not null)
             return;
+
+        var wrapper = XamlTypeResolver.DerivesFrom(type, "global::Noesis.DependencyObject")
+            ? QualifiedWrapper(owner, propertyName)
+            : null;
+        if (wrapper is not null && WrapperUnwritable(owner, propertyName, rawValue))
+        {
+            Errors.Add(
+                $"'{local}' is a {(Wrapped(wrapper.Type) ?? wrapper.Type).Name}, which generated code "
+                    + $"cannot write onto a {type.Name}; set it from a style or a binding"
+            );
+            return;
+        }
+
+        valueType ??= wrapper?.Type;
+        var qualified = wrapper is null
+            ? null
+            : SlotReference(
+                resolver.FindDependencyPropertyOwner(owner, propertyName)!,
+                propertyName
+            );
+        Func<string, string> write = qualified is null
+            ? value => $"{ownerFqn}.Set{propertyName}({target}, {value});"
+            : value => $"{target}.SetValue({qualified}, {value});";
 
         if (XamlMarkupParser.IsMarkup(rawValue))
         {
@@ -394,7 +446,16 @@ sealed partial class XamlEmitter
 
             if (call.Name is "StaticResource" or "DynamicResource")
             {
-                ApplyAttachedResource(element, target, type, owner, propertyName, valueType, call);
+                ApplyAttachedResource(
+                    element,
+                    target,
+                    type,
+                    owner,
+                    propertyName,
+                    valueType,
+                    call,
+                    write
+                );
                 return;
             }
 
@@ -411,15 +472,14 @@ sealed partial class XamlEmitter
                     slot is null
                         ? null
                         : provided => SlotBindStatement(target, type, slot, provided),
-                    provided =>
-                        $"{ownerFqn}.Set{propertyName}({target}, {CastPrefix(valueType)}{provided});"
+                    provided => write($"{CastPrefix(valueType)}{provided}")
                 );
                 return;
             }
 
             var expression = MarkupValue(element, call, valueType);
             if (expression is not null)
-                _lines.Add($"{ownerFqn}.Set{propertyName}({target}, {expression});");
+                _lines.Add(write(expression));
             return;
         }
 
@@ -437,8 +497,23 @@ sealed partial class XamlEmitter
             : ConvertOrFail(element, text, valueType, local);
 
         if (value is not null)
-            _lines.Add($"{ownerFqn}.Set{propertyName}({target}, {value});");
+            _lines.Add(write(value));
     }
+
+    IPropertySymbol? QualifiedWrapper(INamedTypeSymbol owner, string name) =>
+        resolver.FindAttachedValueType(owner, name) is null
+        && resolver.FindDependencyPropertyOwner(owner, name) is not null
+        && resolver.FindProperty(owner, name) is { IsStatic: false } property
+            ? property
+            : null;
+
+    // SetValue drops a native enum and mistypes a misrouted or uint-registered value.
+    bool WrapperUnwritable(INamedTypeSymbol owner, string name, string value) =>
+        QualifiedWrapper(owner, name) is { } wrapper
+        && (NeedsAccessor(wrapper.Type) || MismatchedSlot(wrapper))
+        && !(
+            XamlMarkupParser.IsMarkup(value) && XamlMarkupParser.Parse(value) is { Name: "Binding" }
+        );
 
     void ApplyAttachedResource(
         XElement element,
@@ -447,7 +522,8 @@ sealed partial class XamlEmitter
         INamedTypeSymbol owner,
         string propertyName,
         ITypeSymbol? valueType,
-        MarkupCall call
+        MarkupCall call,
+        Func<string, string> write
     )
     {
         var key = ResourceKeyExpression(element, call);
@@ -474,25 +550,18 @@ sealed partial class XamlEmitter
             return;
         }
 
-        var ownerFqn = XamlTypeResolver.Fqn(owner);
-        AddGraphStatement(
-            Assigning(valueType, value => $"{ownerFqn}.Set{propertyName}({target}, {value});"),
-            key
-        );
+        AddGraphStatement(Assigning(valueType, write), key);
     }
 
-    // A resource of another type leaves the slot alone, as the parser leaves it, where an unbox throws.
+    // A resource of another type leaves the slot alone, as the parser leaves it, where a cast throws.
     Func<string, string> Assigning(ITypeSymbol? type, Func<string, string> assign)
     {
         if (type is null || TakesAnything(type))
             return assign;
 
-        if (!type.IsValueType)
-            return found => assign($"({XamlTypeResolver.Fqn(type)}){found}");
-
         var held = NextName("held");
-        var unboxed = XamlTypeResolver.Fqn(Wrapped(type) ?? type);
-        return found => $"if ({found} is {unboxed} {held}) {{ {assign(held)} }}";
+        var fits = XamlTypeResolver.Fqn(Wrapped(type) ?? type);
+        return found => $"if ({found} is {fits} {held}) {{ {assign(held)} }}";
     }
 
     void ApplyProperty(

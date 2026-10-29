@@ -66,7 +66,7 @@ static class XamlPaths
         if (uri.Contains(";"))
             return uri;
 
-        var file = filePath.Replace('\\', '/');
+        var file = RelativePath(filePath, projectDir);
         var directory =
             rooted || file.LastIndexOf('/') is not (> 0 and var end) ? "" : file.Substring(0, end);
 
@@ -90,17 +90,8 @@ static class XamlPaths
             segments.Add(segment);
         }
 
-        // The walk drops the empty leading segments, and Relativise compares against a rooted root.
-        var combined = directory.Length > 0 ? directory + "/" + uri : uri;
-        var normalised =
-            (
-                combined.StartsWith("//", StringComparison.Ordinal) ? "//"
-                : combined.StartsWith("/", StringComparison.Ordinal) ? "/"
-                : ""
-            ) + string.Join("/", segments.ToArray());
-
         // Prefixing an escaped uri would key a registry row that can never match.
-        return escaped ? uri : prefix + ";" + (Relativise(normalised, projectDir) ?? normalised);
+        return escaped ? uri : prefix + ";" + string.Join("/", segments.ToArray());
     }
 
     // Roslyn compares hint names ignoring case where C# type names do not, so the case is hashed in.

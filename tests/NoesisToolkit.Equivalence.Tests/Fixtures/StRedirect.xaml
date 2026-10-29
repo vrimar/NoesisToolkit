@@ -16,6 +16,9 @@
     <DataTemplate x:Key="Row">
       <TextBlock x:Name="RowName" Text="{Binding Name}" />
     </DataTemplate>
+    <ContextMenu x:Key="SubMenu">
+      <MenuItem Header="{Binding Name}" />
+    </ContextMenu>
   </UserControl.Resources>
 
   <StackPanel>
@@ -53,6 +56,37 @@
     </ContentControl>
 
     <ItemsControl ItemsSource="{Binding Models}" ItemTemplate="{StaticResource Row}" />
+
+    <StackPanel>
+      <StackPanel.Style>
+        <Style TargetType="StackPanel">
+          <Setter Property="DataContext" Value="{Binding Child}" />
+        </Style>
+      </StackPanel.Style>
+      <TextBlock x:Name="Styled" Text="{Binding Name}" />
+    </StackPanel>
+    <Grid>
+      <ContentControl DataContext="{Binding Child}">
+        <ContentControl.Template>
+          <ControlTemplate TargetType="ContentControl">
+            <Grid>
+              <ContentPresenter />
+            </Grid>
+          </ControlTemplate>
+        </ContentControl.Template>
+        <TextBlock
+          x:Name="PastTemplate"
+          Text="{Binding DataContext.Name, RelativeSource={RelativeSource AncestorType=Grid}}"
+        />
+      </ContentControl>
+    </Grid>
+    <ItemsControl ItemsSource="{Binding Subs}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border x:Name="MenuHost" Height="5" ContextMenu="{StaticResource SubMenu}" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
 
     <ContentPresenter x:Name="PresenterMulti" Content="{Binding Child}">
       <ContentPresenter.Tag>

@@ -30,7 +30,7 @@ sealed partial class XamlEmitter
             if (call is not { Name: "x:Type" or "Type" })
                 return null;
 
-            trimmed = call.Positional.FirstOrDefault() ?? "";
+            trimmed = TypeArgument(call);
         }
 
         var colon = trimmed.IndexOf(':');
@@ -183,7 +183,7 @@ sealed partial class XamlEmitter
         if (XamlTypeResolver.DerivesFrom(type, "global::Noesis.ImageSource"))
             return ImageUri(text) is not { } uri
                     ? Fail($"image source '{text}' is not a uri the parser is known to resolve")
-                : typeFqn == "global::Noesis.ImageSource"
+                : typeFqn == "global::Noesis.ImageSource" && CompiledBindingsAvailable
                     ? $"global::NoesisToolkit.Mvvm.CodeGen.ImageSources.From({Quote(uri)})"
                 : $"new global::Noesis.BitmapImage(new global::System.Uri({Quote(uri)}, global::System.UriKind.RelativeOrAbsolute))";
 
@@ -321,13 +321,18 @@ sealed partial class XamlEmitter
         var member = text.Substring(dot + 1);
         var owner = XamlTypeResolver.Fqn(ownerSymbol);
 
-        if (resolver.FindProperty(ownerSymbol, member) is not null)
-            return $"{owner}.{member}";
+        var named =
+            resolver.FindProperty(ownerSymbol, member) is not null ? member
+            : resolver.FindProperty(ownerSymbol, member + "Command") is not null
+                ? member + "Command"
+            : null;
 
-        if (resolver.FindProperty(ownerSymbol, member + "Command") is not null)
-            return $"{owner}.{member}Command";
+        if (named is null)
+            return Fail($"'{owner}' has no member '{member}'");
 
-        return Fail($"'{owner}' has no member '{member}'");
+        return ParserReadsUnset(ownerSymbol, named)
+            ? Fail($"'{text}' names a command Noesis' parser cannot read; bind it instead")
+            : $"{owner}.{named}";
     }
 
     string? EnumLiteral(ITypeSymbol type, string text)
@@ -413,7 +418,7 @@ sealed partial class XamlEmitter
     static string? NumberLiteral(string text, string suffix)
     {
         var type = suffix == "F" ? "float" : "double";
-        if (text == "Auto")
+        if (string.Equals(text, "Auto", StringComparison.OrdinalIgnoreCase))
             return type + ".NaN";
 
         if (!double.TryParse(text, Number, Invariant, out var value))

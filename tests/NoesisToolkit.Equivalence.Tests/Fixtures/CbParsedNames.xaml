@@ -22,6 +22,10 @@
     </VirtualizingWrapPanel>
     <TextBlock x:Name="GoEcho" Text="{Binding Width, ElementName=Go}" />
 
+    <VirtualizingWrapPanel Width="200" Height="40">
+      <Button Name="PlainGo" Width="30" />
+    </VirtualizingWrapPanel>
+
     <ContentControl x:Name="Templated" Content="item">
       <ContentControl.ContentTemplate>
         <DataTemplate>

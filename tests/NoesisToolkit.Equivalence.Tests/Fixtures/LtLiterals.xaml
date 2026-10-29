@@ -145,6 +145,10 @@
     </StackPanel>
   </DataTemplate>
 
+  <Style x:Key="AutoWidth" TargetType="Border">
+    <Setter Property="Width" Value="auto" />
+  </Style>
+
   <ControlTemplate x:Key="CompiledPropertyTrigger" TargetType="{x:Type t:LtControl}">
     <Border x:Name="Bg" Height="5" />
     <ControlTemplate.Triggers>

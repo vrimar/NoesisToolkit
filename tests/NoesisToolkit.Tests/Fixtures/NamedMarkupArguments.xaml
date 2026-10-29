@@ -1,0 +1,11 @@
+<UserControl
+  x:Class="Sample.NamedArgumentsHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+>
+  <UserControl.Resources>
+    <Style x:Key="Typed" TargetType="{x:Type TypeName=Button}" />
+  </UserControl.Resources>
+  <TextBlock Tag="{x:Static Member=ui:Mode.On}" />
+</UserControl>

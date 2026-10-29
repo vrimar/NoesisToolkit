@@ -487,6 +487,16 @@ sealed partial class XamlEmitter
             }
 
             var values = child.Elements().Where(e => !IsIgnorable(e)).ToArray();
+            if (values.Length == 0 && TextOf(child) is { } text)
+            {
+                var converted = AttachedValueTypeOf(declaring!, propertyName) is { } valueType
+                    ? ConvertOrFail(child, text, valueType, local)
+                    : LiteralGuess(text);
+                if (converted is not null)
+                    _lines.Add($"{declaringFqn}.Set{propertyName}({target}, {converted});");
+                return;
+            }
+
             if (values.Length != 1)
             {
                 Errors.Add($"<{local}> must contain exactly one element");
@@ -495,7 +505,7 @@ sealed partial class XamlEmitter
 
             StoreValue(
                 values[0],
-                null,
+                resolver.FindAttachedValueType(declaring!, propertyName),
                 single => $"{declaringFqn}.Set{propertyName}({target}, {single});"
             );
             return;

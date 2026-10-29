@@ -167,6 +167,33 @@ public sealed class CompiledTemplateBindingParityTests
     }
 
     [Test]
+    public async Task An_element_the_parser_builds_whole_keeps_its_template_binding()
+    {
+        var (native, compiled) = Sides();
+        var hosts = new List<ToggleButton>();
+
+        foreach (var side in new[] { native, compiled })
+        {
+            var host = new ToggleButton
+            {
+                Template = (ControlTemplate)side.Resources["Live"],
+                Background = new SolidColorBrush(Colors.Green),
+            };
+            hosts.Add(host);
+            side.Show(host);
+        }
+
+        string Shape(Side side, ToggleButton host) =>
+            $"background={(side.Named<Border>("Live").Background as SolidColorBrush)?.Color} "
+            + $"named={host.Template.FindName("LiveText", host) is TextBlock}";
+
+        await Assert
+            .That(Shape(native, hosts[0]))
+            .IsEqualTo($"background={Colors.Green} named=True");
+        await Assert.That(Shape(compiled, hosts[1])).IsEqualTo(Shape(native, hosts[0]));
+    }
+
+    [Test]
     public async Task A_template_binding_into_a_managed_content_control_keeps_its_content()
     {
         var (native, compiled) = Sides();

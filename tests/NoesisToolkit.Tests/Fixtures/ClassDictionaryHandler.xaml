@@ -1,0 +1,9 @@
+<ResourceDictionary
+  x:Class="Sample.HandlerTheme"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <ControlTemplate x:Key="Chrome" TargetType="ContentControl">
+    <Button Click="OnClick" />
+  </ControlTemplate>
+</ResourceDictionary>

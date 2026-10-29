@@ -1,0 +1,8 @@
+<t:ResThemeDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  Mode="Dark"
+>
+  <SolidColorBrush x:Key="Res.Themed" Color="Red" />
+</t:ResThemeDictionary>

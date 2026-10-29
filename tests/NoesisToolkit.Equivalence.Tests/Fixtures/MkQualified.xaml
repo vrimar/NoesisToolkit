@@ -1,0 +1,9 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <SolidColorBrush x:Key="Mk.QualifiedFill" Color="#FF123456" />
+  <StackPanel x:Key="Mk.QualifiedLiteral" TextBlock.FontSize="14" />
+  <Border x:Key="Mk.QualifiedResource" TextBlock.Foreground="{StaticResource Mk.QualifiedFill}" />
+  <StackPanel x:Key="Mk.QualifiedEnum" TextBlock.FontWeight="Bold" />
+</ResourceDictionary>

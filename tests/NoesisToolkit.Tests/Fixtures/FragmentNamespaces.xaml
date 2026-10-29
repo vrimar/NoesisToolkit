@@ -11,10 +11,10 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate>
-          <Grid>
+          <StackPanel>
             <Border Background="{TemplateBinding Background}" />
             <TextBlock Text="{TemplateBinding Content}" />
-          </Grid>
+          </StackPanel>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

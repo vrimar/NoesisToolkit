@@ -7,11 +7,10 @@
 | `NTK1002` | Warning | coverage note — markup reached that nothing consumes |
 | `NTK1003` | Error | the compiler threw; the message carries the stack |
 | `NTK1004` | Warning | Noesis resolves a name by reflection on a type the compiler cannot determine, so trimming may drop it; Info in an app that declares no trimming |
-| `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute that keeps it on the loader |
+| `NTK1005` | Info | a document is parsed at run time, so its source has to ship; raised at the handler attribute, or the root's own `{DynamicResource}`, that keeps it on the loader |
 | `NTK1006` | Warning | `ntk:DataType`, `ntk:AncestorDataType` or `ntk:ItemType` names a type the compiler cannot find |
 | `NTK1007` | Hidden | a binding or trigger stays native, with the reason; raised to audit what is left to the engine |
 | `NTK1008` | Warning | a `DisplayMemberPath`, `SelectedValuePath` or `EventName` names a member its type does not have |
-| `NTK1009` | Warning | a referenced assembly built by an older toolkit shares this assembly's generated namespace, so its resources are not chained |
 | `NTK2001` | Warning | binding path does not resolve |
 | `NTK2002` | Error | `clr-namespace` does not resolve |
 | `NTK2003` | Error | `x:Static` does not resolve, or names a static Noesis' parser loads unset |

@@ -169,6 +169,19 @@ public sealed class CompiledLiteralTypingTests
     }
 
     [Test]
+    public async Task A_length_setter_reads_auto_in_any_case()
+    {
+        NoesisRuntime.Start();
+
+        static object? Width(ResourceDictionary dictionary) =>
+            ((Setter)((Style)dictionary["AutoWidth"]).Setters[0]).Value;
+
+        var native = Width(Parsed());
+        await Assert.That(native is float width && float.IsNaN(width)).IsTrue();
+        await Assert.That(Width(Compiled())).IsEqualTo(native);
+    }
+
+    [Test]
     public async Task A_compiled_trigger_setter_on_a_non_int32_slot_applies_and_reverts()
     {
         NoesisRuntime.Start();
@@ -230,5 +243,39 @@ public sealed class CompiledLiteralTypingTests
             .IsEqualTo(TreeSearch.Named<Border>(native, "Bg")!.Opacity);
         await Assert.That(CompiledTriggerSet.SetsOf(compiledBg)).IsEmpty();
         await Assert.That(trigger.Value).IsTypeOf<long>();
+    }
+
+    static ResourceDictionary CompiledRegistered() =>
+        XamlGenerated.NoesisToolkitEquivalenceTests.FixturesLtRegisteredxamlXaml.Build();
+
+    static ResourceDictionary ParsedRegistered() =>
+        (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/LtRegistered.xaml");
+
+    [Test]
+    public async Task A_trigger_on_a_read_only_attached_property_holds_the_type_its_getter_returns()
+    {
+        NoesisRuntime.Start();
+
+        static object? Value(ResourceDictionary dictionary) =>
+            ((Trigger)((Style)dictionary["Lt.Alternating"]).Triggers[0]).Value;
+
+        await Assert.That(Value(ParsedRegistered())).IsEqualTo(1);
+        await Assert.That(Value(CompiledRegistered())).IsEqualTo(Value(ParsedRegistered()));
+    }
+
+    [Test]
+    public async Task A_style_setter_on_a_uint_registered_slot_is_applied()
+    {
+        NoesisRuntime.Start();
+
+        static int Columns(ResourceDictionary dictionary)
+        {
+            var grid = new UniformGrid { Style = (Style)dictionary["Lt.Columns"] };
+            NoesisRuntime.Show(grid);
+            return grid.Columns;
+        }
+
+        await Assert.That(Columns(ParsedRegistered())).IsEqualTo(3);
+        await Assert.That(Columns(CompiledRegistered())).IsEqualTo(Columns(ParsedRegistered()));
     }
 }

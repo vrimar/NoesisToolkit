@@ -34,6 +34,8 @@ public class FrameworkPropertyMetadata : PropertyMetadata
     public FrameworkPropertyMetadata(object? defaultValue, FrameworkPropertyMetadataOptions options, PropertyChangedCallback? callback) : base(defaultValue, callback) { }
 
     public FrameworkPropertyMetadata(object? defaultValue, PropertyChangedCallback? callback) : base(defaultValue, callback) { }
+
+    public bool BindsTwoWayByDefault { get; set; }
 }
 
 [System.Flags]

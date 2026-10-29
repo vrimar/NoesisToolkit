@@ -134,6 +134,15 @@
     </ControlTemplate.Triggers>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="PlainNamed" TargetType="{x:Type t:SpikeControl}">
+    <TextBlock Name="Label" Height="5" />
+    <ControlTemplate.Triggers>
+      <Trigger Property="Align" Value="Top">
+        <Setter TargetName="Label" Property="Text" Value="off" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="ProbedTarget" TargetType="{x:Type t:TsHost}">
     <StackPanel>
       <t:TsPart x:Name="Part" Height="5" />

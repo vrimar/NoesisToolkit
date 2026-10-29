@@ -26,7 +26,9 @@ Per document:
 Referenced assemblies that also ran the compiler are discovered through the
 `XamlGenerated.Links.A_<assembly>` type each one declares, its assembly name spelled out in full, and
 chained, so `Resolve`, `SharedByKey` and `Flush` reach across assembly boundaries even where two
-assembly names share one generated namespace.
+assembly names share one generated namespace. An assembly whose generated namespace a reference already
+declares takes that spelled-out name instead — `Foo.App` referencing `FooApp` generates into
+`XamlGenerated.A_Foo_x002E_App` — so neither one's types hide the other's.
 
 ## Resource timing
 
@@ -49,14 +51,23 @@ A `StaticResource` is resolved once, against the dictionaries enclosing the plac
 the value it found is assigned; a later change to that key does not reach it. A `DynamicResource` on a
 `FrameworkElement` becomes a `SetResourceReference`, which resolves by tree position and tracks the
 key for the element's lifetime — so on a template prototype, which is never in a tree, only the
-`StaticResource` form resolves at all.
+`StaticResource` form resolves at all. Only the parser keeps one live on anything else, such as a
+brush an element holds, so that element is left to the parser whole. Where the element is the
+`x:Class` root itself, the whole document stays on `GUI.LoadComponent` and is reported as `NTK1005`.
 
 A `{TemplateBinding X}` is never compiled. It is a one-way expression that converts nothing, and a
 `Binding` on the templated parent is neither, but the managed API cannot install the expression. So
 every element carrying one is constructed by the parser from its `{TemplateBinding}` attributes
 alone — inside a template of the same kind, with the same `TargetType`, one parse per template — and
-the compiler applies everything else to that instance. A `{TemplateBinding}` anywhere the parser
-cannot build it that way, such as a markup extension's argument, is reported as dead markup.
+the compiler applies everything else to that instance. An element left to the parser whole is
+parsed inside such a template too. A `{TemplateBinding}` anywhere the parser cannot build it that
+way, such as a markup extension's argument, is reported as dead markup.
+
+An attribute in Noesis' own extensions namespace, `clr-namespace:NoesisGUIExtensions` — such as
+`noesis:Text.Stroke` or `noesis:Element.PPAAMode` — names a property no managed type declares, so the
+element carrying it is built by the parser the same way, from those attributes alone. Where the
+parser cannot build it so — on the document's root, or with a `{StaticResource}` value it would have
+to resolve alone — the attribute is refused with `NTK1001`.
 
 A binding left to the engine is built in code, where no xmlns is in scope, so an attached property in
 its path names its owner by CLR name — `(ui:Badge.Count)` is emitted as
@@ -119,6 +130,8 @@ A document that wires handlers in markup — including an attached handler such 
 subscribed from managed code pins the root through the child element; the native loader owns that
 lifetime and the compiled path cannot. Such a document is reported as `NTK1005`, since its source
 is the one the app still has to ship.
+A root that is no `FrameworkElement`, such as a `ResourceDictionary` with an `x:Class`, has no
+`ConnectEvent` for the loader to call, so a handler in its markup is refused with `NTK1001`.
 
 ## A compiled control inside a template the parser reads
 

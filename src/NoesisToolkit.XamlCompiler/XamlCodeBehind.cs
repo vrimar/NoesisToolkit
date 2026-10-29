@@ -36,7 +36,10 @@ static class XamlCodeBehind
 
         public XAttribute? LoaderAttribute;
 
-        public bool NeedsLoader => Events.Count > 0 || UnresolvedHandlers;
+        public XAttribute? LiveResource;
+
+        public bool NeedsLoader =>
+            Events.Count > 0 || UnresolvedHandlers || LiveResource is not null;
     }
 
     /// <summary>
@@ -95,18 +98,29 @@ static class XamlCodeBehind
                 {
                     // A template registers into its own scope, which a field could never read.
                     if (local == "Name" && !inTemplate)
-                        scan.Names.Add(
-                            new NamedElement(
-                                attribute.Value,
-                                XamlTypeResolver.Fqn(resolver.Nameable(type, rootClass)),
-                                Modifier(
-                                    element,
-                                    resolver.Nameable(type, rootClass),
-                                    rootClass,
-                                    scan
-                                )
+                    {
+                        if (
+                            !Microsoft.CodeAnalysis.CSharp.SyntaxFacts.IsValidIdentifier(
+                                attribute.Value
                             )
-                        );
+                        )
+                            scan.Problems.Add(
+                                $"x:Name='{attribute.Value}' is not a C# identifier, so no field can be generated for it"
+                            );
+                        else
+                            scan.Names.Add(
+                                new NamedElement(
+                                    attribute.Value,
+                                    XamlTypeResolver.Fqn(resolver.Nameable(type, rootClass)),
+                                    Modifier(
+                                        element,
+                                        resolver.Nameable(type, rootClass),
+                                        rootClass,
+                                        scan
+                                    )
+                                )
+                            );
+                    }
                     continue;
                 }
 
@@ -135,6 +149,14 @@ static class XamlCodeBehind
                 }
             }
         }
+
+        scan.LiveResource = XamlEmitter.LiveReferenceIn(root, rootClass, resolver);
+
+        if (scan.Events.Count > 0 && !HasConnectEvent(rootClass))
+            scan.Problems.Add(
+                $"{rootClass.Name} is not a FrameworkElement, so the loader has no ConnectEvent to wire "
+                    + "the handlers its markup names; subscribe them in code"
+            );
 
         return scan;
     }
@@ -313,7 +335,7 @@ static class XamlCodeBehind
             }
         }
 
-        if (compiled || scan.Events.Count == 0)
+        if (compiled || scan.Events.Count == 0 || !HasConnectEvent(rootClass))
             return;
 
         w.Line();
@@ -348,6 +370,9 @@ static class XamlCodeBehind
             w.Line("return base.ConnectEvent(source, eventName, handlerName);");
         }
     }
+
+    static bool HasConnectEvent(INamedTypeSymbol rootClass) =>
+        XamlTypeResolver.DerivesFrom(rootClass, "global::Noesis.FrameworkElement");
 
     // Two underscores: one would collide with an x:Name that starts with one.
     internal static string Field(string name) => "__" + name;
@@ -393,9 +418,9 @@ static class XamlCodeBehind
         {
             "public" or "Public" => Accessibility.Public,
             "internal" or "Friend" or "NotPublic" => Accessibility.Internal,
-            "protected internal" => Accessibility.ProtectedOrInternal,
+            "protected internal" or "internal protected" => Accessibility.ProtectedOrInternal,
             "protected" => Accessibility.Protected,
-            "private protected" => Accessibility.ProtectedAndInternal,
+            "private protected" or "protected private" => Accessibility.ProtectedAndInternal,
             "private" or "Private" => Accessibility.Private,
             _ => null,
         };
@@ -462,7 +487,7 @@ static class XamlCodeBehind
         var generated = scan.NeedsLoader
             ? new[] { "InitializeComponent" }
             : new[] { "InitializeComponent", "BuildXamlTree" };
-        if (scan.NeedsLoader && scan.Events.Count > 0)
+        if (scan.NeedsLoader && scan.Events.Count > 0 && HasConnectEvent(rootClass))
             generated = [.. generated, "ConnectEvent"];
 
         foreach (var member in generated)

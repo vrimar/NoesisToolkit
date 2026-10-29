@@ -1,0 +1,9 @@
+<UserControl
+  x:Class="NoesisToolkit.Equivalence.Tests.ResLiveRoot"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <UserControl.Background>
+    <SolidColorBrush Color="{DynamicResource Res.LiveAccent}" />
+  </UserControl.Background>
+</UserControl>

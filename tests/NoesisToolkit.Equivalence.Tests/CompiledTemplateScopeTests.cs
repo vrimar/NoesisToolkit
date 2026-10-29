@@ -188,6 +188,31 @@ public sealed class CompiledTemplateScopeTests
     }
 
     [Test]
+    public async Task A_target_name_reaches_an_element_named_without_the_directive()
+    {
+        NoesisRuntime.Start();
+
+        var compiled = Spike(
+            Compiled(),
+            "PlainNamed",
+            new Grid(),
+            h => h.Align = VerticalAlignment.Top
+        );
+        var native = Spike(
+            Parsed(),
+            "PlainNamed",
+            new Grid(),
+            h => h.Align = VerticalAlignment.Top
+        );
+
+        var nativeText = TreeSearch.Named<TextBlock>(native, "Label")!.Text;
+        await Assert.That(nativeText).IsEqualTo("off");
+        await Assert
+            .That(TreeSearch.Named<TextBlock>(compiled, "Label")!.Text)
+            .IsEqualTo(nativeText);
+    }
+
+    [Test]
     public async Task A_parsed_setter_resolves_its_target_name_past_a_nested_template()
     {
         NoesisRuntime.Start();

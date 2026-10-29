@@ -1,0 +1,7 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+  <SolidColorBrush x:Key="Res.NamedFill" Color="#FF3366CC" />
+  <Border x:Key="Res.NamedKeyHost" Background="{StaticResource ResourceKey=Res.NamedFill}" />
+</ResourceDictionary>

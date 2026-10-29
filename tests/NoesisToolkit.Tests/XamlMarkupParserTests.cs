@@ -60,6 +60,17 @@ public class XamlMarkupParserTests
     }
 
     [Test]
+    public async Task A_backslash_escapes_a_quote_inside_a_quoted_argument()
+    {
+        var call = Compiler::NoesisToolkit.CodeGen.XamlMarkupParser.Parse(
+            """{Binding Foo, ConverterParameter='it\'s'}"""
+        )!;
+
+        await Assert.That(call.Positional.Count).IsEqualTo(1);
+        await Assert.That(Named(call, "ConverterParameter")).IsEqualTo("it's");
+    }
+
+    [Test]
     public async Task A_nested_extension_is_kept_whole()
     {
         var call = Compiler::NoesisToolkit.CodeGen.XamlMarkupParser.Parse(

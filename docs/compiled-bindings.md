@@ -58,10 +58,11 @@ Path=Text}`. A dependency property is the only part of an element that can be wa
 falls back. When a source element's DataContext is not what the surrounding markup implies, state it
 with `ntk:DataType` on that element.
 
-A `FindAncestor` binding written inside a template or a style has no ancestor the document can
-prove: past a template the walk can land on a container the markup never shows, as
-`AncestorType=ItemsControl` in a `TreeView`'s item template lands on the `TreeViewItem`, whose
-DataContext is the item. State the type the walk will land on with `ntk:AncestorDataType`:
+A `FindAncestor` binding written inside a template or a style, or below a control that rebinds
+`DataContext`, has no ancestor the document can prove: past a template the walk can land on a
+container the markup never shows, as `AncestorType=ItemsControl` in a `TreeView`'s item template
+lands on the `TreeViewItem`, whose DataContext is the item. State the type the walk will land on with
+`ntk:AncestorDataType`:
 
 ```xml
 <DataTemplate ntk:AncestorDataType="{x:Type app:ShellViewModel}">
@@ -196,8 +197,9 @@ property should not also bind it.
 | a path stepping through an open generic | gap | not resolved yet |
 | `Mode=TwoWay` on a path that genuinely has no setter | author | there is nothing to write back to |
 | a `DataTemplate` with no declared `ntk:DataType` | author | falls back until the type is stated |
-| a keyed template or style with no declared `ntk:DataType` | author | any document or code can apply the key, so the uses one document shows prove nothing |
-| bindings below a `DataContext` the compiler cannot type — a converter, a knob, another source, a resource or a property element | author | state the type with `ntk:DataType` below it |
+| a `HierarchicalDataTemplate` with no `DataType` whose `ItemsSource` yields items its host's item type does not cover | author | the levels below reuse the template, so one type has to cover them all |
+| a keyed template, style or other resource with no declared `ntk:DataType` | author | any document or code can apply the key, so the uses one document shows prove nothing |
+| bindings below a `DataContext` the compiler cannot type — a converter, a knob, another source, a resource, a property element or a `Style` setter | author | state the type with `ntk:DataType` below it |
 | a template hosted through a `Content`, `ItemsSource` or `Header` binding with a converter or format | author | what the host is handed is not the type its path reads |
 | an `ntk:CompileBindings` value that is not a boolean | author | the document has to say which it means |
 | an `ElementName` naming an element in another template | boundary | a clone's name scope answers for its own template only |

@@ -243,7 +243,7 @@ sealed partial class XamlEmitter
 
         if (call.Name is "x:Static" or "Static")
         {
-            var reference = call.Positional.FirstOrDefault() ?? "";
+            var reference = StaticArgument(call);
             var dot = reference.LastIndexOf('.');
             if (
                 dot <= 0
@@ -1052,7 +1052,7 @@ sealed partial class XamlEmitter
                 RootNestedMarkup(element, call);
                 return;
             case "x:Type" or "Type":
-                if (ResolveTypeSymbol(element, call.Positional.FirstOrDefault() ?? "") is { } type)
+                if (ResolveTypeSymbol(element, TypeArgument(call)) is { } type)
                     RootNamedType(type);
                 return;
             case "x:Static":
@@ -1228,7 +1228,7 @@ sealed partial class XamlEmitter
         if (_parsedBy is null || (_attribute is { } attribute && _heldBack.Contains(attribute)))
             return;
 
-        var reference = call.Positional.FirstOrDefault() ?? "";
+        var reference = StaticArgument(call);
         var dot = reference.LastIndexOf('.');
         if (
             dot > 0

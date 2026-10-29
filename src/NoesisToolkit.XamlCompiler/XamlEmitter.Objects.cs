@@ -38,14 +38,7 @@ sealed partial class XamlEmitter
         )
         {
             var merged = NextName("merged");
-            var logical = LogicalFor(source.Value);
-
-            // The fallback loads with no base uri, so a relative source goes rooted the way the parser names it.
-            var fallback =
-                source.Value.Contains(";") || !logical.Contains(";") ? source.Value : "/" + logical;
-
-            _lines.Add($"var {merged} = __resources({Quote(logical)}, {Quote(fallback)});");
-            _usesResourceLookup = true;
+            _lines.Add($"var {merged} = {SourcedDictionary(source.Value)};");
 
             if (element.HasElements)
                 EmitScopedDictionaryBody(element, merged);
@@ -244,14 +237,8 @@ sealed partial class XamlEmitter
         symbol.SpecialType != SpecialType.None
         || symbol.TypeKind is TypeKind.Struct or TypeKind.Enum;
 
-    // Whitespace alone still makes an empty string, where every other type has nothing to convert.
     string? LiteralOf(XElement element, INamedTypeSymbol symbol) =>
-        TextOf(element)
-        ?? (
-            symbol.SpecialType == SpecialType.System_String && element.Nodes().OfType<XText>().Any()
-                ? ""
-                : null
-        );
+        TextOf(element) ?? (symbol.SpecialType == SpecialType.System_String ? "" : null);
 
     void EmitScopedDictionaryBody(XElement element, string dictionary)
     {

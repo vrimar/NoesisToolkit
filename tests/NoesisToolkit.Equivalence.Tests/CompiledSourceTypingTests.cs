@@ -17,9 +17,49 @@ public sealed class StModel
     public StModel Me => this;
 
     public StModel[] Models => [this];
+
+    public StSub[] Subs => [Child];
 }
 
 public sealed class StHost : Control { }
+
+public class StNode
+{
+    public string Name { get; set; } = "";
+}
+
+public sealed class StLeaf : StNode { }
+
+public sealed class StFolder : StNode
+{
+    public List<StNode> Children { get; } = new();
+}
+
+public sealed class StBranch
+{
+    public string Name { get; set; } = "";
+
+    public List<StBranch> Children { get; } = new();
+}
+
+public sealed class StForest
+{
+    public List<StFolder> Folders { get; } =
+    [
+        new StFolder
+        {
+            Name = "folder",
+            Children =
+            {
+                new StLeaf { Name = "leaf" },
+                new StFolder { Name = "sub" },
+            },
+        },
+    ];
+
+    public List<StBranch> Branches { get; } =
+    [new StBranch { Name = "trunk", Children = { new StBranch { Name = "twig" } } }];
+}
 
 public sealed class StChildOfConverter : IValueConverter
 {
@@ -152,6 +192,8 @@ public sealed class CompiledSourceTypingTests
     [Arguments("FromElement")]
     [Arguments("PropertyElement")]
     [Arguments("Hosted")]
+    [Arguments("Styled")]
+    [Arguments("PastTemplate")]
     public async Task A_data_context_the_compiler_cannot_read_leaves_what_is_below_it_native(
         string name
     )
@@ -201,6 +243,86 @@ public sealed class CompiledSourceTypingTests
         await Assert.That(Text(parsed, "RowName")).IsEqualTo("model-name");
         await Assert.That(Text(compiled, "RowName")).IsEqualTo(Text(parsed, "RowName"));
     }
+
+    [Test]
+    public async Task A_keyed_resource_reads_the_context_of_the_element_it_is_placed_on()
+    {
+        NoesisRuntime.Start();
+
+        var (compiled, parsed) = Realize(out var view);
+
+        var native = MenuHeader(parsed, view);
+        await Assert.That(native).IsEqualTo("sub-name");
+        await Assert.That(MenuHeader(compiled, view)).IsEqualTo(native);
+    }
+
+    static object? MenuHeader(FrameworkElement root, View view)
+    {
+        var host = TreeSearch.Named<Border>(root, "MenuHost")!;
+        var menu = host.ContextMenu;
+        menu.PlacementTarget = host;
+        menu.IsOpen = true;
+        NoesisRuntime.Pump(view, root);
+
+        var header = ((MenuItem)menu.Items[0]).Header;
+        menu.IsOpen = false;
+        NoesisRuntime.Pump(view, root);
+        return header;
+    }
+
+    [Test]
+    public async Task A_hierarchical_template_is_typed_only_where_its_children_are_the_items_it_is_typed_for()
+    {
+        NoesisRuntime.Start();
+
+        var compiled = Expanded(
+            (DataTemplate)
+                XamlGenerated.NoesisToolkitEquivalenceTests.FixturesStTemplatedxamlXaml.Build()[
+                    "Trees"
+                ]
+        );
+        var parsed = Expanded(
+            (DataTemplate)
+                ((ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/StTemplated.xaml"))["Trees"]
+        );
+
+        await Assert.That(Rows(parsed, "Mixed")).IsEqualTo("folder,leaf,sub");
+        await Assert.That(Rows(compiled, "Mixed")).IsEqualTo(Rows(parsed, "Mixed"));
+        await Assert.That(RowsBound(compiled, "Mixed")).IsTrue();
+
+        await Assert.That(Rows(parsed, "Uniform")).IsEqualTo("trunk,twig");
+        await Assert.That(Rows(compiled, "Uniform")).IsEqualTo(Rows(parsed, "Uniform"));
+        await Assert.That(RowsBound(compiled, "Uniform")).IsFalse();
+    }
+
+    static ContentControl Expanded(DataTemplate template)
+    {
+        var host = new ContentControl { Content = new StForest(), ContentTemplate = template };
+        var root = new Grid { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, host);
+
+        for (var level = 0; level < 2; level++)
+        {
+            foreach (var item in TreeSearch.All<TreeViewItem>(host))
+                item.IsExpanded = true;
+
+            NoesisRuntime.Pump(view, root);
+        }
+
+        return host;
+    }
+
+    static List<TextBlock> RowTexts(FrameworkElement root, string tree) =>
+        TreeSearch.All<TextBlock>(TreeSearch.Named<TreeView>(root, tree)!);
+
+    static string Rows(FrameworkElement root, string tree) =>
+        string.Join(",", RowTexts(root, tree).Select(t => t.Text));
+
+    static bool RowsBound(FrameworkElement root, string tree) =>
+        RowTexts(root, tree)
+            .All(t =>
+                BindingOperations.GetBindingExpressionBase(t, TextBlock.TextProperty) is not null
+            );
 
     [Test]
     public async Task A_multi_binding_on_a_presenter_reads_the_content_it_adopts()
@@ -261,7 +383,9 @@ public sealed class CompiledSourceTypingTests
         await Assert.That(Bound(compiled, name, TextBlock.TextProperty)).IsEqualTo(native);
     }
 
-    static (StRedirectFixture Compiled, StRedirectFixture Parsed) Realize()
+    static (StRedirectFixture Compiled, StRedirectFixture Parsed) Realize() => Realize(out _);
+
+    static (StRedirectFixture Compiled, StRedirectFixture Parsed) Realize(out View view)
     {
         var compiled = new StRedirectFixture { DataContext = new StModel() };
         compiled.InitializeComponent();
@@ -269,7 +393,7 @@ public sealed class CompiledSourceTypingTests
         var parsed = (StRedirectFixture)GUI.LoadXaml("/Fixtures;Fixtures/StRedirect.xaml");
         parsed.DataContext = new StModel();
 
-        NoesisRuntime.Show(new Grid { Width = 800, Height = 900 }, compiled, parsed);
+        view = NoesisRuntime.Show(new Grid { Width = 800, Height = 900 }, compiled, parsed);
         return (compiled, parsed);
     }
 

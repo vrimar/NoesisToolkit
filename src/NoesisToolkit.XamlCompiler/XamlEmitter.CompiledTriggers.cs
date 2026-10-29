@@ -637,6 +637,12 @@ sealed partial class XamlEmitter
                 return null;
             }
 
+            if (!XamlTypeResolver.DerivesFrom(named, "global::Noesis.FrameworkElement"))
+            {
+                Note("trigger-target-is-not-an-element");
+                return null;
+            }
+
             targetType = named;
         }
 

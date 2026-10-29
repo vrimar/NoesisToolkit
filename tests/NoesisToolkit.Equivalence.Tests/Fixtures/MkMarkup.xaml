@@ -11,12 +11,28 @@
     <t:MkParameterConverter x:Key="MkSingle" />
     <t:MkMultiParameterConverter x:Key="MkMulti" />
     <sys:String x:Key="MkFormat">[{0}]</sys:String>
+    <sys:String x:Key="MkScoped">outer</sys:String>
   </UserControl.Resources>
 
   <StackPanel>
     <Border x:Name="StaticPayload" t:MkMarker.Payload="{StaticResource MkBrush}" />
     <Border x:Name="DynamicPayload" t:MkMarker.Payload="{DynamicResource MkBrush}" />
     <Border x:Name="TypedFill" t:MkMarker.Fill="{StaticResource MkBrush}" />
+    <Border x:Name="TextTip" Width="5" Height="5">
+      <ToolTipService.ToolTip>Save</ToolTipService.ToolTip>
+    </Border>
+    <StackPanel>
+      <StackPanel.Resources>
+        <sys:String x:Key="MkScoped">inner</sys:String>
+        <Style x:Key="MkScopedStyle" TargetType="TextBlock">
+          <Setter
+            Property="Text"
+            Value="{Binding Name, Converter={StaticResource MkSingle}, ConverterParameter={StaticResource MkScoped}}"
+          />
+        </Style>
+      </StackPanel.Resources>
+      <TextBlock x:Name="ScopedParameter" Style="{StaticResource MkScopedStyle}" />
+    </StackPanel>
 
     <TextBlock x:Name="SourceKnob" Text="{Binding Name, Source={StaticResource MkSource}}" />
     <TextBlock

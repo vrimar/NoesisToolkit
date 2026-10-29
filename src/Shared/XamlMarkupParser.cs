@@ -123,7 +123,12 @@ internal static class XamlMarkupParser
             var quote = s[i++];
             var sb = new StringBuilder();
             while (i < s.Length && s[i] != quote)
+            {
+                if (s[i] == '\\' && i + 1 < s.Length)
+                    i++;
+
                 sb.Append(s[i++]);
+            }
             if (i < s.Length)
                 i++;
             var text = sb.ToString();

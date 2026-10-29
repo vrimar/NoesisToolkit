@@ -1218,7 +1218,9 @@ sealed partial class XamlEmitter
             );
 
         // A compiled root assigns its names to fields and registers none, so nothing else answers.
-        return _rootClass is null
+        return
+            _rootClass is null
+            || scope.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs)) is null
             ? null
             : new BindingSource($"__s => this.{XamlCodeBehind.Field(name)}", scope);
     }
@@ -1278,7 +1280,7 @@ sealed partial class XamlEmitter
 
         return (
             (call.Positional.FirstOrDefault() ?? NamedValue(call, "Mode") as string ?? "").Trim(),
-            written as string ?? (written as MarkupCall)?.Positional.FirstOrDefault(),
+            written as string ?? (written is MarkupCall typed ? TypeArgument(typed) : null),
             (NamedValue(call, "AncestorLevel") as string)?.Trim() ?? "1"
         );
     }
@@ -1302,6 +1304,12 @@ sealed partial class XamlEmitter
 
             if (XamlTypeResolver.DerivesFrom(symbol, wanted))
                 return ancestor;
+
+            if (
+                XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.Control")
+                && Redirection(ancestor) is not ""
+            )
+                return null;
         }
 
         return null;
@@ -1438,9 +1446,12 @@ sealed partial class XamlEmitter
             if (scope.Attribute(XName.Get("DataType", XamlTypeResolver.ToolkitNs)) is { } annotated)
                 return Redirected(ResolveTypeSymbol(scope, annotated.Value), redirects);
 
+            // Any document or code can apply a key, so the uses seen here prove nothing.
+            var keyed = scope.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is not null;
+
             if (!XamlScopeRules.ScopeBreakers.Contains(scope.Name.LocalName))
             {
-                if (Redirection(scope) is not { } path)
+                if (keyed || Redirection(scope) is not { } path)
                     return null;
 
                 if (path.Length > 0)
@@ -1455,11 +1466,10 @@ sealed partial class XamlEmitter
             )
                 return Redirected(ResolveTypeSymbol(scope, declared.Value), redirects);
 
-            // Any document or code can apply a key, so the uses seen here prove nothing.
-            if (scope.Attribute(XName.Get("Key", XamlTypeResolver.DirectiveNs)) is not null)
+            if (keyed)
                 return null;
 
-            return Redirected(HostedContext(scope), redirects);
+            return Redirected(EveryLevel(scope, HostedContext(scope)), redirects);
         }
 
         return null;
@@ -1472,6 +1482,7 @@ sealed partial class XamlEmitter
             element
                 .Elements()
                 .Any(e => e.Name.LocalName.EndsWith(".DataContext", StringComparison.Ordinal))
+            || StyleSetsDataContext(element)
         )
             return null;
 
@@ -1500,6 +1511,62 @@ sealed partial class XamlEmitter
             _quiet = was;
         }
     }
+
+    static bool StyleSetsDataContext(XElement element)
+    {
+        var pending = new Stack<XElement>();
+        foreach (
+            var held in element
+                .Elements()
+                .Where(e => e.Name.LocalName.EndsWith(".Style", StringComparison.Ordinal))
+                .SelectMany(e => e.Elements())
+        )
+        {
+            var style = held.Name.LocalName is "StaticResource" or "DynamicResource"
+                ? StaticResourceElementKey(held)
+                    .Select(k => DeclarationOf(element, k))
+                    .FirstOrDefault()
+                : held;
+            if (style is not null)
+                pending.Push(style);
+        }
+
+        if (StyleDeclaration(element, element.Attribute("Style")) is { } referenced)
+            pending.Push(referenced);
+
+        var seen = new HashSet<XElement>();
+        while (pending.Count > 0)
+        {
+            var style = pending.Pop();
+            if (!seen.Add(style))
+                continue;
+
+            if (
+                style
+                    .Descendants()
+                    .Any(e =>
+                        e.Name.LocalName == "Setter"
+                        && e.Attribute("TargetName") is null
+                        && e.Attribute("Property")?.Value is { } property
+                        && SetterPropertyName(property) == "DataContext"
+                    )
+            )
+                return true;
+
+            if (StyleDeclaration(style, style.Attribute("BasedOn")) is { } basedOn)
+                pending.Push(basedOn);
+        }
+
+        return false;
+    }
+
+    static XElement? StyleDeclaration(XElement scope, XAttribute? reference) =>
+        reference is not null
+        && XamlMarkupParser.Parse(reference.Value)
+            is { Name: "StaticResource" or "DynamicResource" } call
+        && StaticResourceKey(call) is { } key
+            ? DeclarationOf(scope, key)
+            : null;
 
     INamedTypeSymbol? Redirected(INamedTypeSymbol? context, List<string> redirects)
     {
@@ -1530,6 +1597,45 @@ sealed partial class XamlEmitter
             return null;
 
         return SourcedContext(slot, host);
+    }
+
+    // The levels below reuse a hierarchical template unless it names one for them.
+    INamedTypeSymbol? EveryLevel(XElement template, INamedTypeSymbol? context)
+    {
+        if (
+            context is null
+            || template.Name.LocalName != "HierarchicalDataTemplate"
+            || WritesSource(template, "ItemTemplate", out _)
+            || !WritesSource(template, "ItemsSource", out var written)
+        )
+            return context;
+
+        return
+            written is not null
+            && LevelItemType(context, written) is { } items
+            && Assignable(items, context)
+            ? context
+            : null;
+    }
+
+    ITypeSymbol? LevelItemType(INamedTypeSymbol context, MarkupCall call)
+    {
+        if (
+            call.Name != "Binding"
+            || call.PositionalCalls.Count > 0
+            || call.Named.Any(p => p.Key is not ("Path" or "Mode" or "UpdateSourceTrigger"))
+        )
+            return null;
+
+        var path = (
+            call.Positional.FirstOrDefault() ?? NamedValue(call, "Path") as string ?? ""
+        ).Trim();
+        if (path.Length == 0 || path == ".")
+            return ElementType(context);
+
+        return Quietly(() => ResolveHops(context, path)) is { } hops
+            ? ElementType(hops[hops.Count - 1].Type)
+            : null;
     }
 
     // A cell template sits under the column rather than the list, so the source is the nearest one
@@ -2300,10 +2406,12 @@ sealed partial class XamlEmitter
         if (resource.Name != "StaticResource")
             return null;
 
-        if (ResourceKeyExpression(element, resource) is not { } key)
-            return null;
+        // The native fallback reports a key that does not resolve.
+        string? key;
+        using (Speculate())
+            key = ResourceKeyExpression(element, resource);
 
-        return $"({interfaceFqn}){ResolveExpression(key)}";
+        return key is null ? null : $"({interfaceFqn}){ResolveExpression(key)}";
     }
 
     string ConverterParameter(MarkupCall call) =>

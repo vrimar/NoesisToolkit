@@ -28,7 +28,7 @@ sealed partial class XamlEmitter
             case "Type":
             {
                 var errors = Errors.Count;
-                var type = ResolveTypeReference(element, call.Positional.FirstOrDefault() ?? "");
+                var type = ResolveTypeReference(element, TypeArgument(call));
                 if (type is null)
                 {
                     return Errors.Count > errors ? null : Fail("could not resolve {x:Type}");
@@ -40,7 +40,7 @@ sealed partial class XamlEmitter
             case "x:Static":
             case "Static":
             {
-                var reference = call.Positional.FirstOrDefault() ?? "";
+                var reference = StaticArgument(call);
                 var dot = reference.LastIndexOf('.');
                 if (dot <= 0)
                 {
@@ -84,6 +84,12 @@ sealed partial class XamlEmitter
                     : null;
         }
     }
+
+    static string TypeArgument(MarkupCall call) =>
+        call.Positional.FirstOrDefault() ?? NamedValue(call, "TypeName") as string ?? "";
+
+    static string StaticArgument(MarkupCall call) =>
+        call.Positional.FirstOrDefault() ?? NamedValue(call, "Member") as string ?? "";
 
     static bool ParserReadsUnset(INamedTypeSymbol owner, string member) =>
         !NoesisSlots.ParserReadsStatic(
@@ -231,12 +237,18 @@ sealed partial class XamlEmitter
         if (enumName is null)
             return text;
 
-        var member = resolver
+        var fields = resolver
             .Resolve(XamlTypeResolver.PresentationNs, enumName)
             ?.GetMembers()
-            .FirstOrDefault(m => m.Kind == SymbolKind.Field && m.Name == text);
+            .Where(m => m.Kind == SymbolKind.Field)
+            .ToList();
+        var member =
+            fields?.FirstOrDefault(m => m.Name == text)
+            ?? fields?.FirstOrDefault(m =>
+                string.Equals(m.Name, text, System.StringComparison.OrdinalIgnoreCase)
+            );
 
-        return member is not null ? text : Fail($"'{text}' is not a member of {enumName}");
+        return member is not null ? member.Name : Fail($"'{text}' is not a member of {enumName}");
     }
 
     string? EmitBindingLike(XElement element, MarkupCall call, string? slot)

@@ -51,4 +51,23 @@
       </Border>
     </StackPanel>
   </DataTemplate>
+
+  <DataTemplate x:Key="Trees" ntk:DataType="t:StForest">
+    <StackPanel>
+      <TreeView x:Name="Mixed" Height="100" ItemsSource="{Binding Folders}">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Name}" />
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+      <TreeView x:Name="Uniform" Height="100" ItemsSource="{Binding Branches}">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Name}" />
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+    </StackPanel>
+  </DataTemplate>
 </ResourceDictionary>

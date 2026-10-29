@@ -16,6 +16,17 @@ sealed partial class XamlEmitter
     string LogicalFor(string source) =>
         XamlPaths.SourceLogicalName(source, filePath, packPrefix, projectDir);
 
+    string SourcedDictionary(string source)
+    {
+        var logical = LogicalFor(source);
+
+        // The fallback loads with no base uri, so a relative source goes rooted the way the parser names it.
+        var fallback = source.Contains(";") || !logical.Contains(";") ? source : "/" + logical;
+
+        _usesResourceLookup = true;
+        return $"__resources({Quote(logical)}, {Quote(fallback)})";
+    }
+
     bool _usesResolve;
 
     bool _usesGraphResolve;
@@ -156,7 +167,7 @@ sealed partial class XamlEmitter
                 var dot = local.IndexOf('.');
                 if (local.Substring(dot + 1) == "MergedDictionaries")
                 {
-                    foreach (var merged in child.Elements())
+                    foreach (var merged in child.Elements().Where(e => !IsIgnorable(e)))
                     {
                         var item = EmitObject(merged);
                         if (item is not null)
@@ -272,7 +283,7 @@ sealed partial class XamlEmitter
 
         void Collect(XElement dictionary)
         {
-            foreach (var child in dictionary.Elements())
+            foreach (var child in dictionary.Elements().Where(e => !IsIgnorable(e)))
             {
                 var local = child.Name.LocalName;
                 var dot = local.IndexOf('.');
@@ -281,7 +292,7 @@ sealed partial class XamlEmitter
                     if (local.Substring(dot + 1) != "MergedDictionaries")
                         continue;
 
-                    foreach (var merged in child.Elements())
+                    foreach (var merged in child.Elements().Where(e => !IsIgnorable(e)))
                     {
                         if (
                             merged.Name.LocalName == "ResourceDictionary"
@@ -314,7 +325,12 @@ sealed partial class XamlEmitter
         }
 
         var symbol = resolver.SymbolOf(element);
-        if (symbol is null || symbol.IsAbstract || symbol.IsStatic)
+        if (
+            symbol is null
+            || symbol.IsAbstract
+            || symbol.IsStatic
+            || !resolver.IsAccessible(symbol, null)
+        )
             return null;
 
         return resolver.HasConstructor(symbol) ? XamlTypeResolver.Fqn(symbol) : null;
@@ -460,10 +476,14 @@ sealed partial class XamlEmitter
         if (call.Positional.Count > 0)
             return Quote(call.Positional[0]);
 
-        var nested = call.PositionalCalls.FirstOrDefault();
+        var named = call.Named.FirstOrDefault(p => p.Key == "ResourceKey").Value;
+        if (named is string text)
+            return Quote(text);
+
+        var nested = call.PositionalCalls.FirstOrDefault() ?? named as MarkupCall;
         if (nested is { Name: "x:Type" or "Type" })
         {
-            var symbol = ResolveTypeSymbol(element, nested.Positional.FirstOrDefault() ?? "");
+            var symbol = ResolveTypeSymbol(element, TypeArgument(nested));
             if (symbol is null)
             {
                 return Fail("could not resolve the type in a resource key");

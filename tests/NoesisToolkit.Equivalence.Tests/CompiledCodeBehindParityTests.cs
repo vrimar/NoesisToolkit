@@ -31,6 +31,7 @@ public sealed class CompiledCodeBehindParityTests
     [Arguments("HeaderText")]
     [Arguments("Wrap")]
     [Arguments("Go")]
+    [Arguments("PlainGo")]
     public async Task A_name_inside_a_parsed_subtree_is_found_from_the_root(string name)
     {
         var (native, compiled) = ParsedNames();

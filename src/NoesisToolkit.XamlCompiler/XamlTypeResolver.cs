@@ -71,6 +71,13 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
 
     public bool Maps(string namespaceUri) => CandidateNamespaces(namespaceUri).Any();
 
+    const string ExtensionsNs = "clr-namespace:NoesisGUIExtensions";
+
+    // Noesis' extensions: the native parser knows their types, and no managed assembly declares them.
+    public static bool NativeOwned(string namespaceUri) =>
+        namespaceUri.StartsWith(ExtensionsNs, StringComparison.Ordinal)
+        && (namespaceUri.Length == ExtensionsNs.Length || namespaceUri[ExtensionsNs.Length] == ';');
+
     IEnumerable<string> CandidateNamespaces(string namespaceUri)
     {
         if (namespaceUri.StartsWith("clr-namespace:", StringComparison.Ordinal))
@@ -396,6 +403,20 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
         if (!DerivesFrom(metadataType, "global::Noesis.FrameworkPropertyMetadata"))
             return 0;
 
+        if (
+            metadata.Initializer?.Initializers.Any(i =>
+                i
+                    is ISimpleAssignmentOperation
+                    {
+                        Target: IPropertyReferenceOperation
+                        {
+                            Property.Name: "BindsTwoWayByDefault"
+                        },
+                    }
+            ) == true
+        )
+            return null;
+
         var argument = metadata.Arguments.FirstOrDefault(a =>
             a.Parameter?.Type.ToDisplayString() == MetadataOptions
         );
@@ -484,9 +505,9 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
     }
 
     public static bool Framework(string assembly) =>
-        assembly is "mscorlib" or "netstandard" or "Noesis.GUI"
-        || assembly.StartsWith("System", StringComparison.Ordinal)
-        || assembly.StartsWith("Microsoft", StringComparison.Ordinal);
+        assembly is "mscorlib" or "netstandard" or "Noesis.GUI" or "System" or "Microsoft"
+        || assembly.StartsWith("System.", StringComparison.Ordinal)
+        || assembly.StartsWith("Microsoft.", StringComparison.Ordinal);
 
     public static bool DerivesFrom(ITypeSymbol type, string fullName) =>
         BaseChain(type).Any(t => Fqn(t) == fullName);

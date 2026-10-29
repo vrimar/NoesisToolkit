@@ -81,4 +81,29 @@ public sealed class CompiledPropertyTriggerTests
         NoesisRuntime.Pump(view, host);
         await Assert.That(Caption(host).Opacity).IsEqualTo(1f);
     }
+
+    [Test]
+    public async Task A_setter_naming_a_part_that_is_no_element_keeps_its_trigger_native()
+    {
+        static (Border Chrome, Stretch Stretch) Triggered(ResourceDictionary dictionary)
+        {
+            var host = new SpikeControl { Template = (ControlTemplate)dictionary["BrushPart"] };
+            var view = NoesisRuntime.Show(host);
+            host.Align = VerticalAlignment.Top;
+            NoesisRuntime.Pump(view, host);
+            var chrome = TreeSearch.All<Border>(host).First();
+            return (chrome, ((ImageBrush)chrome.Background).Stretch);
+        }
+
+        NoesisRuntime.Start();
+        var native = Triggered(
+            (ResourceDictionary)GUI.LoadXaml("/Fixtures;Fixtures/TriggeredBrushPart.xaml")
+        );
+        var compiled = Triggered(
+            XamlGenerated.NoesisToolkitEquivalenceTests.FixturesTriggeredBrushPartxamlXaml.Build()
+        );
+
+        await Assert.That(CompiledTriggerSet.SetsOf(compiled.Chrome)).IsEmpty();
+        await Assert.That(compiled.Stretch).IsEqualTo(native.Stretch);
+    }
 }

@@ -1,0 +1,18 @@
+<UserControl
+  x:Class="Sample.RepeatedRefusalsHost"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="clr-namespace:Sample.Ui"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+  ntk:DataType="ui:ItemViewModel"
+>
+  <StackPanel>
+    <TextBlock Text="{Binding Family, Converter={StaticResource {x:Type ui:Missing}}}" />
+    <NativeOnlyPanel>
+      <Border Tag="{StaticResource Nowhere}" Width="{StaticResource Nowhere}">
+        <TextBlock Tag="{StaticResource Nowhere}" />
+      </Border>
+    </NativeOnlyPanel>
+  </StackPanel>
+</UserControl>

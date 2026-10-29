@@ -82,7 +82,7 @@ sealed partial class XamlEmitter(
         return $"__{clean}{separator}{_next++}";
     }
 
-    /// <summary>Records every x:Name in one template so a Setter TargetName resolves even when
+    /// <summary>Records every name in one template so a Setter TargetName resolves even when
     /// the trigger precedes the element. Scoped per template: one file reuses names freely.</summary>
     void PushNameScope(XElement root)
     {
@@ -90,16 +90,26 @@ sealed partial class XamlEmitter(
 
         foreach (var element in NameScopeOf(root))
         {
-            var name = element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs));
-            if (name is null)
+            if (ScopedName(element) is not { } name)
                 continue;
 
             if (resolver.SymbolOf(element) is not null)
-                scope[name.Value] = element;
+                scope[name] = element;
         }
 
         _nameScopes.Add(scope);
     }
+
+    // The parser registers a plain Name as it does x:Name, but no field backs it.
+    string? ScopedName(XElement element) =>
+        element.Attribute(XName.Get("Name", XamlTypeResolver.DirectiveNs))?.Value
+        ?? (
+            element.Attribute("Name") is { } plain
+            && resolver.SymbolOf(element) is { } symbol
+            && XamlTypeResolver.DerivesFrom(symbol, "global::Noesis.FrameworkElement")
+                ? plain.Value.Trim()
+                : null
+        );
 
     IEnumerable<XElement> NameScopeOf(XElement root)
     {
@@ -174,13 +184,44 @@ sealed partial class XamlEmitter(
         PushNameScope(root);
         var name = NextName("dict");
         _dictionaries.Add(name);
-        _lines.Add($"var {name} = new global::Noesis.ResourceDictionary();");
+
+        var type = DictionaryType(root);
+        var source = root.Name.LocalName == "ResourceDictionary" ? root.Attribute("Source") : null;
+        _lines.Add(
+            source is null
+                ? $"var {name} = new {XamlTypeResolver.Fqn(type)}();"
+                : $"var {name} = {SourcedDictionary(source.Value)};"
+        );
         PlanTemplateBindings(root, null);
+
+        foreach (var attribute in root.Attributes().Where(a => a != source))
+            ApplyAttribute(root, name, type, attribute);
+
         EmitDictionaryBody(root, name);
 
         Finish();
         _lines.Add($"return {name};");
         return _lines;
+    }
+
+    INamedTypeSymbol DictionaryType(XElement root)
+    {
+        var plain = resolver.Resolve(XamlTypeResolver.PresentationNs, "ResourceDictionary")!;
+        if (
+            resolver.SymbolOf(root) is not { } type
+            || SymbolEqualityComparer.Default.Equals(type, plain)
+        )
+            return plain;
+
+        if (type.IsAbstract || !resolver.HasConstructor(type) || !resolver.IsAccessible(type, null))
+        {
+            Fail(
+                $"<{root.Name.LocalName}> roots a dictionary that generated code cannot construct"
+            );
+            return plain;
+        }
+
+        return type;
     }
 
     void Finish()

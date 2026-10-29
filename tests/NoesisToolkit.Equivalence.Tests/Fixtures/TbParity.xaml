@@ -31,6 +31,15 @@
     </StackPanel>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="Live" TargetType="{x:Type ToggleButton}">
+    <Border x:Name="Live" Width="5" Height="5" Background="{TemplateBinding Background}">
+      <Border.BorderBrush>
+        <SolidColorBrush Color="{DynamicResource TbAccent}" />
+      </Border.BorderBrush>
+      <TextBlock x:Name="LiveText" />
+    </Border>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="Content" TargetType="{x:Type t:SpikeControl}">
     <StackPanel>
       <t:CpHost x:Name="Hosted" Content="{TemplateBinding Label}" />
