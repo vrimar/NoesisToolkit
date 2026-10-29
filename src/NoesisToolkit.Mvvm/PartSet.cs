@@ -62,16 +62,16 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
     /// <summary>The value one chain currently reads. A path that ran out is
     /// <c>DependencyProperty.UnsetValue</c>, not null: the native engine hands converters the
     /// same.</summary>
-    internal object? Evaluate(int index)
+    internal object? Evaluate(int index, out object? root)
     {
-        var value = _chains[index].Evaluate(out _, out _, out var broke);
+        var value = _chains[index].Evaluate(out root, out _, out var broke);
         return broke ? DependencyProperty.UnsetValue : value;
     }
 
     internal bool Matches(int index, object? expected) =>
         expected is string text && _chains[index].TextEquals(text) is { } equal
             ? equal
-            : Equals(Evaluate(index), expected);
+            : Equals(Evaluate(index, out _), expected);
 
     internal void Unwatch() => _watched.Clear();
 
@@ -86,7 +86,11 @@ sealed class PartSet : IChainOwner, INotifierOwner, IElementLifecycleOwner
             _owner.PartsChanged();
     }
 
-    void IElementLifecycleOwner.Settle() => Start();
+    void IElementLifecycleOwner.Settle()
+    {
+        Resolve();
+        _owner.PartsSettled();
+    }
 
     // A source that outlives the element would pin it.
     void IElementLifecycleOwner.Release()

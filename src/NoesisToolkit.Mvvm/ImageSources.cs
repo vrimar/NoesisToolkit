@@ -23,25 +23,45 @@ public static class ImageSources
 
     static readonly BitmapImage?[] RecentlyUsed = new BitmapImage?[Recent];
     static int _nextRecent;
+    static int _sweepAt = 2 * Recent;
 
     /// <summary>What Noesis' own converter makes of <paramref name="uri"/>, reused while it lives.</summary>
     /// <param name="uri">A relative or absolute URI.</param>
-    /// <returns>The image.</returns>
-    public static ImageSource From(string uri)
+    /// <returns>The image, or null where <paramref name="uri"/> is no URI at all.</returns>
+    public static ImageSource? From(string uri)
     {
         Guard.NotNull(uri, nameof(uri));
 
         if (!ByUri.TryGetValue(uri, out var weak) || !weak.TryGetTarget(out var image))
         {
-            image = new BitmapImage(new Uri(uri, UriKind.RelativeOrAbsolute));
-            if (weak is null)
-                ByUri[uri] = new WeakReference<BitmapImage>(image);
-            else
+            if (!Uri.TryCreate(uri, UriKind.RelativeOrAbsolute, out var parsed))
+                return null;
+
+            image = new BitmapImage(parsed);
+            if (weak is not null)
                 weak.SetTarget(image);
+            else
+            {
+                if (ByUri.Count >= _sweepAt)
+                    Sweep();
+
+                ByUri[uri] = new WeakReference<BitmapImage>(image);
+            }
         }
 
         RecentlyUsed[_nextRecent] = image;
         _nextRecent = (_nextRecent + 1) % Recent;
         return image;
+    }
+
+    static void Sweep()
+    {
+        foreach (var (uri, weak) in ByUri)
+        {
+            if (!weak.TryGetTarget(out _))
+                ByUri.Remove(uri);
+        }
+
+        _sweepAt = Math.Max(2 * Recent, 2 * ByUri.Count);
     }
 }

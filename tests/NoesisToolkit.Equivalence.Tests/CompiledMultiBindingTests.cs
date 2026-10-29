@@ -31,6 +31,136 @@ public sealed class CompiledMultiBindingTests
         ) => throw new NotSupportedException();
     }
 
+    sealed class Handback : IMultiValueConverter
+    {
+        public object Convert(
+            object[] values,
+            Type targetType,
+            object parameter,
+            CultureInfo culture
+        ) => values;
+
+        public object[] ConvertBack(
+            object value,
+            Type[] targetTypes,
+            object parameter,
+            CultureInfo culture
+        ) => throw new NotSupportedException();
+    }
+
+    sealed class First : IMultiValueConverter
+    {
+        public object Convert(
+            object[] values,
+            Type targetType,
+            object parameter,
+            CultureInfo culture
+        ) => values[0];
+
+        public object[] ConvertBack(
+            object value,
+            Type[] targetTypes,
+            object parameter,
+            CultureInfo culture
+        ) => throw new NotSupportedException();
+    }
+
+    [Test]
+    public async Task A_converter_that_hands_back_its_values_gets_a_new_array_each_time()
+    {
+        NoesisRuntime.Start();
+
+        var native = new SpikeItem { Label = "a", Index = 1 };
+        var compiled = new SpikeItem { Label = "a", Index = 1 };
+
+        var nativeText = new TextBlock { DataContext = native };
+        var multi = new MultiBinding { Converter = new Handback() };
+        multi.Bindings.Add(new Binding(nameof(SpikeItem.Label)));
+        multi.Bindings.Add(new Binding(nameof(SpikeItem.Index)));
+        BindingOperations.SetBinding(nativeText, FrameworkElement.TagProperty, multi);
+
+        var compiledText = new TextBlock { DataContext = compiled };
+        CompiledMultiBinding.Bind(
+            compiledText,
+            FrameworkElement.TagProperty,
+            new CompiledMultiBindingSpec
+            {
+                Parts =
+                [
+                    new CompiledBindingPart { Hops = [Hop.Label] },
+                    new CompiledBindingPart { Hops = [Hop.Index] },
+                ],
+                Converter = new Handback(),
+                TargetType = typeof(object),
+            }
+        );
+
+        NoesisRuntime.Show(nativeText, compiledText);
+        var nativeFirst = (object[])nativeText.Tag;
+        var compiledFirst = (object[])compiledText.Tag;
+
+        native.Label = "b";
+        compiled.Label = "b";
+
+        await Assert.That(ReferenceEquals(compiledText.Tag, compiledFirst)).IsFalse();
+        await Assert.That(compiledFirst[0]).IsEqualTo(nativeFirst[0]);
+        await Assert.That(((object[])compiledText.Tag)[0]).IsEqualTo("b");
+    }
+
+    [Test]
+    public async Task A_reload_keeps_what_the_control_put_in_a_one_way_slot()
+    {
+        NoesisRuntime.Start();
+
+        var native = ClickedThenReloaded(box =>
+        {
+            var multi = new MultiBinding { Converter = new First(), Mode = BindingMode.OneWay };
+            multi.Bindings.Add(new Binding(nameof(SpikeItem.Flag)));
+            box.SetBinding(ToggleButton.IsCheckedProperty, multi);
+        });
+        var compiled = ClickedThenReloaded(box =>
+            CompiledMultiBinding.Bind(
+                box,
+                ToggleButton.IsCheckedProperty,
+                new CompiledMultiBindingSpec
+                {
+                    Parts = [new CompiledBindingPart { Hops = [Hop.Flag] }],
+                    Converter = new First(),
+                    TargetType = typeof(bool?),
+                }
+            )
+        );
+
+        await Assert.That(compiled).IsEqualTo(native);
+        await Assert.That(compiled).IsEqualTo(true);
+    }
+
+    static bool? ClickedThenReloaded(Action<CheckBox> bind)
+    {
+        var box = new CheckBox
+        {
+            Width = 20,
+            Height = 20,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            DataContext = new SpikeItem(),
+        };
+        bind(box);
+
+        var root = new Grid { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, box);
+        view.Activate();
+        view.MouseButtonDown(10, 10, MouseButton.Left);
+        view.MouseButtonUp(10, 10, MouseButton.Left);
+        NoesisRuntime.Pump(view, root);
+
+        root.Children.Remove(box);
+        NoesisRuntime.Pump(view, root);
+        root.Children.Add(box);
+        NoesisRuntime.Pump(view, root);
+        return box.IsChecked;
+    }
+
     [Test]
     public async Task It_survives_being_unloaded_and_loaded_again()
     {

@@ -5,6 +5,12 @@ using NoesisToolkit.Mvvm.CodeGen;
 
 namespace NoesisToolkit.Equivalence.Tests;
 
+public sealed partial class LimitedHost : Control
+{
+    [DependencyProperty]
+    public partial int? Limit { get; set; }
+}
+
 // Judged against what a native Binding puts in the same slot.
 [NotInParallel("Noesis")]
 public sealed class CompiledBindingTests
@@ -185,6 +191,132 @@ public sealed class CompiledBindingTests
         await Assert
             .That(Describe(compiled.Foreground))
             .IsNotEqualTo(Describe(new SolidColorBrush(Colors.Red)));
+    }
+
+    [Test]
+    public async Task An_unresolved_path_does_not_hand_a_nullable_slot_back_to_the_style()
+    {
+        NoesisRuntime.Start();
+
+        var styled = new Style { TargetType = typeof(LimitedHost) };
+        styled.Setters.Add(new Setter { Property = LimitedHost.LimitProperty, Value = 5 });
+
+        var native = new LimitedHost { Style = styled, DataContext = new SpikeItem() };
+        native.SetBinding(LimitedHost.LimitProperty, new Binding("Payload.Index"));
+
+        var compiled = new LimitedHost { Style = styled, DataContext = new SpikeItem() };
+        CompiledBinding.Bind(
+            compiled,
+            LimitedHost.LimitProperty,
+            new CompiledBindingSpec
+            {
+                Hops =
+                [
+                    Hop.Payload,
+                    BindingHop.Guarded<SpikeItem>(nameof(SpikeItem.Index), s => s.Index),
+                ],
+            }
+        );
+
+        NoesisRuntime.Show(native, compiled);
+
+        await Assert.That(compiled.Limit).IsEqualTo(native.Limit);
+        await Assert.That(compiled.Limit).IsNull();
+    }
+
+    [Test]
+    public async Task A_reload_keeps_what_the_control_put_in_a_one_way_slot()
+    {
+        NoesisRuntime.Start();
+
+        var native = ClickedThenReloaded(box =>
+            box.SetBinding(
+                ToggleButton.IsCheckedProperty,
+                new Binding(nameof(SpikeItem.Flag)) { Mode = BindingMode.OneWay }
+            )
+        );
+        var compiled = ClickedThenReloaded(box =>
+            CompiledBinding.Bind(
+                box,
+                ToggleButton.IsCheckedProperty,
+                new CompiledBindingSpec { Hops = [Hop.Flag], Mode = BindingMode.OneWay }
+            )
+        );
+
+        await Assert.That(compiled).IsEqualTo(native);
+        await Assert.That(compiled).IsEqualTo(true);
+    }
+
+    [Test]
+    public async Task A_two_way_edit_made_while_unloaded_reaches_the_source_on_reload()
+    {
+        NoesisRuntime.Start();
+
+        var native = new SpikeItem { Label = "orig" };
+        var nativeBox = new TextBox { DataContext = native };
+        nativeBox.SetBinding(
+            TextBox.TextProperty,
+            new Binding(nameof(SpikeItem.Label))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+            }
+        );
+
+        var compiled = new SpikeItem { Label = "orig" };
+        var compiledBox = new TextBox { DataContext = compiled };
+        CompiledBinding.Bind(
+            compiledBox,
+            TextBox.TextProperty,
+            new CompiledBindingSpec
+            {
+                Hops = [Hop.Label],
+                Write = (o, v) => ((SpikeItem)o).Label = (string)v!,
+                Mode = BindingMode.TwoWay,
+                Trigger = UpdateSourceTrigger.PropertyChanged,
+            }
+        );
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, nativeBox, compiledBox);
+
+        root.Children.Clear();
+        NoesisRuntime.Pump(view, root);
+        nativeBox.Text = "typed";
+        compiledBox.Text = "typed";
+        root.Children.Add(nativeBox);
+        root.Children.Add(compiledBox);
+        NoesisRuntime.Pump(view, root);
+
+        await Assert.That(compiled.Label).IsEqualTo(native.Label);
+        await Assert.That(compiledBox.Text).IsEqualTo(nativeBox.Text);
+        await Assert.That(compiled.Label).IsEqualTo("typed");
+    }
+
+    static bool? ClickedThenReloaded(Action<CheckBox> bind)
+    {
+        var box = new CheckBox
+        {
+            Width = 20,
+            Height = 20,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            DataContext = new SpikeItem(),
+        };
+        bind(box);
+
+        var root = new Grid { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, box);
+        view.Activate();
+        view.MouseButtonDown(10, 10, MouseButton.Left);
+        view.MouseButtonUp(10, 10, MouseButton.Left);
+        NoesisRuntime.Pump(view, root);
+
+        root.Children.Remove(box);
+        NoesisRuntime.Pump(view, root);
+        root.Children.Add(box);
+        NoesisRuntime.Pump(view, root);
+        return box.IsChecked;
     }
 
     static string Describe(Brush? brush) =>

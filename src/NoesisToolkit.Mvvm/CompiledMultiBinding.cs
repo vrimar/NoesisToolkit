@@ -67,10 +67,12 @@ public sealed class CompiledMultiBinding : IPartSetOwner
     readonly CompiledMultiBindingSpec _spec;
     readonly PartSet _parts;
     readonly object?[] _values;
+    readonly object?[] _roots;
 
     readonly object? _unset;
     readonly bool _clearWhenUnset;
     bool _pushing;
+    bool _applied;
 
     CompiledMultiBinding(
         FrameworkElement target,
@@ -83,6 +85,7 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         _spec = spec;
         _parts = new PartSet(_target, spec.Parts, this);
         _values = new object?[spec.Parts.Length];
+        _roots = new object?[spec.Parts.Length];
 
         (_unset, _clearWhenUnset) = SlotDefault.For(target, property);
 
@@ -108,11 +111,13 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         return new CompiledMultiBinding(target, property, spec);
     }
 
-    void IPartSetOwner.PartsChanged() => Rebuild();
+    void IPartSetOwner.PartsChanged() => Rebuild(reloading: false);
+
+    void IPartSetOwner.PartsSettled() => Rebuild(reloading: true);
 
     bool IPartSetOwner.StillMissing => false;
 
-    void Rebuild()
+    void Rebuild(bool reloading)
     {
         if (_pushing || !_target.Alive)
             return;
@@ -120,8 +125,20 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         _parts.Unwatch();
 
         var values = _values;
+        var unmoved = _applied;
         for (var i = 0; i < values.Length; i++)
-            values[i] = _parts.Evaluate(i);
+        {
+            var value = _parts.Evaluate(i, out var root);
+            unmoved &= ReferenceEquals(root, _roots[i]) && SourceChain.Same(value, values[i]);
+            values[i] = value;
+            _roots[i] = root;
+        }
+
+        // A load never re-evaluates natively, so what the control put in the slot since survives.
+        if (reloading && unmoved)
+            return;
+
+        _applied = false;
 
         object? combined;
         if (_spec.Converter is not null)
@@ -134,6 +151,7 @@ public sealed class CompiledMultiBinding : IPartSetOwner
         if (!_target.Alive)
             return;
 
+        _applied = true;
         _pushing = true;
         try
         {
@@ -160,13 +178,15 @@ public sealed class CompiledMultiBinding : IPartSetOwner
 
     object? Combine(IMultiValueConverter converter, object?[] values)
     {
+        // A converter may hand back or keep the array it is given, so each call gets its own.
+        var handed = new object?[values.Length];
         for (var i = 0; i < values.Length; i++)
-            values[i] = SlotConversion.Marshalled(values[i]);
+            handed[i] = SlotConversion.Marshalled(values[i]);
 
         try
         {
             return converter.Convert(
-                values,
+                handed,
                 _spec.TargetType ?? typeof(object),
                 _spec.ConverterParameter,
                 CultureInfo.CurrentCulture

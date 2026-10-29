@@ -217,6 +217,7 @@ public sealed class CompiledBinding
 
     static readonly object NotBroke = new object();
     static readonly object NoSource = new object();
+    static readonly object NotApplied = new object();
 
     static readonly nint LostFocus = BaseComponent.getCPtr(UIElement.LostFocusEvent).Handle;
 
@@ -229,6 +230,9 @@ public sealed class CompiledBinding
     object? _unset;
     bool _clearWhenUnset;
     object? _brokeFor = NotBroke;
+    object? _appliedFor = NotApplied;
+    object? _applied;
+    ulong _appliedSlot;
     ElementLifecycle _life = null!;
     bool _pushing;
     object? _written;
@@ -513,7 +517,7 @@ public sealed class CompiledBinding
     void IElementLifecycleOwner.Settle()
     {
         Resolve();
-        Rebuild();
+        Rebuild(reloading: true);
     }
 
     void IChainOwner.ChainChanged() => Rebuild();
@@ -530,6 +534,7 @@ public sealed class CompiledBinding
         if (!ReferenceEquals(receiver, _receiver))
         {
             _receiver = receiver;
+            _appliedFor = NotApplied;
 
             // The binding occupies the slot either way, so what a failing one shows is the default
             // in force for this receiver -- the one a subclass overrode the property to.
@@ -557,7 +562,7 @@ public sealed class CompiledBinding
             Rebuild();
     }
 
-    void Rebuild()
+    void Rebuild(bool reloading = false)
     {
         if (_pushing || !_target.Alive)
             return;
@@ -573,6 +578,7 @@ public sealed class CompiledBinding
         {
             _writable = null;
             _writableRoot = null;
+            _appliedFor = NotApplied;
             _pushing = true;
             try
             {
@@ -621,6 +627,24 @@ public sealed class CompiledBinding
         if (_receiver is not { Alive: true } receiver)
             return;
 
+        // A load never re-evaluates natively, so what the control put in the slot since survives.
+        if (
+            reloading
+            && !broke
+            && ReferenceEquals(root, _appliedFor)
+            && (
+                _spec.Lane is { } held
+                    ? held.Same(slot, _appliedSlot)
+                    : SourceChain.Same(current, _applied)
+            )
+        )
+        {
+            if (_twoWay)
+                OnTargetChanged();
+
+            return;
+        }
+
         _pushing = true;
         try
         {
@@ -633,16 +657,27 @@ public sealed class CompiledBinding
             if (!broke)
             {
                 if (_spec.Lane is { } typed)
+                {
                     typed.Write(receiver.Handle, _property, slot);
+                    _appliedSlot = slot;
+                    _appliedFor = root;
+                }
                 else
-                    WriteTarget(receiver, Forward(current));
+                {
+                    _applied = current;
+                    _appliedFor = WriteTarget(receiver, Forward(current)) ? root : NotApplied;
+                }
 
                 _brokeFor = NotBroke;
             }
-            else if (!ReferenceEquals(root, _brokeFor))
+            else
             {
-                WriteDefault(receiver);
-                _brokeFor = root;
+                _appliedFor = NotApplied;
+                if (!ReferenceEquals(root, _brokeFor))
+                {
+                    WriteDefault(receiver);
+                    _brokeFor = root;
+                }
             }
 
             Settle();
@@ -673,7 +708,7 @@ public sealed class CompiledBinding
         return false;
     }
 
-    void WriteTarget(ElementState receiver, object? produced)
+    bool WriteTarget(ElementState receiver, object? produced)
     {
         var value =
             ReferenceEquals(produced, DependencyProperty.UnsetValue)
@@ -682,28 +717,34 @@ public sealed class CompiledBinding
                 : _spec.Convert(produced);
 
         if (ReferenceEquals(value, Binding.DoNothing))
-            return;
+            return true;
 
         if (ReferenceEquals(value, DependencyProperty.UnsetValue))
         {
             WriteDefault(receiver);
-            return;
+            return true;
         }
 
         if (!ReferenceEquals(value, SlotConversion.Unconverted))
         {
             Assign(receiver, value);
-            return;
+            return true;
         }
 
+        if (produced is null)
+            return true;
+
         // Off a view the engine converts on attach, outside _pushing; the load rebuilds instead.
+        if (_target.Element is not { IsLoaded: true })
+            return false;
+
         if (
-            produced is not null
-            && _target.Element is { IsLoaded: true }
-            && receiver.Object is { } resolved
+            receiver.Object is { } resolved
             && !SlotConversion.Convert(resolved, _property, produced)
         )
             WriteDefault(receiver);
+
+        return true;
     }
 
     void WriteDefault(ElementState receiver)

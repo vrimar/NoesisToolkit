@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Noesis;
 using NoesisToolkit.Mvvm;
@@ -229,7 +231,7 @@ public sealed class CompiledConversionTests
 
         await Assert.That(second).IsSameReferenceAs(first);
         await Assert
-            .That(((BitmapImage)first).UriSource.OriginalString)
+            .That(((BitmapImage)first!).UriSource.OriginalString)
             .IsEqualTo("Fixtures/icon.png");
     }
 
@@ -258,9 +260,59 @@ public sealed class CompiledConversionTests
         await Assert.That(weak.TryGetTarget(out _)).IsFalse();
     }
 
+    [Test]
+    public async Task A_path_string_that_is_no_uri_empties_an_image_source_slot_instead_of_throwing()
+    {
+        NoesisRuntime.Start();
+
+        var item = new SpikeItem { Label = "Fixtures/icon.png" };
+        var image = new Image { DataContext = item };
+        CompiledBinding.Bind(
+            image,
+            Image.SourceProperty,
+            new CompiledBindingSpec
+            {
+                Hops = [Hop.Label],
+                Convert = v => v is string t ? ImageSources.From(t) : null,
+            }
+        );
+
+        NoesisRuntime.Show(image);
+        await Assert.That(SourcePath(image)).IsEqualTo("Fixtures/icon.png");
+
+        item.Label = "http://";
+        await Assert.That(image.Source).IsNull();
+    }
+
+    [Test]
+    public async Task Paths_no_element_shows_any_more_leave_the_shared_map()
+    {
+        NoesisRuntime.Start();
+
+        const int rounds = 16;
+        for (var round = 0; round < rounds; round++)
+        {
+            ConvertDistinct(round);
+            Collect();
+        }
+
+        var mapped = (ICollection)
+            typeof(ImageSources)
+                .GetField("ByUri", BindingFlags.NonPublic | BindingFlags.Static)!
+                .GetValue(null)!;
+        await Assert.That(mapped.Count).IsLessThan(rounds * ImageSources.Recent / 2);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void ConvertDistinct(int round)
+    {
+        for (var i = 0; i < ImageSources.Recent; i++)
+            ImageSources.From($"Fixtures/distinct-{round}-{i}.png");
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     static WeakReference<BitmapImage> Converted(string path) =>
-        new((BitmapImage)ImageSources.From(path));
+        new((BitmapImage)ImageSources.From(path)!);
 
     static void Collect()
     {

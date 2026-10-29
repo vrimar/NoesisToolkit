@@ -92,6 +92,10 @@ sealed class SourceChain : IChangeListener
         return owner;
     }
 
+    // An equal object is still a new value; only a value type or text compares by value.
+    internal static bool Same(object? read, object? before) =>
+        ReferenceEquals(read, before) || (read is ValueType or string && read.Equals(before));
+
     // Compared natively: a text box's placeholder trigger would otherwise decode its text per keystroke.
     internal bool? TextEquals(string text) =>
         _hops.Length == 0 && Source is { } source && _sourceProperty is not null

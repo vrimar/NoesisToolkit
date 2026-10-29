@@ -35,6 +35,8 @@ interface IPartSetOwner
 {
     void PartsChanged();
 
+    void PartsSettled();
+
     /// <summary>True while something beyond the chains is still unresolved, which keeps the
     /// layout retry running.</summary>
     bool StillMissing { get; }

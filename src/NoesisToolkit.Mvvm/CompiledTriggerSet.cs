@@ -191,6 +191,8 @@ public sealed class CompiledTriggerSet : IPartSetOwner
 
     void IPartSetOwner.PartsChanged() => Rebuild();
 
+    void IPartSetOwner.PartsSettled() => Rebuild();
+
     bool IPartSetOwner.StillMissing => _targetMissing;
 
     void Rebuild()

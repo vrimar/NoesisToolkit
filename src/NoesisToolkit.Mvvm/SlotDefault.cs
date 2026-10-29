@@ -14,11 +14,12 @@ static class SlotDefault
         DependencyProperty property
     )
     {
-        var unset = Unbox(
-            property.GetMetadata(target.GetType())?.DefaultValue,
-            property.PropertyType
+        var type = property.PropertyType;
+        var unset = Unbox(property.GetMetadata(target.GetType())?.DefaultValue, type);
+        return (
+            unset,
+            unset is null && type.IsValueType && Nullable.GetUnderlyingType(type) is null
         );
-        return (unset, unset is null && property.PropertyType.IsValueType);
     }
 
     // Metadata hands an enum default back as the integer it is stored as, which is not a value the
