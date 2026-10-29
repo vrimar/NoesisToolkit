@@ -71,12 +71,8 @@ internal sealed class XamlTypeResolver(Compilation compilation, XamlCompilerOpti
 
     public bool Maps(string namespaceUri) => CandidateNamespaces(namespaceUri).Any();
 
-    const string ExtensionsNs = "clr-namespace:NoesisGUIExtensions";
-
-    // Noesis' extensions: the native parser knows their types, and no managed assembly declares them.
     public static bool NativeOwned(string namespaceUri) =>
-        namespaceUri.StartsWith(ExtensionsNs, StringComparison.Ordinal)
-        && (namespaceUri.Length == ExtensionsNs.Length || namespaceUri[ExtensionsNs.Length] == ';');
+        XamlMarkup.IsNoesisExtensions(namespaceUri);
 
     IEnumerable<string> CandidateNamespaces(string namespaceUri)
     {

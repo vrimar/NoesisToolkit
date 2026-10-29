@@ -605,9 +605,134 @@ public class XamlBindingAnalyzerTests
             </ItemsControl>
             """
     )]
-    public async Task A_converted_source_leaves_its_template_untyped(string body)
+    [Arguments(
+        """
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ListView ItemsSource="{StaticResource Rows}">
+                <ListView.View>
+                  <GridView>
+                    <GridViewColumn>
+                      <GridViewColumn.CellTemplate>
+                        <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                      </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                  </GridView>
+                </ListView.View>
+              </ListView>
+            </ItemsControl>
+            """
+    )]
+    [Arguments(
+        """
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ListView>
+                <ListView.ItemsSource>
+                  <Binding ElementName="Other" Path="Tag" />
+                </ListView.ItemsSource>
+                <ListView.View>
+                  <GridView>
+                    <GridViewColumn>
+                      <GridViewColumn.CellTemplate>
+                        <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                      </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                  </GridView>
+                </ListView.View>
+              </ListView>
+            </ItemsControl>
+            """
+    )]
+    [Arguments(
+        """
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ListView>
+                <ListView.View>
+                  <GridView>
+                    <GridViewColumn>
+                      <GridViewColumn.CellTemplate>
+                        <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                      </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                  </GridView>
+                </ListView.View>
+              </ListView>
+            </ItemsControl>
+            """
+    )]
+    [Arguments(
+        """
+            <HierarchicalDataTemplate DataType="{x:Type ui:ShellViewModel}" ItemsSource="{Binding Items}">
+              <GridViewColumn>
+                <GridViewColumn.CellTemplate>
+                  <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                </GridViewColumn.CellTemplate>
+              </GridViewColumn>
+            </HierarchicalDataTemplate>
+            """
+    )]
+    public async Task A_source_the_walk_cannot_type_leaves_its_template_untyped(string body)
     {
         await Assert.That((await Bindings("ShellViewModel", body))).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_cell_template_is_typed_by_the_items_of_the_list_it_sits_in()
+    {
+        var diagnostics = await Bindings(
+            "ShellViewModel",
+            """
+            <ListView ItemsSource="{Binding Items}">
+              <ListView.View>
+                <GridView>
+                  <GridViewColumn>
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
+                </GridView>
+              </ListView.View>
+            </ListView>
+            """
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("ItemViewModel");
+    }
+
+    [Test]
+    [Arguments("""ItemsSource="{Binding Children}" """, "", 1)]
+    [Arguments("""ItemsSource="{Binding Leaves}" """, "", 0)]
+    [Arguments(
+        "",
+        """
+            <HierarchicalDataTemplate.ItemsSource>
+              <Binding Path="Leaves" />
+            </HierarchicalDataTemplate.ItemsSource>
+            """,
+        0
+    )]
+    [Arguments("""ItemsSource="{Binding Leaves}" ItemTemplate="{StaticResource Leaf}" """, "", 1)]
+    public async Task A_hierarchical_template_is_typed_by_its_host_only_where_every_level_is_that_type(
+        string attributes,
+        string elements,
+        int expected
+    )
+    {
+        var diagnostics = await Bindings(
+            "TreeViewModel",
+            $$"""
+            <ItemsControl ItemsSource="{Binding Roots}">
+              <ItemsControl.ItemTemplate>
+                <HierarchicalDataTemplate {{attributes}}>
+                  {{elements}}
+                  <TextBlock Text="{Binding Nope}" />
+                </HierarchicalDataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            """
+        );
+
+        await Assert.That(diagnostics.Length).IsEqualTo(expected);
     }
 
     [Test]

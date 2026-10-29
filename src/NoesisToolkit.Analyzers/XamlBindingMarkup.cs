@@ -43,12 +43,19 @@ internal static class XamlBindingMarkup
     }
 
     /// <summary>The members of a binding this analyzer judges, off the shared markup parse.</summary>
-    public static BindingExpression ParseBinding(string body)
+    public static BindingExpression ParseBinding(string body) =>
+        XamlMarkupParser.Parse("{Binding " + body + "}") is { } call
+            ? Read(call)
+            : new BindingExpression();
+
+    /// <summary>The binding a whole attribute value is, or null where it is anything else, a
+    /// binding nested in another extension included.</summary>
+    public static BindingExpression? ParseValue(string value) =>
+        XamlMarkupParser.Parse(value.Trim()) is { Name: "Binding" } call ? Read(call) : null;
+
+    static BindingExpression Read(MarkupCall call)
     {
         var result = new BindingExpression();
-        if (XamlMarkupParser.Parse("{Binding " + body + "}") is not { } call)
-            return result;
-
         if (call.Positional.Count > 0)
             result.Path = call.Positional[0];
 
@@ -118,9 +125,6 @@ internal sealed class BindingExpression
     public bool ShapesValue;
 
     public bool Converts;
-
-    public bool IsPlainDataContext =>
-        Path is not null && RelativeSource is null && ElementName is null && !HasSource;
 
     // The rule the compiler types a redirected DataContext by.
     public bool RedirectsTyped =>

@@ -203,12 +203,20 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
             : null;
     }
 
+    // An object initializer's implicit receiver is the object being built, not the control.
     private static ISymbol? OwnMember(IOperation target) =>
         target switch
         {
-            IPropertyReferenceOperation { Instance: IInstanceReferenceOperation } property =>
+            IPropertyReferenceOperation { Instance: var self } property when IsSelf(self) =>
                 property.Property,
-            IFieldReferenceOperation { Instance: IInstanceReferenceOperation } field => field.Field,
+            IFieldReferenceOperation { Instance: var self } field when IsSelf(self) => field.Field,
             _ => null,
         };
+
+    private static bool IsSelf(IOperation? instance) =>
+        instance
+            is IInstanceReferenceOperation
+            {
+                ReferenceKind: InstanceReferenceKind.ContainingTypeInstance,
+            };
 }

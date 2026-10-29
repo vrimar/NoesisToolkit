@@ -36,10 +36,11 @@ internal static class TokenScanner
         {
             using var reader = CreateReader(content!);
             var lineInfo = (IXmlLineInfo)reader;
+            var compatibility = new MarkupCompatibility();
 
             while (reader.Read())
             {
-                if (reader.NodeType != XmlNodeType.Element)
+                if (reader.NodeType != XmlNodeType.Element || !compatibility.Reads(reader))
                     continue;
 
                 var depth = reader.Depth;

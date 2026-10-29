@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml;
 
 namespace NoesisToolkit.CodeGen;
@@ -46,8 +47,50 @@ internal static class BindingScanner
         public Dictionary<int, Dictionary<string, string?>> ElementSources =
             new Dictionary<int, Dictionary<string, string?>>();
 
+        public Dictionary<int, HashSet<string>> PropertyElements =
+            new Dictionary<int, HashSet<string>>();
+
+        public StyleFacts Styles = new StyleFacts();
+
         // Read off a later element than the one it rebinds, so it is collected ahead too.
         public HashSet<int> Rebound = new HashSet<int>();
+    }
+
+    sealed class StyleFacts
+    {
+        public readonly Dictionary<string, HashSet<int>> Keyed = new Dictionary<
+            string,
+            HashSet<int>
+        >(StringComparer.Ordinal);
+
+        public readonly Dictionary<int, string> BasedOn = new Dictionary<int, string>();
+
+        public readonly HashSet<int> SetDataContext = new HashSet<int>();
+
+        public readonly Dictionary<int, HashSet<int>> Inline = new Dictionary<int, HashSet<int>>();
+
+        public readonly Dictionary<int, HashSet<string>> Referenced =
+            new Dictionary<int, HashSet<string>>();
+
+        public bool Rebinds(int element)
+        {
+            var seen = new HashSet<int>();
+            return Inline.TryGetValue(element, out var inline)
+                    && inline.Any(style => SetsDataContext(style, seen))
+                || Referenced.TryGetValue(element, out var keys)
+                    && keys.Any(key => KeySetsDataContext(key, seen));
+        }
+
+        bool SetsDataContext(int style, HashSet<int> seen) =>
+            seen.Add(style)
+            && (
+                SetDataContext.Contains(style)
+                || BasedOn.TryGetValue(style, out var key) && KeySetsDataContext(key, seen)
+            );
+
+        bool KeySetsDataContext(string key, HashSet<int> seen) =>
+            Keyed.TryGetValue(key, out var styles)
+            && styles.Any(style => SetsDataContext(style, seen));
     }
 
     /// <summary>Both halves of the scan: the bindings whose DataContext is known, and the ones a
@@ -62,38 +105,48 @@ internal static class BindingScanner
             return ScanResult.Empty;
 
         var nameToScope = new Dictionary<string, DataScope?>(StringComparer.Ordinal);
-        var elementSources = new Dictionary<int, Dictionary<string, string?>>();
-        var rebound = new HashSet<int>();
-        var discard = new Walked
-        {
-            Derives = derives,
-            ElementSources = elementSources,
-            Rebound = rebound,
-        };
+        var discard = new Walked { Derives = derives };
         if (!Walk(content!, namedElements, discard, nameToScope, true))
             return ScanResult.Empty;
+
+        Settle(discard);
 
         // A template can precede the property element that sources it, so a name declared inside
         // one recorded a scope the first pass could not see. Rebuild them now.
         nameToScope.Clear();
-        var named = new Walked
-        {
-            Derives = derives,
-            ElementSources = elementSources,
-            Rebound = rebound,
-        };
+        var named = Again(discard);
         if (!Walk(content!, namedElements, named, nameToScope, true))
             return ScanResult.Empty;
 
-        var walked = new Walked
-        {
-            Derives = derives,
-            ElementSources = elementSources,
-            Rebound = rebound,
-        };
+        var walked = Again(discard);
         return Walk(content!, namedElements, walked, nameToScope, false)
             ? new ScanResult(walked.Checks, walked.Unresolved, walked.CompileBindings)
             : ScanResult.Empty;
+    }
+
+    static Walked Again(Walked collected) =>
+        new Walked
+        {
+            Derives = collected.Derives,
+            ElementSources = collected.ElementSources,
+            PropertyElements = collected.PropertyElements,
+            Styles = collected.Styles,
+            Rebound = collected.Rebound,
+        };
+
+    static void Settle(Walked walked)
+    {
+        foreach (var pair in walked.PropertyElements)
+        {
+            if (pair.Value.Contains("DataContext"))
+                walked.Rebound.Add(pair.Key);
+        }
+
+        foreach (var element in walked.Styles.Inline.Keys.Concat(walked.Styles.Referenced.Keys))
+        {
+            if (walked.Styles.Rebinds(element))
+                walked.Rebound.Add(element);
+        }
     }
 
     /// <summary>Every <c>{x:Static}</c> one XAML file states, split into prefix, type and member.</summary>
@@ -146,32 +199,22 @@ internal static class BindingScanner
             return Array.Empty<XmlnsDeclaration>();
 
         var declarations = new List<XmlnsDeclaration>();
-        var scopes = new List<HashSet<string>?> { null };
         try
         {
             using var reader = CreateReader(content!);
             var lineInfo = (IXmlLineInfo)reader;
+            var compatibility = new MarkupCompatibility();
             while (reader.Read())
             {
-                if (reader.NodeType == XmlNodeType.EndElement)
-                {
-                    if (scopes.Count > 1)
-                        scopes.RemoveAt(scopes.Count - 1);
+                if (reader.NodeType != XmlNodeType.Element || !compatibility.Reads(reader))
                     continue;
-                }
-                if (reader.NodeType != XmlNodeType.Element)
-                    continue;
-
-                var ignorable = Ignorable(reader, scopes[scopes.Count - 1]);
-                if (!reader.IsEmptyElement)
-                    scopes.Add(ignorable);
 
                 while (reader.MoveToNextAttribute())
                 {
                     if (
                         reader.Prefix != "xmlns"
                         || !reader.Value.StartsWith(ClrNamespace, StringComparison.Ordinal)
-                        || ignorable?.Contains(reader.Value) == true
+                        || compatibility.Drops(reader.Value)
                         || ClrNamespaceOf(reader.Value) is not { } ns
                     )
                         continue;
@@ -209,10 +252,12 @@ internal static class BindingScanner
         {
             using var reader = CreateReader(content!);
             var lineInfo = (IXmlLineInfo)reader;
+            var compatibility = new MarkupCompatibility();
             while (reader.Read())
             {
                 if (
                     reader.NodeType != XmlNodeType.Element
+                    || !compatibility.Reads(reader)
                     || NamespaceOf(reader, reader.Prefix) is not { } ns
                     || ns == PresentationNamespace
                 )
@@ -245,15 +290,23 @@ internal static class BindingScanner
         {
             using var reader = CreateReader(content);
             var lineInfo = (IXmlLineInfo)reader;
+            var compatibility = new MarkupCompatibility();
             while (reader.Read())
             {
-                if (reader.NodeType != XmlNodeType.Element || !reader.HasAttributes)
+                if (
+                    reader.NodeType != XmlNodeType.Element
+                    || !compatibility.Reads(reader)
+                    || !reader.HasAttributes
+                )
                     continue;
 
                 // Read before the loop moves the reader onto an attribute, where it names that.
                 var tag = ResolveTag(reader);
                 while (reader.MoveToNextAttribute())
-                    visit(reader, lineInfo, tag);
+                {
+                    if (!compatibility.Drops(reader.NamespaceURI))
+                        visit(reader, lineInfo, tag);
+                }
 
                 reader.MoveToElement();
             }
@@ -268,16 +321,15 @@ internal static class BindingScanner
 
     const string ClrNamespace = "clr-namespace:";
 
-    // No managed assembly declares its types: Noesis resolves it natively, whatever assembly= names.
-    const string ExtensionsNamespace = "NoesisGUIExtensions";
-
     // The assembly= suffix is not part of the namespace name.
     static string? ClrNamespaceOf(string value)
     {
+        if (XamlMarkup.IsNoesisExtensions(value))
+            return null;
+
         var body = value.Substring(ClrNamespace.Length);
         var semi = body.IndexOf(';');
-        var name = semi < 0 ? body : body.Substring(0, semi);
-        return name == ExtensionsNamespace ? null : name;
+        return semi < 0 ? body : body.Substring(0, semi);
     }
 
     // A prefix can be redeclared further in, so it resolves where the reader stands.
@@ -293,25 +345,6 @@ internal static class BindingScanner
         };
 
     const string PresentationUri = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-
-    const string CompatibilityUri = "http://schemas.openxmlformats.org/markup-compatibility/2006";
-
-    static HashSet<string>? Ignorable(XmlReader reader, HashSet<string>? inherited)
-    {
-        if (reader.GetAttribute("Ignorable", CompatibilityUri) is not { } listed)
-            return inherited;
-
-        var ignorable = inherited is null
-            ? new HashSet<string>(StringComparer.Ordinal)
-            : new HashSet<string>(inherited, StringComparer.Ordinal);
-        foreach (var prefix in listed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (reader.LookupNamespace(prefix) is { } uri)
-                ignorable.Add(uri);
-        }
-
-        return ignorable;
-    }
 
     static bool CollectDeclarations(string content, Dictionary<string, string> namedElements) =>
         ForEachAttribute(
@@ -345,27 +378,22 @@ internal static class BindingScanner
         {
             using var reader = CreateReader(content);
             var lineInfo = (IXmlLineInfo)reader;
+            var compatibility = new MarkupCompatibility();
 
             while (reader.Read())
             {
-                if (reader.NodeType == XmlNodeType.EndElement)
-                {
-                    if (stack.Count > 1)
-                        stack.RemoveAt(stack.Count - 1);
+                if (reader.NodeType != XmlNodeType.Element || !compatibility.Reads(reader))
                     continue;
-                }
-                if (reader.NodeType != XmlNodeType.Element)
-                    continue;
+
+                // By depth: a dropped element's end tag would pop a frame it never pushed.
+                stack.RemoveRange(reader.Depth + 1, stack.Count - reader.Depth - 1);
 
                 var isEmpty = reader.IsEmptyElement;
                 var parent = stack[stack.Count - 1];
                 var frame = BuildFrame(reader, parent, stack, namedElements, walked, ordinal++);
 
-                if (collect && stack.Count >= 2)
-                    RecordElementSource(reader, parent, stack[stack.Count - 2], walked);
-
-                if (collect && reader.LocalName.EndsWith(".DataContext", StringComparison.Ordinal))
-                    walked.Rebound.Add(parent.Ordinal);
+                if (collect)
+                    Collect(reader, frame.Ordinal, stack, walked);
 
                 if (walked.ElementSources.TryGetValue(frame.Ordinal, out var written))
                 {
@@ -392,6 +420,7 @@ internal static class BindingScanner
                 ProcessAttributes(
                     reader,
                     lineInfo,
+                    compatibility,
                     ref frame,
                     stack,
                     namedElements,
@@ -429,18 +458,21 @@ internal static class BindingScanner
             Data = parent.Data,
             ParentData = parent.Data,
             Compile = parent.Compile,
-            Ignorable = Ignorable(reader, parent.Ignorable),
             TargetType = parent.TargetType,
             SelfType = triggerLike ? parent.TargetType : ResolveTag(reader),
         };
 
         if (triggerLike)
         {
-            var redirect = reader.GetAttribute("TargetName") ?? reader.GetAttribute("SourceName");
+            var target = reader.GetAttribute("TargetName");
+            var redirect = target ?? reader.GetAttribute("SourceName");
             frame.PropertyOwner =
                 redirect is null ? parent.TargetType
                 : namedElements.TryGetValue(redirect, out var tag) && tag.Length > 0 ? tag
                 : null;
+
+            if (target is not null)
+                frame.SelfType = frame.PropertyOwner;
         }
 
         var dot = name.LastIndexOf('.');
@@ -451,29 +483,36 @@ internal static class BindingScanner
             frame.Transparent = XamlScopeRules.TransparentHosts.Contains(propertyName);
 
             if (XamlScopeRules.TemplateHosts.TryGetValue(propertyName, out var host))
-                frame.PendingHost = HostedScope(stack, host);
+                frame.PendingHost = HostedScope(stack, host, walked.Derives);
 
             return frame;
         }
 
         frame.Breaks = XamlScopeRules.ScopeBreakers.Contains(name);
 
+        var keyed = reader.GetAttribute("x:Key") is not null;
+
         switch (name)
         {
             // Content of any template but a ControlTemplate is templated by whatever presents it.
             case "DataTemplate":
             case "HierarchicalDataTemplate":
-                frame.Data = ResolveDataTemplateScope(reader, parent);
+                frame.Data = DataTemplateScope(reader, parent, keyed, ordinal, walked);
                 frame.TargetType = null;
                 break;
             case "Style":
             case "ControlTemplate":
-                frame.Data = TemplatedScope(reader, parent);
+                frame.Data = keyed ? null : TemplatedScope(parent);
                 frame.TargetType = ResolveTypeAttribute(reader, "TargetType") ?? parent.TargetType;
+                frame.IsStyle = name == "Style";
                 break;
             case "ItemsPanelTemplate":
-                frame.Data = TemplatedScope(reader, parent);
+                frame.Data = keyed ? null : TemplatedScope(parent);
                 frame.TargetType = null;
+                break;
+            default:
+                if (keyed)
+                    frame.Data = frame.ParentData = null;
                 break;
         }
 
@@ -507,36 +546,69 @@ internal static class BindingScanner
             : null;
     }
 
-    static DataScope? ResolveDataTemplateScope(XmlReader reader, Frame parent)
+    static DataScope? DataTemplateScope(
+        XmlReader reader,
+        Frame parent,
+        bool keyed,
+        int ordinal,
+        Walked walked
+    )
     {
         if (ResolveTypeAttribute(reader, "DataType") is { } declared)
             return new DataScope(declared);
 
-        return reader.GetAttribute("x:Key") is null ? parent.PendingHost : null;
-    }
-
-    // Any document or code can apply a key, so the sites one document shows prove nothing.
-    static DataScope? TemplatedScope(XmlReader reader, Frame parent)
-    {
-        if (reader.GetAttribute("x:Key") is not null)
+        if (keyed || parent.PendingHost is not { } hosted)
             return null;
 
-        return parent.Transparent ? parent.Data : parent.PendingHost;
+        return reader.LocalName == "HierarchicalDataTemplate"
+            ? EveryLevel(reader, ordinal, hosted, walked)
+            : hosted;
     }
 
-    // A cell template sits under the column rather than the list, so the source is the nearest one
-    // named above -- but never past a breaker, which renders something else entirely.
-    static DataScope? HostedScope(List<Frame> stack, XamlScopeRules.TemplateHost host)
+    static DataScope? EveryLevel(XmlReader reader, int ordinal, DataScope hosted, Walked walked)
+    {
+        if (
+            reader.GetAttribute("ItemTemplate") is not null
+            || Writes(walked, ordinal, "ItemTemplate")
+        )
+            return hosted;
+
+        if (reader.GetAttribute("ItemsSource") is { } written)
+            return HostPath(written) is { } path ? hosted.Recurring(path) : null;
+
+        if (
+            !walked.ElementSources.TryGetValue(ordinal, out var sources)
+            || !sources.TryGetValue("ItemsSource", out var element)
+        )
+            return hosted;
+
+        return element is null ? null : hosted.Recurring(element);
+    }
+
+    static bool Writes(Walked walked, int ordinal, string property) =>
+        walked.PropertyElements.TryGetValue(ordinal, out var written) && written.Contains(property);
+
+    static DataScope? TemplatedScope(Frame parent) =>
+        parent.Transparent ? parent.Data : parent.PendingHost;
+
+    // A breaker's ItemsSource feeds its own tree, so the walk stops at it and at the first list.
+    static DataScope? HostedScope(
+        List<Frame> stack,
+        XamlScopeRules.TemplateHost host,
+        Func<string, string, bool>? derives
+    )
     {
         for (var i = stack.Count - 1; i >= 0; i--)
         {
             var frame = stack[i];
+            if (frame.Breaks && i < stack.Count - 1)
+                return null;
+
             if (
                 frame.Sources is not null
                 && frame.Sources.TryGetValue(host.SourceProperty, out var path)
             )
             {
-                // Null where a converter or format hands the host something its path does not read.
                 if (path is null)
                     return null;
 
@@ -546,16 +618,21 @@ internal static class BindingScanner
                     : frame.Data?.Extend(path, host.IsCollection);
             }
 
-            if (frame.Breaks || !host.SourcedAbove)
+            if (frame.Breaks || !host.SourcedAbove || Lists(frame, derives))
                 return null;
         }
 
         return null;
     }
 
+    static bool Lists(Frame frame, Func<string, string, bool>? derives) =>
+        frame.SelfType is { } self
+        && derives?.Invoke(self, PresentationNamespace + ".ItemsControl") == true;
+
     static void ProcessAttributes(
         XmlReader reader,
         IXmlLineInfo lineInfo,
+        MarkupCompatibility compatibility,
         ref Frame frame,
         List<Frame> stack,
         Dictionary<string, string> namedElements,
@@ -576,35 +653,17 @@ internal static class BindingScanner
                 continue;
 
             // A design-time value binds against the designer's DataContext, not the real one.
-            if (
-                reader.NamespaceURI == CompatibilityUri
-                || frame.Ignorable?.Contains(reader.NamespaceURI) == true
-            )
+            if (compatibility.Drops(reader.NamespaceURI))
                 continue;
 
             var value = reader.Value;
             var line = lineInfo.LineNumber;
             var column = lineInfo.LinePosition;
 
-            if (
-                XamlBindingMarkup.TryGetExtension(value, "Binding", out var hostBody)
-                && IsSourceProperty(reader.LocalName)
-            )
+            if (IsSourceProperty(reader.LocalName))
             {
-                var hostBinding = XamlBindingMarkup.ParseBinding(hostBody);
-                if (
-                    hostBinding.IsPlainDataContext
-                    && (
-                        string.IsNullOrEmpty(hostBinding.Path)
-                        || XamlBindingMarkup.IsValidPath(hostBinding.Path)
-                    )
-                )
-                {
-                    sources ??= new Dictionary<string, string?>(StringComparer.Ordinal);
-                    sources[reader.LocalName] = hostBinding.Converts
-                        ? null
-                        : hostBinding.Path ?? "";
-                }
+                sources ??= new Dictionary<string, string?>(StringComparer.Ordinal);
+                sources[reader.LocalName] = HostPath(value);
             }
 
             if (collect)
@@ -813,38 +872,161 @@ internal static class BindingScanner
 
     static bool IsSourceProperty(string name) => name is "Content" or "ItemsSource" or "Header";
 
-    /// <summary>A source written as &lt;Owner.ItemsSource&gt;&lt;Binding/&gt;, which the attribute
-    /// loop never sees. Recorded against the element that owns the property element.</summary>
-    static void RecordElementSource(XmlReader reader, Frame parent, Frame owner, Walked walked)
+    // Empty hands on the DataContext itself; null is a source the walk cannot type.
+    static string? HostPath(string written)
     {
         if (
-            reader.LocalName != "Binding"
-            || parent.PropertyName is not { } property
-            || !IsSourceProperty(property)
+            XamlBindingMarkup.ParseValue(written)
+            is not {
+                RelativeSource: null,
+                ElementName: null,
+                HasSource: false,
+                Converts: false,
+                PositionalCalls: false,
+            } binding
         )
-            return;
+            return null;
 
-        // Anything that redirects the source is not the ambient DataContext this hands on.
+        if (binding.IsIdentity)
+            return "";
+
+        return XamlBindingMarkup.IsValidPath(binding.Path) ? binding.Path : null;
+    }
+
+    static void Collect(XmlReader reader, int ordinal, List<Frame> stack, Walked walked)
+    {
+        var parent = stack[stack.Count - 1];
+        var name = reader.LocalName;
+
+        var dot = name.LastIndexOf('.');
+        if (dot > 0)
+        {
+            var property = name.Substring(dot + 1);
+            if (!walked.PropertyElements.TryGetValue(parent.Ordinal, out var written))
+                walked.PropertyElements[parent.Ordinal] = written = new HashSet<string>(
+                    StringComparer.Ordinal
+                );
+            written.Add(property);
+
+            if (IsSourceProperty(property))
+                RecordSource(walked, parent.Ordinal, property, null);
+            return;
+        }
+
+        if (stack.Count >= 2 && parent.PropertyName is { } held && IsSourceProperty(held))
+        {
+            RecordSource(
+                walked,
+                stack[stack.Count - 2].Ordinal,
+                held,
+                ordinal == parent.Ordinal + 1 && name == "Binding"
+                    ? ElementBindingPath(reader)
+                    : null
+            );
+        }
+        else if (
+            stack.Count >= 3
+            && parent.SelfType == PresentationNamespace + ".Binding"
+            && stack[stack.Count - 2] is { PropertyName: { } outer } slot
+            && IsSourceProperty(outer)
+            && parent.Ordinal == slot.Ordinal + 1
+        )
+        {
+            RecordSource(walked, stack[stack.Count - 3].Ordinal, outer, null);
+        }
+
+        CollectStyle(reader, ordinal, stack, walked.Styles);
+    }
+
+    static void RecordSource(Walked walked, int owner, string property, string? path)
+    {
+        if (!walked.ElementSources.TryGetValue(owner, out var sources))
+            walked.ElementSources[owner] = sources = new Dictionary<string, string?>(
+                StringComparer.Ordinal
+            );
+
+        sources[property] = path;
+    }
+
+    static string? ElementBindingPath(XmlReader reader)
+    {
         if (
             reader.GetAttribute("Source") is not null
             || reader.GetAttribute("RelativeSource") is not null
             || reader.GetAttribute("ElementName") is not null
+            || reader.GetAttribute("Converter") is not null
+            || reader.GetAttribute("StringFormat") is not null
         )
-            return;
+            return null;
 
         var path = (reader.GetAttribute("Path") ?? "").Trim();
-        if (path.Length > 0 && !XamlBindingMarkup.IsValidPath(path))
-            return;
+        if (path is "" or ".")
+            return "";
 
-        if (!walked.ElementSources.TryGetValue(owner.Ordinal, out var sources))
-            walked.ElementSources[owner.Ordinal] = sources = new Dictionary<string, string?>(
-                StringComparer.Ordinal
-            );
+        return XamlBindingMarkup.IsValidPath(path) ? path : null;
+    }
 
-        sources[property] =
-            reader.GetAttribute("Converter") is null && reader.GetAttribute("StringFormat") is null
-                ? path
-                : null;
+    static void CollectStyle(XmlReader reader, int ordinal, List<Frame> stack, StyleFacts styles)
+    {
+        var parent = stack[stack.Count - 1];
+        var name = reader.LocalName;
+        var styled =
+            parent.PropertyName == "Style" && stack.Count >= 2
+                ? stack[stack.Count - 2].Ordinal
+                : (int?)null;
+
+        if (name == "Style")
+        {
+            if (reader.GetAttribute("x:Key") is { } key)
+                Add(styles.Keyed, key, ordinal);
+            if (ResourceKey(reader.GetAttribute("BasedOn")) is { } basedOn)
+                styles.BasedOn[ordinal] = basedOn;
+            if (styled is { } inline)
+                Add(styles.Inline, inline, ordinal);
+        }
+        else if (
+            name is "StaticResource" or "DynamicResource"
+            && styled is { } holder
+            && reader.GetAttribute("ResourceKey")?.Trim() is { Length: > 0 } held
+        )
+        {
+            Add(styles.Referenced, holder, held);
+        }
+        else if (
+            name == "Setter"
+            && reader.GetAttribute("TargetName") is null
+            && reader.GetAttribute("Property") is { } property
+            && property.Trim().Trim('(', ')') is var written
+            && written.Substring(written.LastIndexOf('.') + 1) == "DataContext"
+        )
+        {
+            foreach (var frame in stack)
+            {
+                if (frame.IsStyle)
+                    styles.SetDataContext.Add(frame.Ordinal);
+            }
+        }
+
+        if (ResourceKey(reader.GetAttribute("Style")) is { } referenced)
+            Add(styles.Referenced, ordinal, referenced);
+    }
+
+    static string? ResourceKey(string? written) =>
+        written is not null
+        && XamlMarkupParser.Parse(written.Trim())
+            is { Name: "StaticResource" or "DynamicResource" } call
+            ? (
+                call.Positional.FirstOrDefault()
+                ?? call.Named.FirstOrDefault(p => p.Key == "ResourceKey").Value as string
+            )?.Trim()
+            : null;
+
+    static void Add<TKey, TValue>(Dictionary<TKey, HashSet<TValue>> map, TKey key, TValue value)
+        where TKey : notnull
+    {
+        if (!map.TryGetValue(key, out var values))
+            map[key] = values = new HashSet<TValue>();
+        values.Add(value);
     }
 
     // Scraping the text would match an AncestorType whose own name contains one of these words.
@@ -940,12 +1122,67 @@ internal static class BindingScanner
         public string? PropertyOwner;
         public DataScope? PendingHost;
         public Dictionary<string, string?>? Sources;
-        public HashSet<string>? Ignorable;
         public int Ordinal;
         public string? PropertyName;
         public bool Transparent;
         public bool Breaks;
         public bool Compile;
+        public bool IsStyle;
+    }
+}
+
+/// <summary>What <c>mc:Ignorable</c> drops, tracked as a reader moves forward through a document:
+/// an element in an ignorable namespace goes with everything inside it, and an attribute in one
+/// goes alone.</summary>
+internal sealed class MarkupCompatibility
+{
+    const string Namespace = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+    readonly List<HashSet<string>?> _ignorable = new List<HashSet<string>?> { null };
+
+    int _dropped = -1;
+
+    /// <summary>Whether the parser reads the element the reader stands on. Every element has to
+    /// pass through here, in document order.</summary>
+    public bool Reads(XmlReader reader)
+    {
+        var depth = reader.Depth;
+        if (_dropped >= 0 && depth > _dropped)
+            return false;
+
+        _dropped = -1;
+        _ignorable.RemoveRange(depth + 1, _ignorable.Count - depth - 1);
+        if (Ignores(_ignorable[depth], reader.NamespaceURI))
+        {
+            _dropped = depth;
+            return false;
+        }
+
+        _ignorable.Add(Declared(reader, _ignorable[depth]));
+        return true;
+    }
+
+    public bool Drops(string namespaceUri) =>
+        Ignores(_ignorable[_ignorable.Count - 1], namespaceUri);
+
+    static bool Ignores(HashSet<string>? ignorable, string namespaceUri) =>
+        namespaceUri == Namespace || ignorable?.Contains(namespaceUri) == true;
+
+    static HashSet<string>? Declared(XmlReader reader, HashSet<string>? inherited)
+    {
+        if (reader.GetAttribute("Ignorable", Namespace) is not { } listed)
+            return inherited;
+
+        var ignorable = inherited is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(inherited, StringComparer.Ordinal);
+        foreach (var prefix in listed.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (reader.LookupNamespace(prefix) is { } uri)
+                ignorable.Add(uri);
+        }
+
+        return ignorable;
     }
 }
 
@@ -966,26 +1203,39 @@ internal sealed class DataScope
 
     public Hop[] Hops { get; }
 
-    public DataScope Extend(string path, bool isCollection)
+    public DataScope Extend(string path, bool isCollection) =>
+        Append(new Hop(path, isCollection, false));
+
+    /// <summary>This same DataContext, known only where the items <paramref name="path"/> reads
+    /// off it are of its own type: a hierarchical template is reused for every level below.</summary>
+    public DataScope Recurring(string path) => Append(new Hop(path, true, true));
+
+    DataScope Append(Hop hop)
     {
         var hops = new Hop[Hops.Length + 1];
         Array.Copy(Hops, hops, Hops.Length);
-        hops[Hops.Length] = new Hop(path, isCollection);
+        hops[Hops.Length] = hop;
         return new DataScope(RootType, hops);
     }
 
     public readonly struct Hop
     {
-        public Hop(string path, bool isCollection)
+        public Hop(string path, bool isCollection, bool recurs)
         {
             Path = path;
             IsCollection = isCollection;
+            Recurs = recurs;
         }
 
+        /// <summary>Empty for the DataContext itself.</summary>
         public string Path { get; }
 
         /// <summary>The hop lands on a collection; the DataContext is its element type.</summary>
         public bool IsCollection { get; }
+
+        /// <summary>The hop only checks that the collection holds the type already reached, and
+        /// leaves the DataContext where it was.</summary>
+        public bool Recurs { get; }
     }
 }
 

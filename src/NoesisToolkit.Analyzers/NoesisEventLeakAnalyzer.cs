@@ -125,7 +125,10 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
                 var op = (IEventAssignmentOperation)opContext.Operation;
                 if (
                     op.EventReference is IEventReferenceOperation reference
-                    && IsNoesisElement(reference.Event.ContainingType, dependencyObject)
+                    && (
+                        IsNoesisElement(reference.Event.ContainingType, dependencyObject)
+                        || IsRoutedWrapper(reference.Event, dependencyObject, routedEvent)
+                    )
                 )
                     Record(reference.Event, op.HandlerValue, op.Adds, op.Syntax);
             },
@@ -294,6 +297,22 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
             dependencyObject.ContainingAssembly
         )
         && IsOrInheritsFrom(type, dependencyObject);
+
+    private static bool IsRoutedWrapper(
+        IEventSymbol evt,
+        INamedTypeSymbol dependencyObject,
+        INamedTypeSymbol? routedEvent
+    ) =>
+        routedEvent is not null
+        && IsOrInheritsFrom(evt.ContainingType, dependencyObject)
+        && evt.ContainingType.GetMembers(evt.Name + "Event")
+            .Any(member =>
+                member.IsStatic
+                && SymbolEqualityComparer.Default.Equals(
+                    (member as IFieldSymbol)?.Type ?? (member as IPropertySymbol)?.Type,
+                    routedEvent
+                )
+            );
 
     private static IOperation? ArgumentFor(IInvocationOperation call, int ordinal) =>
         call.Arguments.FirstOrDefault(a => a.Parameter?.Ordinal == ordinal)?.Value;

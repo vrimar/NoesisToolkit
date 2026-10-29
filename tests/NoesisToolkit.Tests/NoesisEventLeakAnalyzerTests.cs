@@ -107,6 +107,11 @@ public class NoesisEventLeakAnalyzerTests
         "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.DragStarted += OnClick; } void Drop() { _thumb.RemoveHandler(global::Noesis.Thumb.DragStartedEvent, (System.EventHandler)OnClick); }",
         0
     )]
+    [Arguments(
+        "public static readonly global::Noesis.RoutedEvent PingEvent = new global::Noesis.RoutedEvent(); public event System.EventHandler Ping { add => AddHandler(PingEvent, value); remove => RemoveHandler(PingEvent, value); } void Hook() { AddHandler(PingEvent, (System.EventHandler)OnClick); } void Drop() { Ping -= OnClick; }",
+        0
+    )]
+    [Arguments("public event System.EventHandler? Plain; void Hook() { Plain += OnClick; }", 0)]
     public async Task A_routed_handler_is_one_subscription_whichever_form_adds_or_removes_it(
         string body,
         int expected

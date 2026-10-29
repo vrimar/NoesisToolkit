@@ -390,16 +390,18 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
 
         foreach (var hop in check.Hops)
         {
-            current = Walk(compilation, current, hop.Path, subtypes, out _, out _);
-            if (current is null)
+            var reached =
+                hop.Path.Length == 0
+                    ? current
+                    : Walk(compilation, current, hop.Path, subtypes, out _, out _);
+            if (reached is not null && hop.IsCollection)
+                reached = ElementTypeOf(reached);
+
+            if (reached is null || hop.Recurs && !Holds(current, reached))
                 return;
 
-            if (hop.IsCollection)
-            {
-                current = ElementTypeOf(current);
-                if (current is null)
-                    return;
-            }
+            if (!hop.Recurs)
+                current = reached;
         }
 
         if (
@@ -419,6 +421,10 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
             )
         );
     }
+
+    private static bool Holds(ITypeSymbol slot, ITypeSymbol item) =>
+        TypeWalk.InheritsFrom(item, slot)
+        || item.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, slot));
 
     private static ITypeSymbol? Walk(
         Compilation compilation,

@@ -216,6 +216,29 @@ public class BindingScannerTests
     }
 
     [Test]
+    public async Task SetterTargetName_TypesRelativeSourceSelfAsTheNamedElement()
+    {
+        var checks = Scan(
+            """
+            <ControlTemplate TargetType="{x:Type ui:Checkbox}">
+              <Ellipse x:Name="Glyph" />
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsEnabled">
+                  <Setter
+                    TargetName="Glyph"
+                    Property="Tag"
+                    Value="{Binding Fill, RelativeSource={RelativeSource Self}}" />
+                </Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+            """
+        );
+
+        await Assert.That(Has(checks, "Noesis.Ellipse", "Fill")).IsTrue();
+        await Assert.That(Has(checks, "Sample.Ui.Checkbox", "Fill")).IsFalse();
+    }
+
+    [Test]
     public async Task AmbiguousName_ResolvesToNothing()
     {
         var checks = Scan(
@@ -372,6 +395,86 @@ public class BindingScannerTests
         );
 
         await Assert.That(checks).IsEmpty();
+    }
+
+    [Test]
+    public async Task KeyedResource_IsNotTypedByTheElementHoldingIt()
+    {
+        var checks = Scan(
+            """
+            <Grid ntk:DataType="ui:ItemViewModel">
+              <Grid.Resources>
+                <ContextMenu x:Key="Menu">
+                  <MenuItem Header="{Binding RowOnly}" />
+                </ContextMenu>
+              </Grid.Resources>
+              <TextBlock Text="{Binding DefIdInt}" />
+            </Grid>
+            """
+        );
+
+        await Assert.That(checks.Any(c => c.Path == "RowOnly")).IsFalse();
+        await Assert.That(Has(checks, "Sample.Ui.ItemViewModel", "DefIdInt")).IsTrue();
+    }
+
+    [Test]
+    [Arguments(
+        """
+            <Grid>
+              <Grid.Style>
+                <Style TargetType="Grid">
+                  <Setter Property="DataContext" Value="{Binding Def}" />
+                </Style>
+              </Grid.Style>
+              <TextBlock Text="{Binding Family}" />
+            </Grid>
+            """
+    )]
+    [Arguments(
+        """
+            <Grid Style="{StaticResource Derived}">
+              <TextBlock Text="{Binding Family}" />
+            </Grid>
+            """
+    )]
+    public async Task StyleSettingDataContext_LeavesTheStyledScopeUnknown(string styled)
+    {
+        var checks = Scan(
+            $$"""
+            <Style x:Key="Base" TargetType="Grid">
+              <Setter Property="DataContext" Value="{Binding Def}" />
+            </Style>
+            <Style x:Key="Derived" TargetType="Grid" BasedOn="{StaticResource Base}" />
+            <DataTemplate DataType="{x:Type ui:ItemViewModel}">
+              {{styled}}
+            </DataTemplate>
+            """
+        );
+
+        await Assert.That(checks.Any(c => c.Path == "Family")).IsFalse();
+    }
+
+    [Test]
+    public async Task IgnorableElement_DropsItsBindings_AndNotTheNextSibling()
+    {
+        var checks = Scan(
+            """
+            <DataTemplate DataType="{x:Type ui:ItemViewModel}">
+              <StackPanel
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:design="clr-namespace:Sample.Ui"
+                mc:Ignorable="design">
+                <design:Caption>
+                  <TextBlock Text="{Binding Dropped}" />
+                </design:Caption>
+                <TextBlock Text="{Binding Kept}" />
+              </StackPanel>
+            </DataTemplate>
+            """
+        );
+
+        await Assert.That(checks.Any(c => c.Path == "Dropped")).IsFalse();
+        await Assert.That(Has(checks, "Sample.Ui.ItemViewModel", "Kept")).IsTrue();
     }
 
     [Test]

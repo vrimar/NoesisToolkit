@@ -17,4 +17,14 @@ internal static class XamlMarkup
         }
         return true;
     }
+
+    const string ExtensionsNamespace = "clr-namespace:NoesisGUIExtensions";
+
+    // No managed assembly declares its types: Noesis resolves them natively, whatever assembly= names.
+    public static bool IsNoesisExtensions(string namespaceUri) =>
+        namespaceUri.StartsWith(ExtensionsNamespace, StringComparison.Ordinal)
+        && (
+            namespaceUri.Length == ExtensionsNamespace.Length
+            || namespaceUri[ExtensionsNamespace.Length] == ';'
+        );
 }

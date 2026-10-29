@@ -36,6 +36,22 @@ public class XamlElementTypeAnalyzerTests
     }
 
     [Test]
+    public async Task AnElementInAnIgnorableNamespaceThatResolves_IsNotReported()
+    {
+        var diagnostics = await XamlProbe.Analyze(
+            """<design:SpellBar><ui:SpellBar /></design:SpellBar>""",
+            XamlBindingAnalyzer.UnresolvedElementTypeId,
+            """
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+            xmlns:design="clr-namespace:Sample.Social"
+            mc:Ignorable="design"
+            """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
     public async Task ATypeTwoReferencedAssembliesDeclare_IsNotReported()
     {
         var diagnostics = await AnalyzerHarness.Analyze(

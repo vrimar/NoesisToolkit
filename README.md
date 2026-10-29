@@ -78,10 +78,10 @@ routed command or a Noesis style key, and not every Noesis enum; a static of an 
 or of `Colors` or `FontWeights`, loads unset, so `NTK2003` reports it too.
 
 A binding is only checkable where the type its DataContext resolves to is known. A `DataTemplate`
-carrying a `DataType` states it; a keyed template, a bare `Style` or a template with no host does
-not, and those bindings are skipped rather than guessed. `ntk:DataType` states it where markup
-cannot, and `ntk:CompileBindings` makes stating it mandatory. Both live in the toolkit xmlns, which
-Noesis drops as unknown, so they reach the build and never reach the graph:
+carrying a `DataType` states it; a keyed template or other resource, a bare `Style` or a template
+with no host does not, and those bindings are skipped rather than guessed. `ntk:DataType` states it
+where markup cannot, and `ntk:CompileBindings` makes stating it mandatory. Both live in the toolkit
+xmlns, which Noesis drops as unknown, so they reach the build and never reach the graph:
 
 ```xml
 <ResourceDictionary
@@ -102,7 +102,7 @@ per document rather than globally: turning it on across a codebase that has neve
 every document at once.
 
 `NoesisXamlExtensions` and `EnableDefaultNoesisXamlItems` apply here too.
-`NoesisAnalyzeXamlBindings` (default `true`) gates `NTK2001`–`NTK2004` only; `NTK2101` and `NTK2102`
+`NoesisAnalyzeXamlBindings` (default `true`) gates `NTK2001`–`NTK2006` only; `NTK2101` and `NTK2102`
 analyse C# rather than XAML and are not gated by a property — adjust them through `.editorconfig`
 severity like any other analyzer rule.
 
