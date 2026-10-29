@@ -21,6 +21,24 @@ public sealed class UpperConverter : IValueConverter
     ) => value?.ToString()?.ToLowerInvariant();
 }
 
+// A new brush per call, so the one a target shows is held by nothing managed.
+public sealed class FreshBrushConverter : IValueConverter
+{
+    public object? Convert(
+        object? value,
+        Type targetType,
+        object? parameter,
+        CultureInfo culture
+    ) => new SolidColorBrush(Colors.Red);
+
+    public object? ConvertBack(
+        object? value,
+        Type targetType,
+        object? parameter,
+        CultureInfo culture
+    ) => "pushed";
+}
+
 public sealed class JoinConverter : IMultiValueConverter
 {
     public object? Convert(

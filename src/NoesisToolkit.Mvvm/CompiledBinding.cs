@@ -239,6 +239,11 @@ public sealed class CompiledBinding
     bool _pushing;
     object? _written;
     ulong _writtenSlot;
+    bool _unloaded;
+    bool _editedUnloaded;
+    readonly Released _brokeForHold = new();
+    readonly Released _appliedForHold = new();
+    readonly Released _appliedHold = new();
 
     CompiledBinding(
         FrameworkElement target,
@@ -563,11 +568,13 @@ public sealed class CompiledBinding
         _chain.Detach();
         _writable = null;
         _writableRoot = null;
-        _written = Released.Of(_written);
+        // Held weakly, a proxy read off the target can die while the target still shows it.
+        _written = null;
+        _unloaded = true;
         if (_brokeFor is not (null or WeakReference) && !IsMarker(_brokeFor))
-            _brokeFor = new WeakReference(_brokeFor);
-        _appliedFor = Released.Of(_appliedFor);
-        _applied = Released.Of(_applied);
+            _brokeFor = Released.Into(_brokeForHold, _brokeFor);
+        _appliedFor = Released.Into(_appliedForHold, _appliedFor);
+        _applied = Released.Into(_appliedHold, _applied);
     }
 
     static object? Kept(object? held) =>
@@ -584,8 +591,10 @@ public sealed class CompiledBinding
     // A recycled container can end up under a different source, so this settles again each load.
     void IElementLifecycleOwner.Settle()
     {
+        _unloaded = false;
         Resolve();
         Rebuild(reloading: true);
+        _editedUnloaded = false;
     }
 
     void IChainOwner.ChainChanged() => Rebuild();
@@ -707,8 +716,8 @@ public sealed class CompiledBinding
             )
         )
         {
-            if (_twoWay)
-                OnTargetChanged();
+            if (_editedUnloaded)
+                Push();
 
             return;
         }
@@ -879,9 +888,16 @@ public sealed class CompiledBinding
         if (_onLostFocus || !_target.Alive)
             return;
 
+        // Unloaded, the binding writes nothing, so any change is an edit.
+        if (_unloaded)
+        {
+            _editedUnloaded = true;
+            return;
+        }
+
         var edited = _spec.Lane is { } lane
             ? !lane.Same(lane.Read(_target.Handle, _property), _writtenSlot)
-            : !Equals(DependencyRead.Value(_target.Handle, _property), Kept(_written));
+            : !Equals(DependencyRead.Value(_target.Handle, _property), _written);
         if (edited)
             Push();
     }
@@ -971,12 +987,25 @@ public sealed class CompiledBinding
         }
     }
 
-    sealed class Released(object target) : WeakReference(target)
+    sealed class Released() : WeakReference(null)
     {
-        internal static object? Of(object? held) =>
-            held is null or Released or ValueType or string || ReferenceEquals(held, NotApplied)
-                ? held
-                : new Released(held);
+        // One per field, made up front: an unload must not allocate, and a shared one would repoint a field.
+        internal static object? Into(Released hold, object? held)
+        {
+            if (
+                held is null or Released or ValueType or string
+                || ReferenceEquals(held, NotApplied)
+                || IsMintedProxy(held)
+            )
+                return held;
+
+            hold.Target = held;
+            return hold;
+        }
+
+        // Noesis mints a new proxy of its own types after a collection, so a weak copy loses identity.
+        static bool IsMintedProxy(object held) =>
+            held is BaseComponent && held.GetType().Assembly == typeof(BaseComponent).Assembly;
     }
 
     sealed class LostFocusListener(CompiledBinding owner) : IChangeListener

@@ -248,6 +248,49 @@ public sealed class CompiledBindingTests
     }
 
     [Test]
+    public async Task A_reload_after_a_collection_keeps_what_the_control_put_in_a_one_way_slot()
+    {
+        NoesisRuntime.Start();
+
+        var source = new Border();
+        Paint(source);
+        var target = new Border { DataContext = source };
+        CompiledBinding.Bind(
+            target,
+            Border.BorderBrushProperty,
+            new CompiledBindingSpec
+            {
+                Hops =
+                [
+                    new BindingHop(nameof(Border.Background), static o => ((Border)o).Background),
+                ],
+                Mode = BindingMode.OneWay,
+            }
+        );
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, target);
+        var placed = new SolidColorBrush(Colors.Blue);
+        target.BorderBrush = placed;
+
+        root.Children.Clear();
+        NoesisRuntime.Pump(view, root);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        root.Children.Add(target);
+        NoesisRuntime.Pump(view, root);
+
+        await Assert.That(target.BorderBrush).IsSameReferenceAs(placed);
+    }
+
+    // Inlined, a stack slot would keep the brush alive and the test could not fail.
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    static void Paint(Border source) => source.Background = new SolidColorBrush(Colors.Red);
+
+    [Test]
     public async Task A_two_way_edit_made_while_unloaded_reaches_the_source_on_reload()
     {
         NoesisRuntime.Start();
@@ -340,6 +383,49 @@ public sealed class CompiledBindingTests
 
         await Assert.That(native.Label).IsEqualTo("Mixed");
         await Assert.That(compiled.Label).IsEqualTo(native.Label);
+    }
+
+    [Test]
+    public async Task A_reload_after_a_collection_writes_nothing_back_to_a_two_way_source_nobody_edited()
+    {
+        NoesisRuntime.Start();
+
+        var writes = 0;
+        var item = new SpikeItem { Label = "red" };
+        var host = new Border { DataContext = item };
+        CompiledBinding.Bind(
+            host,
+            Border.BackgroundProperty,
+            new CompiledBindingSpec
+            {
+                Hops = [Hop.Label],
+                Write = (o, v) =>
+                {
+                    writes++;
+                    ((SpikeItem)o).Label = (string)v!;
+                },
+                Mode = BindingMode.TwoWay,
+                Trigger = UpdateSourceTrigger.PropertyChanged,
+                Converter = new FreshBrushConverter(),
+                TargetType = typeof(Brush),
+                SourceType = typeof(string),
+                Convert = v => v as Brush,
+            }
+        );
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root, host);
+
+        root.Children.Clear();
+        NoesisRuntime.Pump(view, root);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        root.Children.Add(host);
+        NoesisRuntime.Pump(view, root);
+
+        await Assert.That(writes).IsEqualTo(0);
+        await Assert.That(item.Label).IsEqualTo("red");
     }
 
     static bool? ClickedThenReloaded(Action<CheckBox> bind)

@@ -265,6 +265,60 @@ public sealed class SettledCostTests
     }
 
     [Test]
+    public async Task A_bound_container_unloads_for_the_first_time_at_what_an_unbound_one_costs()
+    {
+        NoesisRuntime.Start();
+
+        const int Hosts = 8;
+        var item = new SpikeItem { Label = "a" };
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root);
+
+        SpikeControl Unbound() => new() { DataContext = item };
+
+        SpikeControl Bound()
+        {
+            var host = Unbound();
+            CompiledBinding.Bind(
+                host,
+                SpikeControl.LabelProperty,
+                new CompiledBindingSpec
+                {
+                    Hops =
+                    [
+                        new BindingHop(nameof(SpikeItem.Label), static o => ((SpikeItem)o).Label),
+                    ],
+                }
+            );
+            return host;
+        }
+
+        var bound = Enumerable.Range(0, Hosts).Select(_ => Bound()).ToArray();
+        var unbound = Enumerable.Range(0, Hosts).Select(_ => Unbound()).ToArray();
+        foreach (var host in bound.Concat(unbound))
+            root.Children.Add(host);
+        NoesisRuntime.Pump(view, root);
+
+        // First cycles only: a holder made lazily allocates on a first unload and never after.
+        long FirstCycle(SpikeControl host) =>
+            AllocationCost.Once(() =>
+            {
+                root.Children.Remove(host);
+                NoesisRuntime.Pump(view, root);
+                root.Children.Add(host);
+                NoesisRuntime.Pump(view, root);
+            });
+
+        FirstCycle(bound[0]);
+        FirstCycle(unbound[0]);
+        var cheapestBound = bound.Skip(1).Min(FirstCycle);
+        var cheapestUnbound = unbound.Skip(1).Min(FirstCycle);
+
+        await Assert.That(cheapestBound).IsEqualTo(cheapestUnbound);
+        await Assert.That(bound[^1].Label).IsEqualTo("a");
+    }
+
+    [Test]
     public async Task A_settled_retry_stops_where_the_element_has_a_layout_handler_of_its_own()
     {
         NoesisRuntime.Start();
