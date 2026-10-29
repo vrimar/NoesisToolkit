@@ -276,7 +276,7 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
                         return (false, false, null);
                 }
             case IFieldReferenceOperation field:
-                return (false, false, field.Field);
+                return (field.Field.IsStatic && field.Field.IsReadOnly, false, field.Field);
             case IPropertyReferenceOperation prop:
                 return (false, false, prop.Property);
             case ILocalReferenceOperation local:

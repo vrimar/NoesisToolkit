@@ -45,6 +45,14 @@ public class NoesisEventLeakAnalyzerTests
         0
     )]
     [Arguments("void Hook() { _button.Click += OnStatic; }", 0)]
+    [Arguments(
+        "static readonly System.EventHandler Held = OnStatic; void Hook() { _button.Click += Held; }",
+        0
+    )]
+    [Arguments(
+        "static System.EventHandler Held = OnStatic; void Hook() { Held = OnClick; _button.Click += Held; }",
+        1
+    )]
     [Arguments("void Hook() { _button.Click += (s, e) => _count++; }", 1)]
     [Arguments("void Hook() { _button.Click += (s, e) => { }; }", 0)]
     [Arguments("void Hook() { void Bump() => _count++; _button.Click += (s, e) => Bump(); }", 1)]
