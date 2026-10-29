@@ -506,12 +506,30 @@ public sealed class CompiledBinding
         return element.TemplatedParent as FrameworkElement;
     }
 
-    // A source that outlives the container would pin it. This does not end the binding.
+    // Unloaded it writes nothing back, so anything it keeps only pins a source; a load reads it all again.
     void IElementLifecycleOwner.Release()
     {
         _watched.Clear();
         _chain.Detach();
+        _writable = null;
+        _writableRoot = null;
+        _written = null;
+        if (_brokeFor is not (null or WeakReference) && !IsMarker(_brokeFor))
+            _brokeFor = new WeakReference(_brokeFor);
+        _appliedFor = Released.Of(_appliedFor);
+        _applied = Released.Of(_applied);
     }
+
+    static object? Kept(object? held) =>
+        held is Released released ? released.Target ?? NotApplied : held;
+
+    static bool IsMarker(object marker) =>
+        ReferenceEquals(marker, NotBroke) || ReferenceEquals(marker, NoSource);
+
+    bool BrokeUnder(object? root) =>
+        _brokeFor is WeakReference released
+            ? root is not null && ReferenceEquals(released.Target, root)
+            : ReferenceEquals(root, _brokeFor);
 
     // A recycled container can end up under a different source, so this settles again each load.
     void IElementLifecycleOwner.Settle()
@@ -631,11 +649,11 @@ public sealed class CompiledBinding
         if (
             reloading
             && !broke
-            && ReferenceEquals(root, _appliedFor)
+            && ReferenceEquals(root, Kept(_appliedFor))
             && (
                 _spec.Lane is { } held
                     ? held.Same(slot, _appliedSlot)
-                    : SourceChain.Same(current, _applied)
+                    : SourceChain.Same(current, Kept(_applied))
             )
         )
         {
@@ -673,7 +691,7 @@ public sealed class CompiledBinding
             else
             {
                 _appliedFor = NotApplied;
-                if (!ReferenceEquals(root, _brokeFor))
+                if (!BrokeUnder(root))
                 {
                     WriteDefault(receiver);
                     _brokeFor = root;
@@ -901,6 +919,14 @@ public sealed class CompiledBinding
             _pushing = false;
             Rebuild();
         }
+    }
+
+    sealed class Released(object target) : WeakReference(target)
+    {
+        internal static object? Of(object? held) =>
+            held is null or Released or ValueType or string || ReferenceEquals(held, NotApplied)
+                ? held
+                : new Released(held);
     }
 
     sealed class LostFocusListener(CompiledBinding owner) : IChangeListener

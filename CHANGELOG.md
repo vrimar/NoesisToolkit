@@ -3,6 +3,36 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.7.4] - 2026-10-28
+
+### Added
+
+- **`NTK1010` flags a `GridViewColumn.DisplayMemberBinding`.** The row presenter applies it to a
+  text block it makes itself, so the compiler cannot reach it: the engine reads its path by
+  reflection and boxes the value for every row it fills, again each time a recycling list reuses
+  the row. A `CellTemplate` holding the same binding is typed off the list's items and compiles.
+
+### Changed
+
+- **A member of a struct is read in the hop that produced the struct.** `{Binding Score.Hits}`
+  off a class whose `Score` is a struct used to box the whole `Score` on every read; boxes are kept
+  for a hop's first 256 values only, so a list showing more allocated again on every row it reused.
+  The path now reads `Score.Hits` in one step and watches `Score`, which is all a struct can be
+  watched through. A nullable struct keeps its own hop.
+- **The survey counts the bindings it hands the parser.** A binding inside a fragment the parser
+  builds, a style setter, a resource or a document left to the loader stayed native without being
+  counted, so a project reported no gaps while its parsed columns still read by reflection. Each
+  is now a fallback with its reason, classed as a boundary or an author fix like any other.
+
+### Fixed
+
+- **An unloaded element's compiled binding lets go of what it last read.** It dropped its
+  subscriptions on unload but kept the object it would write back to, the context that object
+  came from and, for a path that broke, the context it broke on. An element a cache kept off the
+  tree, such as a popup's presenter, so held its last source after its context was cleared, and
+  everything that source reached. Unloaded, a binding writes nothing back, and a load reads all
+  three again.
+
 ## [0.7.3] - 2026-10-28
 
 ### Fixed
@@ -937,6 +967,7 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.7.4]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.4
 [0.7.3]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.3
 [0.7.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.1
 [0.7.0]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.0

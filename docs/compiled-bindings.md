@@ -147,6 +147,12 @@ An element can be destroyed while a binding still refers to it — the source of
 binding removed from its panel, say. Its handle is told when the element ends and reads as missing
 from then on, as a source the resolver could not find does.
 
+Off the tree, a binding holds nothing it read. An unload drops its subscriptions and the objects it
+last read and would write back to, and the next load reads them again. A native binding follows its
+context even while unloaded, so an element a cache keeps off the tree — a popup's presenter, a
+parked view — lets its last source go once that context is cleared; a compiled one, which hears no
+context change until it loads, must hold nothing to match it.
+
 Subscriptions taken through `DependencyWatcher.Watch` and `Events.On` follow the same rule: they
 last until the element is destroyed, as one on a Noesis event does. Each handler is handed the
 element, because a handler that captured it, or the control that holds it, would keep both alive.

@@ -364,6 +364,64 @@ public sealed class GraphLifetimeTests
         await Assert.That(binding.IsAlive).IsFalse();
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static (TextBlock Text, WeakReference Source) BindKept(
+        StackPanel root,
+        object source,
+        BindingHop[] hops
+    )
+    {
+        var text = new TextBlock { DataContext = source };
+        root.Children.Add(text);
+        CompiledBinding.Bind(text, TextBlock.TextProperty, new CompiledBindingSpec { Hops = hops });
+        return (text, new WeakReference(source));
+    }
+
+    // As a cache does: off the tree, still held, its context cleared while nothing listens.
+    static async Task AssertKeptElementLetsGo(Func<StackPanel, (TextBlock, WeakReference)> bind)
+    {
+        NoesisRuntime.Start();
+
+        var root = new StackPanel { Width = 400, Height = 300 };
+        var view = NoesisRuntime.Show(root);
+        var (text, source) = bind(root);
+        NoesisRuntime.Pump(view, root);
+
+        root.Children.Remove(text);
+        NoesisRuntime.Pump(view, root);
+        text.DataContext = null;
+        Settle(view, root, () => !source.IsAlive);
+
+        await Assert.That(source.IsAlive).IsFalse();
+        GC.KeepAlive(text);
+    }
+
+    [Test]
+    public Task A_kept_element_lets_its_last_source_go_once_unloaded() =>
+        AssertKeptElementLetsGo(root =>
+            BindKept(
+                root,
+                new PlainItem { Label = "plain" },
+                [new BindingHop(nameof(PlainItem.Label), static o => ((PlainItem)o).Label)]
+            )
+        );
+
+    [Test]
+    public Task A_kept_element_lets_a_source_its_path_broke_on_go_once_unloaded() =>
+        AssertKeptElementLetsGo(root =>
+            BindKept(
+                root,
+                new LifetimeOwner(),
+                [
+                    new BindingHop(
+                        nameof(LifetimeOwner.Current),
+                        static o => ((LifetimeOwner)o).Current
+                    ),
+                    new BindingHop(nameof(PlainItem.Label), static o => ((PlainItem)o).Label),
+                ]
+            )
+        );
+
     static FrameworkElement? SiblingSource(FrameworkElement target)
     {
         if (target.Parent is not Panel panel)
