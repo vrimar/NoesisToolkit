@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -13,6 +14,13 @@ namespace NoesisToolkit.Testing;
 static class XamlGraphDump
 {
     const int Frames = 6;
+
+    internal const int Deepest = 30;
+
+    const string Truncation = "<deeper than the walk>";
+
+    internal static bool Truncated(string dump) =>
+        dump.Split('\n').Any(line => line.Trim() == Truncation);
 
     internal static (string Parsed, string Compiled) Dump(
         ResourceDictionary parsed,
@@ -75,23 +83,35 @@ static class XamlGraphDump
 
     static nint Handle(BaseComponent component) => BaseComponent.getCPtr(component).Handle;
 
+    static readonly Dictionary<nint, string> Unnamed = new Dictionary<nint, string>();
+
     static string Dump(ResourceDictionary dictionary, Dictionary<nint, string> named)
+    {
+        var sb = new StringBuilder();
+        DumpEntries(dictionary, named, sb, 0);
+        return sb.ToString();
+    }
+
+    static void DumpEntries(
+        ResourceDictionary dictionary,
+        Dictionary<nint, string> named,
+        StringBuilder sb,
+        int depth
+    )
     {
         var entries = new List<(string Text, object Key, ResourceDictionary Owner)>();
         var merged = new List<string>();
         Flatten(dictionary, named, entries, merged);
 
-        var sb = new StringBuilder();
+        var pad = new string(' ', depth * 2);
         foreach (var source in merged)
-            sb.AppendLine($"MERGED {source}");
+            sb.AppendLine($"{pad}MERGED {source}");
 
         foreach (var (text, key, owner) in entries.OrderBy(e => e.Text, StringComparer.Ordinal))
         {
-            sb.AppendLine($"KEY {text}");
-            DumpValue(owner[key], sb, 1);
+            sb.AppendLine($"{pad}KEY {text}");
+            DumpValue(owner[key], sb, depth + 1);
         }
-
-        return sb.ToString();
     }
 
     // A key routed through a merged dictionary resolves the same way, so the rest is flattened.
@@ -118,8 +138,7 @@ static class XamlGraphDump
     {
         var sb = new StringBuilder();
         sb.AppendLine(root.GetType().Name);
-        foreach (var (name, text) in LocalValues(root))
-            sb.AppendLine($"  .{name} = {text}");
+        DumpObject(root, sb, 1, new HashSet<nint>());
 
         root.Width = 800;
         root.Height = 600;
@@ -139,32 +158,15 @@ static class XamlGraphDump
                 sb.AppendLine(pad + "null");
                 return;
             case DataTemplate template:
-            {
                 sb.AppendLine(pad + "DataTemplate");
-                var host = RealizeTemplate(
-                    new ContentControl(),
-                    h => ((ContentControl)h).ContentTemplate = template
-                );
-                DumpTriggers(
-                    template.Triggers,
-                    CompiledSetsUnder(PresentedRoot(host)),
-                    sb,
-                    depth + 1
-                );
-                WalkVisual(host, sb, depth + 1);
+                DumpTemplate(template, sb, depth + 1);
                 return;
-            }
             case ControlTemplate control:
-            {
                 sb.AppendLine(
                     pad + $"ControlTemplate TargetType={control.TargetType?.Name ?? "-"}"
                 );
-                // A template applies only to a host of its TargetType; anywhere else it is ignored.
-                var host = RealizeTemplate(HostFor(control.TargetType), h => h.Template = control);
-                DumpTriggers(control.Triggers, CompiledSetsUnder(host), sb, depth + 1);
-                WalkVisual(host, sb, depth + 1);
+                DumpTemplate(control, control.TargetType, sb, depth + 1);
                 return;
-            }
             case Style style:
                 if (style.CanSeal && !style.IsSealed)
                     style.Seal();
@@ -174,13 +176,21 @@ static class XamlGraphDump
                         + $"Setters={style.Setters.Count}"
                 );
                 foreach (var setter in style.Setters)
+                {
                     sb.AppendLine(pad + "  " + DescribeSetter(setter));
+                    if (setter is Setter { Value: { } held })
+                        DumpHeld(held, style.TargetType, sb, depth + 2);
+                }
                 DumpTriggers(style.Triggers, null, sb, depth + 1);
+                if (style.BasedOn is { } basedOn)
+                {
+                    sb.AppendLine(pad + "  BasedOn");
+                    DumpValue(basedOn, sb, depth + 2);
+                }
                 return;
             case DependencyObject node:
                 sb.AppendLine(pad + node.GetType().Name);
-                foreach (var (name, text) in LocalValues(node))
-                    sb.AppendLine(pad + $"  .{name} = {text}");
+                DumpObject(node, sb, depth + 1, new HashSet<nint>());
                 return;
             default:
                 sb.AppendLine(pad + $"{value.GetType().Name} = {value}");
@@ -188,10 +198,82 @@ static class XamlGraphDump
         }
     }
 
+    static void DumpTemplate(DataTemplate template, StringBuilder sb, int depth)
+    {
+        var host = RealizeTemplate(
+            new ContentControl(),
+            h => ((ContentControl)h).ContentTemplate = template
+        );
+        DumpTriggers(template.Triggers, CompiledSetsUnder(PresentedRoot(host)), sb, depth);
+        WalkVisual(host, sb, depth);
+    }
+
+    // A template applies only to a host of its TargetType; anywhere else it is ignored.
+    static void DumpTemplate(ControlTemplate control, Type? targetType, StringBuilder sb, int depth)
+    {
+        var host = RealizeTemplate(HostFor(targetType), h => h.Template = control);
+        DumpTriggers(control.Triggers, CompiledSetsUnder(host), sb, depth);
+        WalkVisual(host, sb, depth);
+    }
+
+    static void DumpHeld(object value, Type? targetType, StringBuilder sb, int depth)
+    {
+        switch (value)
+        {
+            case DataTemplate template:
+                DumpTemplate(template, sb, depth);
+                return;
+            case ControlTemplate control:
+                DumpTemplate(control, control.TargetType ?? targetType, sb, depth);
+                return;
+            case Style style:
+                DumpValue(style, sb, depth);
+                return;
+            case DependencyObject node and not Visual:
+                DumpObject(node, sb, depth, new HashSet<nint>());
+                return;
+        }
+    }
+
+    static void AppendHeld(StringBuilder block, object? value)
+    {
+        if (value is null)
+            return;
+
+        var held = new StringBuilder();
+        DumpHeld(value, null, held, 2);
+        AppendLines(block, held);
+    }
+
+    static void AppendLines(StringBuilder block, StringBuilder lines)
+    {
+        foreach (
+            var line in lines
+                .ToString()
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+        )
+            block.Append('\n').Append(line);
+    }
+
+    static void AppendActions(StringBuilder block, string label, TriggerActionCollection? actions)
+    {
+        if (actions is null || actions.Count == 0)
+            return;
+
+        block.Append('\n').Append("  " + label);
+        foreach (var action in actions)
+        {
+            block.Append('\n').Append($"    - {Describe(action)}");
+            var held = new StringBuilder();
+            DumpObject(action, held, 3, new HashSet<nint>());
+            AppendLines(block, held);
+        }
+    }
+
     static string DescribeSetter(SetterBase setterBase) =>
         setterBase is not Setter setter
             ? setterBase.GetType().Name
-            : $"Setter {setter.Property?.Name} target={setter.TargetName ?? "-"} value={Describe(setter.Value)}";
+            : $"Setter {PropertyName(setter.Property)} target={setter.TargetName ?? "-"} value={Describe(setter.Value)}";
 
     // A compiled trigger lives on the realized elements, so both sides meet in one sorted block list.
     static void DumpTriggers(
@@ -212,18 +294,27 @@ static class XamlGraphDump
                 {
                     Trigger simple => simple.Setters,
                     DataTrigger data => data.Setters,
+                    MultiTrigger multi => multi.Setters,
                     MultiDataTrigger multi => multi.Setters,
                     _ => null,
                 };
 
                 if (setters is not null)
                     foreach (var setter in setters.OfType<Setter>())
+                    {
                         block
                             .Append('\n')
                             .Append(
-                                $"  Setter {setter.Property?.Name} target={setter.TargetName ?? "-"} "
+                                $"  Setter {PropertyName(setter.Property)} target={setter.TargetName ?? "-"} "
                                     + $"value={Plain(setter.Value)}"
                             );
+                        AppendHeld(block, setter.Value);
+                    }
+
+                AppendActions(block, "EnterActions", trigger.EnterActions);
+                AppendActions(block, "ExitActions", trigger.ExitActions);
+                if (trigger is EventTrigger events)
+                    AppendActions(block, "Actions", events.Actions);
 
                 blocks.Add(block.ToString());
             }
@@ -249,8 +340,13 @@ static class XamlGraphDump
         trigger switch
         {
             Trigger t =>
-                $"Trigger {t.Property?.Name} source={(string.IsNullOrEmpty(t.SourceName) ? "-" : t.SourceName)} value={Plain(t.Value)}",
+                $"Trigger {PropertyName(t.Property)} source={SourceName(t.SourceName)} value={Plain(t.Value)}",
             DataTrigger d => $"DataTrigger {Condition(d.Binding)} value={Plain(d.Value)}",
+            MultiTrigger { Conditions.Count: 1 } single =>
+                $"Trigger {PropertyCondition(single.Conditions[0])}",
+            MultiTrigger m => "MultiTrigger ["
+                + string.Join(", ", m.Conditions.Select(PropertyCondition))
+                + "]",
             // One condition is a DataTrigger however it was spelled; both sides must agree.
             MultiDataTrigger { Conditions.Count: 1 } single => "DataTrigger "
                 + $"{Condition(single.Conditions[0].Binding)} "
@@ -261,9 +357,19 @@ static class XamlGraphDump
                     m.Conditions.Select(c => $"{Condition(c.Binding)} value={Plain(c.Value)}")
                 )
                 + "]",
-            EventTrigger e => $"EventTrigger {e.RoutedEvent?.Name ?? "-"}",
+            EventTrigger e =>
+                $"EventTrigger {EventName(e.RoutedEvent)} source={SourceName(e.SourceName)}",
             _ => trigger.GetType().Name,
         };
+
+    static string PropertyCondition(Noesis.Condition condition) =>
+        $"{PropertyName(condition.Property)} source={SourceName(condition.SourceName)} "
+        + $"value={Plain(condition.Value)}";
+
+    static string SourceName(string? name) => string.IsNullOrEmpty(name) ? "-" : name!;
+
+    static string EventName(RoutedEvent? routed) =>
+        routed is null ? "-" : $"{OwnerName(routed.OwnerType)}.{routed.Name}";
 
     // A compiled condition keeps only its path; a knob it cannot carry shows on a native one.
     static string Condition(BindingBase? binding)
@@ -283,27 +389,36 @@ static class XamlGraphDump
         var text = $"path={path}";
         if (b.Converter is not null)
             text += $" converter={b.Converter.GetType().Name}";
+        if (b.ConverterParameter is not null)
+            text += $" parameter={Describe(b.ConverterParameter)}";
         if (!string.IsNullOrEmpty(b.StringFormat))
             text += $" format={b.StringFormat}";
         if (b.Mode != BindingMode.Default)
             text += $" mode={b.Mode}";
+        if (!IsUnset(b.FallbackValue))
+            text += $" fallback={Describe(b.FallbackValue)}";
+        if (!IsUnset(b.TargetNullValue))
+            text += $" null={Describe(b.TargetNullValue)}";
 
         return text;
     }
 
     static string SourceSegment(DependencyProperty property)
     {
-        var owner = property.OwnerType;
+        var owner = OwnerOf(property);
         if (
-            owner.GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance)
-            is not null
+            owner is null
+            || owner.GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance)
+                is not null
         )
             return property.Name;
 
-        var name =
-            owner.Assembly == typeof(DependencyObject).Assembly ? owner.Name : owner.FullName;
-        return $"({name}.{property.Name})";
+        return $"({OwnerName(owner)}.{property.Name})";
     }
+
+    // An attached property keeps its owner, so two owners' same-named properties stay apart.
+    static string PropertyName(DependencyProperty? property) =>
+        property is null ? "" : SourceSegment(property);
 
     static string DescribeCompiledTrigger(CompiledTriggerSpec spec)
     {
@@ -317,25 +432,33 @@ static class XamlGraphDump
             return $"path={string.Join(".", segments)} value={Plain(condition.Value)}";
         }
 
-        // A parsed MultiTrigger lists neither conditions nor setters, so a compiled one cannot either.
-        if (spec.PropertyDriven && spec.Conditions.Length != 1)
-            return "MultiTrigger";
+        static string PropertyCondition(CompiledTriggerCondition condition) =>
+            $"{PropertyName(condition.Part.SourceProperty)} source=- value={Plain(condition.Value)}";
 
         var block = new StringBuilder(
             spec.PropertyDriven
-                ? $"Trigger {spec.Conditions[0].Part.SourceProperty?.Name} source=- "
-                    + $"value={Plain(spec.Conditions[0].Value)}"
-            : spec.Conditions.Length == 1 ? $"DataTrigger {Condition(spec.Conditions[0])}"
-            : "MultiDataTrigger [" + string.Join(", ", spec.Conditions.Select(Condition)) + "]"
+                ? spec.Conditions.Length == 1
+                    ? $"Trigger {PropertyCondition(spec.Conditions[0])}"
+                    : "MultiTrigger ["
+                        + string.Join(", ", spec.Conditions.Select(PropertyCondition))
+                        + "]"
+                : spec.Conditions.Length == 1
+                    ? $"DataTrigger {Condition(spec.Conditions[0])}"
+                    : "MultiDataTrigger ["
+                        + string.Join(", ", spec.Conditions.Select(Condition))
+                        + "]"
         );
 
         foreach (var setter in spec.Setters)
+        {
             block
                 .Append('\n')
                 .Append(
-                    $"  Setter {setter.Property.Name} target={setter.TargetName ?? "-"} "
+                    $"  Setter {PropertyName(setter.Property)} target={setter.TargetName ?? "-"} "
                         + $"value={Plain(setter.Value)}"
                 );
+            AppendHeld(block, setter.Value);
+        }
 
         return block.ToString();
     }
@@ -347,9 +470,6 @@ static class XamlGraphDump
         var sets = new List<CompiledTriggerSet>();
         void Walk(DependencyObject node, int depth)
         {
-            if (depth > 30)
-                return;
-
             // Ahead of the early return: a templated root carries the enclosing template's sets.
             if (node is FrameworkElement element)
                 sets.AddRange(CompiledTriggerSet.SetsOf(element));
@@ -446,19 +566,114 @@ static class XamlGraphDump
 
     static void WalkVisual(DependencyObject node, StringBuilder sb, int depth)
     {
-        if (depth > 30)
-            return;
-
         var count = VisualTreeHelper.GetChildrenCount(node);
+        if (depth > Deepest)
+        {
+            if (count > 0)
+                sb.AppendLine(new string(' ', depth * 2) + Truncation);
+            return;
+        }
+
         for (var i = 0; i < count; i++)
         {
             var child = VisualTreeHelper.GetChild(node, i);
             sb.AppendLine(new string(' ', depth * 2) + child.GetType().Name);
-
-            foreach (var (name, text) in LocalValues(child))
-                sb.AppendLine(new string(' ', depth * 2 + 2) + $".{name} = {text}");
-
+            DumpObject(child, sb, depth + 1, new HashSet<nint>());
             WalkVisual(child, sb, depth + 1);
+        }
+    }
+
+    // A visual value is walked where it sits in the tree; expanding it here would count it twice.
+    static void DumpObject(
+        DependencyObject node,
+        StringBuilder sb,
+        int depth,
+        HashSet<nint> expanding
+    )
+    {
+        if (!expanding.Add(Handle(node)))
+            return;
+
+        var pad = new string(' ', depth * 2);
+        foreach (var (name, text, value) in LocalValues(node))
+        {
+            sb.AppendLine(pad + $".{name} = {text}");
+            if (value is DependencyObject nested and not Visual)
+                DumpObject(nested, sb, depth + 1, expanding);
+        }
+
+        DumpParts(node, sb, depth, expanding);
+
+        if (node is IEnumerable items and not Visual)
+        {
+            foreach (var item in items)
+            {
+                sb.AppendLine(pad + $"- {Describe(item)}");
+                if (item is DependencyObject nested and not Visual)
+                    DumpObject(nested, sb, depth + 1, expanding);
+            }
+        }
+
+        expanding.Remove(Handle(node));
+    }
+
+    static void DumpParts(
+        DependencyObject node,
+        StringBuilder sb,
+        int depth,
+        HashSet<nint> expanding
+    )
+    {
+        var pad = new string(' ', depth * 2);
+
+        if (node is Grid grid)
+        {
+            DumpMembers("RowDefinitions", grid.RowDefinitions, sb, depth, expanding);
+            DumpMembers("ColumnDefinitions", grid.ColumnDefinitions, sb, depth, expanding);
+        }
+
+        if (node is TextBlock text)
+            DumpMembers("Inlines", text.Inlines, sb, depth, expanding);
+        else if (node is Span span)
+            DumpMembers("Inlines", span.Inlines, sb, depth, expanding);
+
+        if (node is not FrameworkElement element)
+            return;
+
+        if (
+            element.Resources is { } resources
+            && (resources.Count > 0 || resources.MergedDictionaries.Count > 0)
+        )
+        {
+            sb.AppendLine(pad + "Resources");
+            DumpEntries(resources, Unnamed, sb, depth + 1);
+        }
+
+        if (element.Triggers is { Count: > 0 } triggers)
+        {
+            sb.AppendLine(pad + "Triggers");
+            DumpTriggers(triggers, null, sb, depth + 1);
+        }
+    }
+
+    static void DumpMembers<T>(
+        string label,
+        IList<T> members,
+        StringBuilder sb,
+        int depth,
+        HashSet<nint> expanding
+    )
+        where T : DependencyObject
+    {
+        if (members.Count == 0)
+            return;
+
+        var pad = new string(' ', depth * 2);
+        sb.AppendLine(pad + label);
+        foreach (var member in members)
+        {
+            sb.AppendLine(pad + "  " + member.GetType().Name);
+            DumpObject(member, sb, depth + 2, expanding);
         }
     }
 
@@ -483,6 +698,8 @@ static class XamlGraphDump
     }
 
     static readonly Dictionary<Type, Slot[]> Slots = new Dictionary<Type, Slot[]>();
+
+    static readonly Dictionary<Type, HashSet<nint>> Owned = new Dictionary<Type, HashSet<nint>>();
 
     static Slot[] SlotsOf(Type type)
     {
@@ -548,32 +765,93 @@ static class XamlGraphDump
         return Slots[type] = found.ToArray();
     }
 
-    static List<(string Name, string Value)> LocalValues(DependencyObject target)
+    static HashSet<nint> OwnedBy(Type type)
     {
-        var results = new List<(string, string)>();
+        if (!Owned.TryGetValue(type, out var owned))
+            Owned[type] = owned = new HashSet<nint>(SlotsOf(type).Select(s => Handle(s.Property)));
+
+        return owned;
+    }
+
+    static List<(string Name, string Text, object? Value)> LocalValues(DependencyObject target)
+    {
+        var results = new List<(string, string, object?)>();
 
         foreach (var slot in SlotsOf(target.GetType()))
         {
-            string? text;
+            (string Text, object? Value)? read;
             try
             {
-                text = Read(target, slot);
+                read = Read(target, slot);
             }
             catch (Exception)
             {
                 continue;
             }
 
-            if (text is not null)
-                results.Add((slot.Name, text));
+            if (read is { } found)
+                results.Add((slot.Name, found.Text, found.Value));
+        }
+
+        foreach (var (property, value) in Attached(target))
+        {
+            if (value is not null && !IsUnset(value))
+                results.Add(
+                    ($"{OwnerName(OwnerOf(property))}.{property.Name}", Describe(value), value)
+                );
         }
 
         results.Sort((a, b) => string.CompareOrdinal(a.Item1, b.Item1));
         return results;
     }
 
+    // The toolkit's own attached properties carry compiled wiring, which the parser never sets.
+    static List<(DependencyProperty Property, object? Value)> Attached(DependencyObject target)
+    {
+        var stored = new List<(DependencyProperty Property, object? Value)>();
+        target.EnumProperties((property, value) => stored.Add((property, value)));
+
+        var type = target.GetType();
+        var owned = OwnedBy(type);
+        var seen = new HashSet<nint>();
+        var attached = new List<(DependencyProperty, object?)>();
+        foreach (var (property, value) in stored)
+        {
+            var handle = Handle(property);
+            var owner = OwnerOf(property);
+            if (
+                !seen.Add(handle)
+                || owned.Contains(handle)
+                || owner?.IsAssignableFrom(type) == true
+                || owner?.Assembly == typeof(CompiledTriggerSet).Assembly
+            )
+                continue;
+
+            attached.Add((property, value));
+        }
+
+        return attached;
+    }
+
+    static Type? OwnerOf(DependencyProperty property)
+    {
+        try
+        {
+            return property.OwnerType;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    static string OwnerName(Type? owner) =>
+        owner is null ? "?"
+        : owner.Assembly == typeof(DependencyObject).Assembly ? owner.Name
+        : owner.FullName ?? owner.Name;
+
     // GetValue takes a misrouted value for a pointer and crashes; only these three reads are safe.
-    static string? Read(DependencyObject target, Slot slot)
+    static (string Text, object? Value)? Read(DependencyObject target, Slot slot)
     {
         object? value;
         if (!slot.Misrouted)
@@ -587,16 +865,18 @@ static class XamlGraphDump
             catch (NotSupportedException)
             {
                 if (slot.NoesisAccessor is null)
-                    return "local:" + Describe(target.ReadLocalValue(slot.Property));
+                    return ("local:" + Describe(target.ReadLocalValue(slot.Property)), null);
 
                 value = slot.NoesisAccessor.GetValue(target);
             }
         }
 
-        return value is null || ReferenceEquals(value, DependencyProperty.UnsetValue)
-            ? null
-            : Describe(value);
+        return value is null || IsUnset(value) ? null : (Describe(value), value);
     }
+
+    static bool IsUnset(object? value) => ReferenceEquals(value, DependencyProperty.UnsetValue);
+
+    static string Knob(object? value) => value is null || IsUnset(value) ? "-" : Describe(value);
 
     static string Describe(object? value) =>
         value switch
@@ -604,10 +884,17 @@ static class XamlGraphDump
             null => "null",
             Binding binding =>
                 $"Binding(Path={binding.Path?.Path}, Mode={binding.Mode}, Format={binding.StringFormat ?? "-"}, "
-                    + $"Rel={(binding.RelativeSource is { } r ? $"{r.Mode}:{r.AncestorType?.Name}" : "-")}, "
-                    + $"Element={binding.ElementName ?? "-"}, Converter={binding.Converter?.GetType().Name ?? "-"})",
+                    + $"Rel={(binding.RelativeSource is { } r ? $"{r.Mode}:{r.AncestorType?.Name}:{r.AncestorLevel}" : "-")}, "
+                    + $"Element={binding.ElementName ?? "-"}, Source={Knob(binding.Source)}, "
+                    + $"Converter={binding.Converter?.GetType().Name ?? "-"}, Parameter={Knob(binding.ConverterParameter)}, "
+                    + $"Fallback={Knob(binding.FallbackValue)}, Null={Knob(binding.TargetNullValue)}, "
+                    + $"Update={binding.UpdateSourceTrigger}, Delay={binding.Delay})",
             MultiBinding multi =>
-                $"MultiBinding(Converter={multi.Converter?.GetType().Name ?? "-"}, Count={multi.Bindings.Count})",
+                $"MultiBinding(Converter={multi.Converter?.GetType().Name ?? "-"}, Parameter={Knob(multi.ConverterParameter)}, "
+                    + $"Mode={multi.Mode}, Format={multi.StringFormat ?? "-"}, Fallback={Knob(multi.FallbackValue)}, "
+                    + $"Null={Knob(multi.TargetNullValue)}, Update={multi.UpdateSourceTrigger}, Delay={multi.Delay}, "
+                    + $"[{string.Join(", ", multi.Bindings.Select(Describe))}])",
+            BindingExpressionBase expression => Describe(expression.ParentBindingBase),
             SolidColorBrush brush => $"SolidColorBrush({brush.Color})",
             FontFamily family =>
                 $"FontFamily({family.Source}, Base={family.BaseUri?.OriginalString ?? "-"})",

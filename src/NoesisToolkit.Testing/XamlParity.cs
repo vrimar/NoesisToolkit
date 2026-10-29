@@ -11,7 +11,8 @@ namespace NoesisToolkit.Testing;
 /// each graph is realized and rendered as text, and the two texts must match.
 /// <para>
 /// Templates are applied to a host and laid out before they are walked, so what is compared is
-/// what the engine instantiates. Values are compared as the engine reads them back, with no data
+/// what the engine instantiates. A tree deeper than the walk goes fails rather than passing on the
+/// levels above. Values are compared as the engine reads them back, with no data
 /// context, so a binding shows the value it holds while unresolved. Timing is not compared: both
 /// sides are compared after the application resources are installed, so a lookup the compiled path
 /// performs too early still resolves here.
@@ -129,7 +130,7 @@ public static class XamlParity
         var (expected, actual) = XamlGraphDump.Dump(parsed, compiled);
 
         // Two bare roots agree, which would pass a tree that never realized.
-        return expected.TrimEnd().IndexOf('\n') < 0
+        return VisualTreeHelper.GetChildrenCount(parsed) == 0
             ? new XamlParityFailure(document, "the parser built nothing below the root")
             : Judge(document, expected, actual, dumps);
     }
@@ -145,7 +146,12 @@ public static class XamlParity
         }
 
         if (expected == actual)
-            return null;
+            return XamlGraphDump.Truncated(expected)
+                ? new XamlParityFailure(
+                    document,
+                    $"the tree is deeper than {XamlGraphDump.Deepest} levels, and what lies below is not compared"
+                )
+                : null;
 
         var left = expected.Split('\n');
         var right = actual.Split('\n');
