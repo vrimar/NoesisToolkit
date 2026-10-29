@@ -32,6 +32,14 @@ A converter's result is written as it is when the slot's type holds it. A result
 handed to the engine to convert, as a native binding would; `DependencyProperty.UnsetValue` writes
 the slot's default and `Binding.DoNothing` leaves the slot alone.
 
+A member of a struct is read in the same step as the hop that produced the struct: `{Binding
+Score.Hits}` off a class whose `Score` is a struct reads `Score.Hits` at once and watches `Score`. A
+hop of its own would box every struct value it read, and boxes are kept for a hop's first 256 values
+only, so a list showing more than that would box again on every row it reuses. A struct raises no
+change notification, so watching the hop that holds it is all a path through it can watch. A
+nullable struct keeps its own hop: read through in one step, a null would throw where its own hop
+breaks the path quietly.
+
 ## Bindings sourced from another element
 
 `ElementName` and `RelativeSource AncestorType` compile too. The source element is found at run time

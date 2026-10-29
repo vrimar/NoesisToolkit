@@ -117,6 +117,8 @@
     <TextBlock Text="{Binding Def.Family, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
     <TextBlock Text="{Binding Def.Family, Mode=OneTime}" />
     <TextBlock Text="{Binding ReadOnlyName, Mode=TwoWay}" />
+    <TextBlock Text="{Binding Tally.Hits}" />
+    <TextBlock Tag="{Binding Tally.Hits}" />
 
     <ItemsControl>
       <ItemsControl.ItemTemplate>

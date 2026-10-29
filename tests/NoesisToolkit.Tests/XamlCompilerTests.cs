@@ -288,6 +288,28 @@ public partial class XamlCompilerTests
     }
 
     [Test]
+    public async Task A_member_of_a_struct_is_read_in_the_hop_that_produced_the_struct()
+    {
+        var run = CompiledBindings();
+
+        await Assert.That(run.Errors).IsEmpty();
+        var source = run.AllSources;
+
+        await Assert
+            .That(source)
+            .Contains(
+                "BindingHop.CheckedValue<global::Sample.Ui.ItemViewModel, int>(\"Tally\", __c => __c.Tally.Hits) }, "
+                    + "Lane = global::NoesisToolkit.Mvvm.CodeGen.BindingLane.Text<global::Sample.Ui.ItemViewModel, int>("
+                    + "static __o => __o.Tally.Hits, "
+            );
+        await Assert
+            .That(source)
+            .DoesNotContain(
+                "BindingHop.CheckedValue<global::Sample.Ui.ItemViewModel, global::Sample.Ui.Tally>"
+            );
+    }
+
+    [Test]
     public async Task A_slot_the_native_binding_fills_through_a_type_converter_is_constructed()
     {
         var run = CompiledBindings();
@@ -1831,8 +1853,14 @@ public partial class XamlCompilerTests
             public static explicit operator Coins(long value) => new(value);
         }
 
+        public readonly struct Tally
+        {
+            public int Hits { get; init; }
+        }
+
         public class ItemViewModel
         {
+            public Tally Tally { get; set; }
             public Coins Purse { get; set; }
             public int DefIdInt { get; set; }
             public double Ratio { get; set; }

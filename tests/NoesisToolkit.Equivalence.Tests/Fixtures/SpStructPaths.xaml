@@ -1,0 +1,15 @@
+<ResourceDictionary
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:t="clr-namespace:NoesisToolkit.Equivalence.Tests;assembly=NoesisToolkit.Equivalence.Tests"
+  xmlns:ntk="https://github.com/vrimar/NoesisToolkit"
+  ntk:CompileBindings="True"
+>
+  <DataTemplate x:Key="StructPaths" DataType="{x:Type t:SpTallyModel}">
+    <StackPanel>
+      <TextBlock x:Name="Hits" Text="{Binding Tally.Hits}" />
+      <TextBlock x:Name="Rate" Text="{Binding Tally.Rate, StringFormat='{}{0:F2}%'}" />
+      <TextBlock x:Name="Boxed" Tag="{Binding Tally.Hits}" />
+    </StackPanel>
+  </DataTemplate>
+</ResourceDictionary>

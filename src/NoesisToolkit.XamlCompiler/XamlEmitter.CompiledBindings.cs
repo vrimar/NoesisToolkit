@@ -513,7 +513,8 @@ sealed partial class XamlEmitter
         )
             return null;
 
-        var last = resolved.Hops[resolved.Hops.Count - 1];
+        var steps = Emitted(resolved.Hops);
+        var last = steps[steps.Count - 1];
         var from = last.Type;
         var exact = SymbolEqualityComparer.Default.Equals(from, slot.Type);
         if (!exact && !(converted && (IsNumericOrEnum(from) || Operates(from, slot.Type))))
@@ -524,12 +525,12 @@ sealed partial class XamlEmitter
         var slotFqn = XamlTypeResolver.Fqn(slot.Type);
         var convert = exact ? "__t" : CastTo(slot.Type, from, "__t");
         var writeBack = writes
-            ? $"static (__o, __w) => __o.{Id(last.Name)} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
+            ? $"static (__o, __w) => __o.{last.Read} = {(exact ? "__w" : CastTo(from, from, "__w"))}"
             : "null";
-        var guarded = resolved.Hops.Count == 1 ? "true" : "false";
+        var guarded = steps.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Of<{owner}, {fromFqn}, {slotFqn}>("
-            + $"static __o => __o.{Id(last.Name)}, static __t => {convert}, {writeBack}, {guarded})";
+            + $"static __o => __o.{last.Read}, static __t => {convert}, {writeBack}, {guarded})";
     }
 
     const string BindingLaneFqn = "global::NoesisToolkit.Mvvm.CodeGen.BindingLane";
@@ -548,7 +549,8 @@ sealed partial class XamlEmitter
         )
             return null;
 
-        var last = resolved.Hops[resolved.Hops.Count - 1];
+        var steps = Emitted(resolved.Hops);
+        var last = steps[steps.Count - 1];
         var from = last.Type;
         var real = from.SpecialType is SpecialType.System_Single or SpecialType.System_Double;
         if (!real && !IsInteger(from))
@@ -609,10 +611,10 @@ sealed partial class XamlEmitter
 
         var owner = XamlTypeResolver.Fqn(last.Owner);
         var fromFqn = XamlTypeResolver.Fqn(from);
-        var guarded = resolved.Hops.Count == 1 ? "true" : "false";
+        var guarded = steps.Count == 1 ? "true" : "false";
 
         return $"{BindingLaneFqn}.Text<{owner}, {fromFqn}>("
-            + $"static __o => __o.{Id(last.Name)}, "
+            + $"static __o => __o.{last.Read}, "
             + $"static ({fromFqn} __t, global::System.Span<char> __d, out int __w) => "
             + $"{{ var __s = new {SlotTextFqn}(__d); {string.Join(" ", pieces.ToArray())} "
             + "return __s.Done(out __w); }, "
@@ -816,8 +818,8 @@ sealed partial class XamlEmitter
     {
         var chain = string.Join(
             ", ",
-            resolved
-                .Hops.Select(
+            Emitted(resolved.Hops)
+                .Select(
                     (h, i) =>
                         HopExpression(
                             h,
@@ -1348,20 +1350,20 @@ sealed partial class XamlEmitter
 
         if (hop.Type.SpecialType == SpecialType.System_Boolean)
             return check is not null
-                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{Id(hop.Name)})"
-                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{Id(hop.Name)})";
+                ? $"{BindingHopFqn}.{check}Bool<{owner}>({name}, __c => __c.{hop.Read})"
+                : $"{BindingHopFqn}.Bool({name}, __o => (({owner})__o).{hop.Read})";
 
         if (BoxesOnRead(hop.Type))
         {
             var value = XamlTypeResolver.Fqn(hop.Type);
             return check is not null
-                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{Id(hop.Name)})"
-                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{Id(hop.Name)})";
+                ? $"{BindingHopFqn}.{check}Value<{owner}, {value}>({name}, __c => __c.{hop.Read})"
+                : $"{BindingHopFqn}.Value<{value}>({name}, __o => (({owner})__o).{hop.Read})";
         }
 
         return check is not null
-            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{Id(hop.Name)})"
-            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{Id(hop.Name)})";
+            ? $"{BindingHopFqn}.{check}<{owner}>({name}, __c => __c.{hop.Read})"
+            : $"new {BindingHopFqn}({name}, __o => (({owner})__o).{hop.Read})";
     }
 
     // A nullable already boxes to its value or null, and a ref struct cannot be a type argument.
@@ -1853,11 +1855,43 @@ sealed partial class XamlEmitter
         return null;
     }
 
-    readonly struct Hop(string name, INamedTypeSymbol owner, ITypeSymbol propertyType)
+    readonly struct Hop(
+        string name,
+        INamedTypeSymbol owner,
+        ITypeSymbol propertyType,
+        string? read = null
+    )
     {
         public string Name { get; } = name;
         public INamedTypeSymbol Owner { get; } = owner;
         public ITypeSymbol Type { get; } = propertyType;
+        public string Read { get; } = read ?? Id(name);
+    }
+
+    // A struct in a hop of its own is boxed on every read, and it raises no change to watch.
+    static List<Hop> Emitted(List<Hop> hops)
+    {
+        var emitted = new List<Hop>(hops.Count);
+        foreach (var hop in hops)
+        {
+            // Read through, a null nullable throws where its own hop breaks the path quietly.
+            if (emitted.Count > 0 && hop.Owner.IsValueType && Wrapped(hop.Owner) is null)
+            {
+                var into = emitted[emitted.Count - 1];
+                emitted[emitted.Count - 1] = new Hop(
+                    into.Name,
+                    into.Owner,
+                    hop.Type,
+                    $"{into.Read}.{Id(hop.Name)}"
+                );
+            }
+            else
+            {
+                emitted.Add(hop);
+            }
+        }
+
+        return emitted;
     }
 
     // A cast has to name the type, and an unbound one only names its own parameters. Constructing it
