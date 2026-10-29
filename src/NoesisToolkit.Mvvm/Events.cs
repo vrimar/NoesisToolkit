@@ -129,6 +129,7 @@ public static class Events
     /// <param name="element">The element to listen on.</param>
     /// <param name="routedEvent"><see cref="UIElement.KeyDownEvent"/>, <see cref="UIElement.KeyUpEvent"/> or a preview of either.</param>
     /// <param name="handler">Takes the element and the key.</param>
+    /// <exception cref="ArgumentException"><paramref name="routedEvent"/> is not a key event.</exception>
     public static void OnKey(
         FrameworkElement element,
         RoutedEvent routedEvent,
@@ -138,7 +139,7 @@ public static class Events
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(routedEvent, nameof(routedEvent));
         Guard.NotNull(handler, nameof(handler));
-        ElementEvents.Subscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
+        ElementEvents.Subscribe(element, KeyEvent(routedEvent), 0, handler);
     }
 
     /// <summary>Stops a subscription taken with <see cref="OnKey"/>.</summary>
@@ -164,6 +165,7 @@ public static class Events
     /// <param name="element">The element to listen on.</param>
     /// <param name="routedEvent"><see cref="UIElement.KeyDownEvent"/>, <see cref="UIElement.KeyUpEvent"/> or a preview of either.</param>
     /// <param name="handler">Takes the element and the key; returns whether it handled the key.</param>
+    /// <exception cref="ArgumentException"><paramref name="routedEvent"/> is not a key event.</exception>
     public static void OnKeyClaim(
         FrameworkElement element,
         RoutedEvent routedEvent,
@@ -173,7 +175,7 @@ public static class Events
         Guard.NotNull(element, nameof(element));
         Guard.NotNull(routedEvent, nameof(routedEvent));
         Guard.NotNull(handler, nameof(handler));
-        ElementEvents.Subscribe(element, BaseComponent.getCPtr(routedEvent).Handle, 0, handler);
+        ElementEvents.Subscribe(element, KeyEvent(routedEvent), 0, handler);
     }
 
     /// <summary>Stops a subscription taken with <see cref="OnKeyClaim"/>.</summary>
@@ -193,6 +195,30 @@ public static class Events
     }
 
     static readonly Action AnyHandler = static () => { };
+
+    static readonly KeyEventHandler AnyKeyHandler = static (_, _) => { };
+
+    static nint KeyEvent(RoutedEvent routedEvent)
+    {
+        var handle = BaseComponent.getCPtr(routedEvent).Handle;
+        bool keyed;
+        try
+        {
+            keyed = NoesisInternals.IsLegalHandler(null, handle, AnyKeyHandler);
+        }
+        catch (InvalidOperationException)
+        {
+            keyed = false;
+        }
+
+        if (!keyed)
+            throw new ArgumentException(
+                $"{routedEvent.Name} is not a key event; its args carry no key.",
+                nameof(routedEvent)
+            );
+
+        return handle;
+    }
 
     // Bound by a name Noesis raises nothing under, a subscription is taken and never fires.
     static uint NamedEventId(string eventName)

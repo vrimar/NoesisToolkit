@@ -67,20 +67,23 @@ public class DelegateCommand<T> : ICommand
     /// <summary>Tells bound controls to re-query <see cref="CanExecute"/>.</summary>
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 
+    private static readonly bool TakesNull = default(T) is null;
+
     /// <summary>Whether the parameter is one this command could take. A re-query has to answer,
     /// so a mismatch is "no", where invoking it is still a fault.</summary>
-    internal static bool Fits(object? parameter) => parameter is null or T;
+    internal static bool Fits(object? parameter) =>
+        parameter is T || (parameter is null && TakesNull);
 
     internal static T? Cast(object? parameter)
     {
-        if (parameter is null)
-            return default;
-
         if (parameter is T t)
             return t;
 
+        if (parameter is null && TakesNull)
+            return default;
+
         throw new ArgumentException(
-            $"Invalid command parameter type. Expected {typeof(T).FullName}, got {parameter.GetType().FullName}."
+            $"Invalid command parameter type. Expected {typeof(T).FullName}, got {parameter?.GetType().FullName ?? "null"}."
         );
     }
 }

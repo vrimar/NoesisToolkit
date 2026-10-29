@@ -1,4 +1,5 @@
 using Noesis;
+using NoesisToolkit.Mvvm;
 using NoesisToolkit.Mvvm.CodeGen;
 
 namespace NoesisToolkit.Equivalence.Tests;
@@ -58,5 +59,39 @@ public sealed class NativeEventTests
 
         second.Label = "changed";
         await Assert.That(host.Label).IsEqualTo("changed");
+    }
+
+    [Test]
+    public async Task A_template_clone_of_a_bound_menu_opens_and_closes_without_reaching_its_original()
+    {
+        NoesisRuntime.Start();
+
+        var original = new MenuItem();
+        CompiledBinding.Bind(original, HeaderedItemsControl.HeaderProperty, LabelOf());
+        var loaded = 0;
+        Events.On(original, FrameworkElement.LoadedEvent, _ => loaded++);
+        var menu = new ContextMenu();
+        menu.Items.Add(original);
+
+        var items = new ItemsControl
+        {
+            ItemsSource = new[] { new SpikeItem { Label = "row" } },
+            ItemTemplate = new DataTemplate
+            {
+                VisualTree = new Border { Height = 5, ContextMenu = menu },
+            },
+        };
+        var view = NoesisRuntime.Show(items);
+
+        var host = TreeSearch.All<Border>(items).Single(b => b.ContextMenu is not null);
+        var placed = host.ContextMenu;
+        placed.PlacementTarget = host;
+        placed.IsOpen = true;
+        NoesisRuntime.Pump(view, items);
+        placed.IsOpen = false;
+        NoesisRuntime.Pump(view, items);
+
+        await Assert.That(placed).IsNotSameReferenceAs(menu);
+        await Assert.That(loaded).IsEqualTo(0);
     }
 }

@@ -66,6 +66,21 @@ public sealed class EventsTests
     }
 
     [Test]
+    public void A_key_handler_refuses_an_event_whose_args_carry_no_key()
+    {
+        NoesisRuntime.Start();
+
+        var host = new SpikeControl();
+
+        Assert.Throws<ArgumentException>(() =>
+            Events.OnKey(host, UIElement.MouseDownEvent, static (_, _) => { })
+        );
+        Assert.Throws<ArgumentException>(() =>
+            Events.OnKeyClaim(host, FrameworkElement.SizeChangedEvent, static (_, _) => true)
+        );
+    }
+
+    [Test]
     public async Task A_key_left_unclaimed_lets_the_view_move_focus()
     {
         var (view, first, second) = ShowFocusPair(claim: false);

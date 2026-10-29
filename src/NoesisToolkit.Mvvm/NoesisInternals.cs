@@ -49,6 +49,13 @@ static class NoesisInternals
         Delegate handler
     );
 
+    [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "IsLegalHandler")]
+    internal static extern bool IsLegalHandler(
+        [UnsafeAccessorType("Noesis.EventManager, Noesis.GUI")] object? owner,
+        nint routedEvent,
+        Delegate handler
+    );
+
     internal static object? DataContext(nint element) =>
         Proxy(null, DataContextOf(null, new HandleRef(null, element)), false);
 

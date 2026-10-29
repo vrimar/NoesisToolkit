@@ -46,8 +46,8 @@ static unsafe class NativeEvents
     {
         try
         {
-            // The element's end arrives as a raise with neither sender nor args.
-            if ((sender == IntPtr.Zero && e == IntPtr.Zero) || !NoesisInternals.Initialized(null))
+            // A clone copies its original's bindings, raised with the original's handle; the end has no sender.
+            if (sender != cPtr || !NoesisInternals.Initialized(null))
                 return;
 
             if (ElementState.Find(cPtr) is not { } element)
@@ -71,7 +71,7 @@ static unsafe class NativeEvents
     {
         try
         {
-            if ((sender == IntPtr.Zero && e == IntPtr.Zero) || !NoesisInternals.Initialized(null))
+            if (sender != cPtr || !NoesisInternals.Initialized(null))
                 return;
 
             if (ElementState.Find(cPtr) is not { } element)
