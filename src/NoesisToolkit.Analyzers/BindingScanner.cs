@@ -43,8 +43,8 @@ internal static class BindingScanner
         /// <summary>Sources written as property elements, by the ordinal of the element that owns
         /// them. A template can precede the source it reads, so the collect pass records these and
         /// every later pass reads them whatever the document order was.</summary>
-        public Dictionary<int, Dictionary<string, string>> ElementSources =
-            new Dictionary<int, Dictionary<string, string>>();
+        public Dictionary<int, Dictionary<string, string?>> ElementSources =
+            new Dictionary<int, Dictionary<string, string?>>();
 
         // Read off a later element than the one it rebinds, so it is collected ahead too.
         public HashSet<int> Rebound = new HashSet<int>();
@@ -62,7 +62,7 @@ internal static class BindingScanner
             return ScanResult.Empty;
 
         var nameToScope = new Dictionary<string, DataScope?>(StringComparer.Ordinal);
-        var elementSources = new Dictionary<int, Dictionary<string, string>>();
+        var elementSources = new Dictionary<int, Dictionary<string, string?>>();
         var rebound = new HashSet<int>();
         var discard = new Walked
         {
@@ -146,28 +146,55 @@ internal static class BindingScanner
             return Array.Empty<XmlnsDeclaration>();
 
         var declarations = new List<XmlnsDeclaration>();
-        var ok = ForEachAttribute(
-            content!,
-            (reader, lineInfo, _) =>
+        var scopes = new List<HashSet<string>?> { null };
+        try
+        {
+            using var reader = CreateReader(content!);
+            var lineInfo = (IXmlLineInfo)reader;
+            while (reader.Read())
             {
-                if (
-                    reader.Prefix != "xmlns"
-                    || !reader.Value.StartsWith(ClrNamespace, StringComparison.Ordinal)
-                )
-                    return;
+                if (reader.NodeType == XmlNodeType.EndElement)
+                {
+                    if (scopes.Count > 1)
+                        scopes.RemoveAt(scopes.Count - 1);
+                    continue;
+                }
+                if (reader.NodeType != XmlNodeType.Element)
+                    continue;
 
-                declarations.Add(
-                    new XmlnsDeclaration(
-                        lineInfo.LineNumber,
-                        lineInfo.LinePosition,
-                        reader.LocalName,
-                        ClrNamespaceOf(reader.Value)
+                var ignorable = Ignorable(reader, scopes[scopes.Count - 1]);
+                if (!reader.IsEmptyElement)
+                    scopes.Add(ignorable);
+
+                while (reader.MoveToNextAttribute())
+                {
+                    if (
+                        reader.Prefix != "xmlns"
+                        || !reader.Value.StartsWith(ClrNamespace, StringComparison.Ordinal)
+                        || ignorable?.Contains(reader.Value) == true
+                        || ClrNamespaceOf(reader.Value) is not { } ns
                     )
-                );
-            }
-        );
+                        continue;
 
-        return ok ? declarations : Array.Empty<XmlnsDeclaration>();
+                    declarations.Add(
+                        new XmlnsDeclaration(
+                            lineInfo.LineNumber,
+                            lineInfo.LinePosition,
+                            reader.LocalName,
+                            ns
+                        )
+                    );
+                }
+
+                reader.MoveToElement();
+            }
+        }
+        catch (XmlException)
+        {
+            return Array.Empty<XmlnsDeclaration>();
+        }
+
+        return declarations;
     }
 
     /// <summary>Every element one XAML file names through a <c>clr-namespace:</c> prefix, by the type
@@ -241,12 +268,16 @@ internal static class BindingScanner
 
     const string ClrNamespace = "clr-namespace:";
 
+    // No managed assembly declares its types: Noesis resolves it natively, whatever assembly= names.
+    const string ExtensionsNamespace = "NoesisGUIExtensions";
+
     // The assembly= suffix is not part of the namespace name.
-    static string ClrNamespaceOf(string value)
+    static string? ClrNamespaceOf(string value)
     {
         var body = value.Substring(ClrNamespace.Length);
         var semi = body.IndexOf(';');
-        return semi < 0 ? body : body.Substring(0, semi);
+        var name = semi < 0 ? body : body.Substring(0, semi);
+        return name == ExtensionsNamespace ? null : name;
     }
 
     // A prefix can be redeclared further in, so it resolves where the reader stands.
@@ -338,7 +369,7 @@ internal static class BindingScanner
 
                 if (walked.ElementSources.TryGetValue(frame.Ordinal, out var written))
                 {
-                    frame.Sources ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                    frame.Sources ??= new Dictionary<string, string?>(StringComparer.Ordinal);
                     foreach (var pair in written)
                         frame.Sources[pair.Key] = pair.Value;
                 }
@@ -505,6 +536,10 @@ internal static class BindingScanner
                 && frame.Sources.TryGetValue(host.SourceProperty, out var path)
             )
             {
+                // Null where a converter or format hands the host something its path does not read.
+                if (path is null)
+                    return null;
+
                 // A pathless source hands on the DataContext itself, unchanged.
                 return path.Length == 0 && !host.IsCollection
                     ? frame.Data
@@ -533,7 +568,7 @@ internal static class BindingScanner
             return;
 
         var triggerLike = TriggerLike.Contains(reader.LocalName);
-        Dictionary<string, string>? sources = null;
+        Dictionary<string, string?>? sources = null;
 
         while (reader.MoveToNextAttribute())
         {
@@ -565,8 +600,10 @@ internal static class BindingScanner
                     )
                 )
                 {
-                    sources ??= new Dictionary<string, string>(StringComparer.Ordinal);
-                    sources[reader.LocalName] = hostBinding.Path ?? "";
+                    sources ??= new Dictionary<string, string?>(StringComparer.Ordinal);
+                    sources[reader.LocalName] = hostBinding.Converts
+                        ? null
+                        : hostBinding.Path ?? "";
                 }
             }
 
@@ -622,7 +659,7 @@ internal static class BindingScanner
         if (sources is not null)
         {
             // Merged, not assigned: a property-element source was already recorded on this frame.
-            frame.Sources ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            frame.Sources ??= new Dictionary<string, string?>(StringComparer.Ordinal);
             foreach (var pair in sources)
                 frame.Sources[pair.Key] = pair.Value;
         }
@@ -800,11 +837,14 @@ internal static class BindingScanner
             return;
 
         if (!walked.ElementSources.TryGetValue(owner.Ordinal, out var sources))
-            walked.ElementSources[owner.Ordinal] = sources = new Dictionary<string, string>(
+            walked.ElementSources[owner.Ordinal] = sources = new Dictionary<string, string?>(
                 StringComparer.Ordinal
             );
 
-        sources[property] = path;
+        sources[property] =
+            reader.GetAttribute("Converter") is null && reader.GetAttribute("StringFormat") is null
+                ? path
+                : null;
     }
 
     // Scraping the text would match an AncestorType whose own name contains one of these words.
@@ -899,7 +939,7 @@ internal static class BindingScanner
         public string? SelfType;
         public string? PropertyOwner;
         public DataScope? PendingHost;
-        public Dictionary<string, string>? Sources;
+        public Dictionary<string, string?>? Sources;
         public HashSet<string>? Ignorable;
         public int Ordinal;
         public string? PropertyName;

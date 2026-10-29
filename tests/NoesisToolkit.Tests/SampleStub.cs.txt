@@ -122,6 +122,17 @@ namespace Sample.Ui
         public System.Collections.Generic.List<DerivedViewModel> Others { get; } = new();
     }
 
+    public class Paged<T>
+    {
+        public T Current { get; } = default!;
+    }
+
+    public class LedgerViewModel
+    {
+        public dynamic Extra { get; } = null!;
+        public System.DateTime? Due { get; set; }
+    }
+
     public abstract class AbstractViewModel
     {
         public string Known { get; set; } = "";

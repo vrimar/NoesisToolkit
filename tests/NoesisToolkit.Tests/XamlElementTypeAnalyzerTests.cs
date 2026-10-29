@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using NoesisToolkit.Analyzers;
 
 namespace NoesisToolkit.Tests;
@@ -33,4 +34,40 @@ public class XamlElementTypeAnalyzerTests
 
         await Assert.That(diagnostics).IsEmpty();
     }
+
+    [Test]
+    public async Task ATypeTwoReferencedAssembliesDeclare_IsNotReported()
+    {
+        var diagnostics = await AnalyzerHarness.Analyze(
+            new XamlBindingAnalyzer(),
+            "/tmp/Probe.xaml",
+            """
+            <ResourceDictionary
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:copies="clr-namespace:Sample.Copies">
+              <copies:Badge x:Key="Badge" />
+            </ResourceDictionary>
+            """,
+            libraries: [Library("CopyA", "public"), Library("CopyB", "internal")]
+        );
+
+        await Assert
+            .That(diagnostics.Where(d => d.Id == XamlBindingAnalyzer.UnresolvedElementTypeId))
+            .IsEmpty();
+    }
+
+    static MetadataReference Library(string name, string accessibility) =>
+        CSharpCompilation
+            .Create(
+                name,
+                [
+                    CSharpSyntaxTree.ParseText(
+                        $"namespace Sample.Copies {{ {accessibility} class Badge {{ }} }}"
+                    ),
+                ],
+                Basic.Reference.Assemblies.Net80.References.All,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+            )
+            .ToMetadataReference();
 }

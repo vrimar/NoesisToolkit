@@ -12,8 +12,9 @@ namespace NoesisToolkit.Analyzers;
 /// element. Bound into that element's own template, the native <c>Command</c> property holds the
 /// managed command, the command holds the element, and the element owns the template child — a cycle
 /// across the native boundary that neither the collector nor the refcount can break. It covers a
-/// command the element stores and a <c>[DelegateCommand]</c> on one of its instance methods, the
-/// latter reported at the attribute because the property it generates is generated code.
+/// command the element stores, one it sets on the <c>Command</c> of a Noesis object such as a template
+/// part, and a <c>[DelegateCommand]</c> on one of its instance methods, the latter reported at the
+/// attribute because the property it generates is generated code.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
@@ -21,24 +22,25 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
     public const string SelfCapturingCommandId = "NTK2102";
 
     private const string FrameworkElementMetadataName = "Noesis.FrameworkElement";
+    private const string DependencyObjectMetadataName = "Noesis.DependencyObject";
     private const string CommandMetadataName = "System.Windows.Input.ICommand";
     private const string CommandAttributeMetadataName =
         "NoesisToolkit.Mvvm.DelegateCommandAttribute";
 
     private static readonly DiagnosticDescriptor SelfCapturingCommandRule = new(
         SelfCapturingCommandId,
-        title: "Command captures the control that exposes it",
-        messageFormat: "'{0}' captures the control that exposes it; bound into that control's own template it pins the control for the process lifetime — take the owner from a static handler's TemplatedParent, or move the command to a ViewModel",
+        title: "Command captures the control that holds it",
+        messageFormat: "'{0}' captures the control that holds it; bound into that control's own template it pins the control for the process lifetime — take the owner from a static handler's TemplatedParent, or move the command to a ViewModel",
         category: "Reliability",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "Setting a native Command property makes Noesis hold the managed command, which "
             + "in turn holds every object its delegates captured. A control that binds such a command "
-            + "into its own template closes a reference cycle through native code: the element keeps "
-            + "the template child alive, the child keeps the command alive, and the command keeps the "
-            + "element's managed proxy alive, so the element is never destroyed. Commands belong on a "
-            + "ViewModel; a control's own buttons are better served by a static Click handler that "
-            + "reads its TemplatedParent."
+            + "into its own template, or sets it on one of its parts, closes a reference cycle through "
+            + "native code: the element keeps the template child alive, the child keeps the command "
+            + "alive, and the command keeps the element's managed proxy alive, so the element is never "
+            + "destroyed. Commands belong on a ViewModel; a control's own buttons are better served by "
+            + "a static Click handler that reads its TemplatedParent."
     );
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
@@ -54,12 +56,16 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
             var frameworkElement = start.Compilation.GetTypeByMetadataName(
                 FrameworkElementMetadataName
             );
+            var dependencyObject = start.Compilation.GetTypeByMetadataName(
+                DependencyObjectMetadataName
+            );
             var command = start.Compilation.GetTypeByMetadataName(CommandMetadataName);
-            if (frameworkElement is null || command is null)
+            if (frameworkElement is null || dependencyObject is null || command is null)
                 return;
 
             start.RegisterOperationAction(
-                operation => AnalyzeCreation(operation, frameworkElement, command),
+                operation =>
+                    AnalyzeCreation(operation, frameworkElement, dependencyObject, command),
                 OperationKind.ObjectCreation
             );
 
@@ -79,6 +85,7 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeCreation(
         OperationAnalysisContext context,
         INamedTypeSymbol frameworkElement,
+        INamedTypeSymbol dependencyObject,
         INamedTypeSymbol command
     )
     {
@@ -95,9 +102,13 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
         if (!creation.Arguments.Any(argument => InstanceCapture.Captures(argument.Value)))
             return;
 
-        // Only a command the element keeps or hands out can be reached from its own template.
+        // Only a command the element keeps, hands out or sets natively can be reached from its own tree.
         if (
-            (StoredMember(creation) ?? ReturnedBy(creation, context.ContainingSymbol))
+            (
+                StoredMember(creation)
+                ?? ReturnedBy(creation, context.ContainingSymbol)
+                ?? NativeCommand(creation, dependencyObject)
+            )
             is not { } member
         )
             return;
@@ -171,6 +182,23 @@ public sealed class NoesisCommandLeakAnalyzer : DiagnosticAnalyzer
                     MethodKind: MethodKind.PropertyGet,
                     AssociatedSymbol: IPropertySymbol property,
                 }
+            ? property
+            : null;
+    }
+
+    private static ISymbol? NativeCommand(IOperation creation, INamedTypeSymbol dependencyObject)
+    {
+        var node = creation;
+        while (node.Parent is IConversionOperation conversion)
+            node = conversion;
+
+        return
+            node.Parent
+                is ISimpleAssignmentOperation
+                {
+                    Target: IPropertyReferenceOperation { Property: { Name: "Command" } property },
+                }
+            && TypeWalk.InheritsFrom(property.ContainingType, dependencyObject)
             ? property
             : null;
     }

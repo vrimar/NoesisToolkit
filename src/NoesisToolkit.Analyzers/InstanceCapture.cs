@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 
@@ -31,7 +32,10 @@ static class InstanceCapture
                 ReferenceKind: InstanceReferenceKind.ContainingTypeInstance
             };
 
-    public static bool CapturesInBody(IOperation body)
+    public static bool CapturesInBody(IOperation body) =>
+        CapturesInBody(body, new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default));
+
+    static bool CapturesInBody(IOperation body, HashSet<IMethodSymbol> followed)
     {
         foreach (var op in body.Descendants())
         {
@@ -42,8 +46,44 @@ static class InstanceCapture
                 }
             )
                 return true;
+
+            if (
+                LocalFunctionReached(op) is { IsStatic: false } local
+                && followed.Add(local)
+                && DeclarationOf(body, local) is { } declared
+                && CapturesInBody(declared, followed)
+            )
+                return true;
         }
 
         return false;
+    }
+
+    static IMethodSymbol? LocalFunctionReached(IOperation op) =>
+        op switch
+        {
+            IInvocationOperation { TargetMethod.MethodKind: MethodKind.LocalFunction } call =>
+                call.TargetMethod.OriginalDefinition,
+            IMethodReferenceOperation { Method.MethodKind: MethodKind.LocalFunction } reference =>
+                reference.Method.OriginalDefinition,
+            _ => null,
+        };
+
+    static IOperation? DeclarationOf(IOperation within, IMethodSymbol local)
+    {
+        var root = within;
+        while (root.Parent is not null)
+            root = root.Parent;
+
+        foreach (var op in root.Descendants())
+        {
+            if (
+                op is ILocalFunctionOperation declared
+                && SymbolEqualityComparer.Default.Equals(declared.Symbol, local)
+            )
+                return declared;
+        }
+
+        return null;
     }
 }

@@ -47,6 +47,7 @@ public class NoesisEventLeakAnalyzerTests
     [Arguments("void Hook() { _button.Click += OnStatic; }", 0)]
     [Arguments("void Hook() { _button.Click += (s, e) => _count++; }", 1)]
     [Arguments("void Hook() { _button.Click += (s, e) => { }; }", 0)]
+    [Arguments("void Hook() { void Bump() => _count++; _button.Click += (s, e) => Bump(); }", 1)]
     [Arguments(
         "void Hook() { _button.Click += OnClick; } void Drop() { _button.Click -= (s, e) => _count++; }",
         1
@@ -88,6 +89,25 @@ public class NoesisEventLeakAnalyzerTests
     // A handler behind a parameter may be static or not, so its guard still has to be called out.
     [Arguments("void Hook(System.EventHandler h) { _button.Click -= h; _button.Click += h; }", 1)]
     public async Task An_unsubscribe_the_same_flow_re_attaches_is_not_a_teardown(
+        string body,
+        int expected
+    )
+    {
+        var leaks = await Leaks(body);
+
+        await Assert.That(leaks.Length).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments(
+        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.AddHandler(global::Noesis.Thumb.DragStartedEvent, (System.EventHandler)OnClick); }",
+        1
+    )]
+    [Arguments(
+        "readonly global::Noesis.Thumb _thumb = new global::Noesis.Thumb(); void Hook() { _thumb.DragStarted += OnClick; } void Drop() { _thumb.RemoveHandler(global::Noesis.Thumb.DragStartedEvent, (System.EventHandler)OnClick); }",
+        0
+    )]
+    public async Task A_routed_handler_is_one_subscription_whichever_form_adds_or_removes_it(
         string body,
         int expected
     )

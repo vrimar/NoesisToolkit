@@ -120,7 +120,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         context.RegisterCompilationStartAction(start =>
         {
             var options = start.Options.AnalyzerConfigOptionsProvider.GlobalOptions;
-            if (!IsTrue(options, EnabledProperty))
+            if (IsFalse(options, EnabledProperty))
                 return;
 
             // Built once a document needs it: most compilations carry no XAML at all.
@@ -435,6 +435,9 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         var current = start;
         foreach (var segment in path.Split('.'))
         {
+            if (current is not (INamedTypeSymbol or IArrayTypeSymbol))
+                return null;
+
             var derived = DerivedHere(current, subtypes);
 
             if (FindMember(current, segment) is not { } member)
@@ -466,10 +469,19 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     private static ITypeSymbol? TypeOf(ISymbol member) =>
         member switch
         {
-            IPropertySymbol property => property.Type,
-            IFieldSymbol field => field.Type,
+            IPropertySymbol property => Unwrapped(property.Type),
+            IFieldSymbol field => Unwrapped(field.Type),
             _ => null,
         };
+
+    private static ITypeSymbol Unwrapped(ITypeSymbol type) =>
+        type
+            is INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
+            } nullable
+            ? nullable.TypeArguments[0]
+            : type;
 
     private static List<INamedTypeSymbol>? DerivedHere(
         ITypeSymbol type,
@@ -599,7 +611,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
     private static ITypeSymbol? ElementTypeOf(ITypeSymbol type)
     {
         if (type is IArrayTypeSymbol array)
-            return array.ElementType;
+            return Unwrapped(array.ElementType);
 
         if (type is not INamedTypeSymbol named)
             return null;
@@ -611,7 +623,7 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         var enumerable = candidates.FirstOrDefault(i =>
             i.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T
         );
-        return enumerable?.TypeArguments.FirstOrDefault();
+        return enumerable is null ? null : Unwrapped(enumerable.TypeArguments[0]);
     }
 
     private static Location LocationOf(string path, int lineNumber, int column, SourceText text)
@@ -627,7 +639,8 @@ public sealed class XamlBindingAnalyzer : DiagnosticAnalyzer
         );
     }
 
-    private static bool IsTrue(AnalyzerConfigOptions options, string key) =>
+    // Absent when the props are not imported, as through a ProjectReference; the default is on.
+    private static bool IsFalse(AnalyzerConfigOptions options, string key) =>
         options.TryGetValue(key, out var value)
-        && value.Equals("true", StringComparison.OrdinalIgnoreCase);
+        && value.Trim().Equals("false", StringComparison.OrdinalIgnoreCase);
 }

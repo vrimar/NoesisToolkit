@@ -138,6 +138,10 @@ public class FrameworkElement : DependencyObject
 
     public event System.EventHandler? Loaded;
 
+    public void AddHandler(RoutedEvent routedEvent, System.Delegate handler) { }
+
+    public void RemoveHandler(RoutedEvent routedEvent, System.Delegate handler) { }
+
     protected virtual bool ConnectEvent(object source, string eventName, string handlerName) => false;
 
     protected virtual Size MeasureOverride(Size availableSize) => availableSize;
@@ -174,6 +178,15 @@ public class Control : ContentControl
 }
 
 public class UserControl : Control { }
+
+public class Thumb : Control
+{
+    public static RoutedEvent DragStartedEvent { get; } = new RoutedEvent();
+
+    public event System.EventHandler? DragStarted;
+
+    protected void RaiseDragStarted() => DragStarted?.Invoke(this, System.EventArgs.Empty);
+}
 
 public class Button : Control
 {

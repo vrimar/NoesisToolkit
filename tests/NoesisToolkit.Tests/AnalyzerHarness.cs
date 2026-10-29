@@ -15,7 +15,8 @@ static class AnalyzerHarness
         string path,
         string content,
         IEnumerable<string>? sources = null,
-        IDictionary<string, string>? properties = null
+        IDictionary<string, string>? properties = null,
+        IEnumerable<MetadataReference>? libraries = null
     )
     {
         var parse = new CSharpParseOptions(LanguageVersion.Preview);
@@ -23,6 +24,7 @@ static class AnalyzerHarness
 
         List<MetadataReference> references = [.. Basic.Reference.Assemblies.Net80.References.All];
         references.Add(GeneratorHarness.NoesisReference);
+        references.AddRange(libraries ?? []);
 
         var compilation = CSharpCompilation.Create(
             "AnalyzerFixtures",

@@ -10,7 +10,7 @@ internal static class XamlBindingMarkup
     public static bool TryGetExtension(string value, string keyword, out string body)
     {
         body = "";
-        if (string.IsNullOrEmpty(value))
+        if (string.IsNullOrEmpty(value) || value.StartsWith("{}", StringComparison.Ordinal))
             return false;
 
         var open = value.IndexOf("{" + keyword, StringComparison.Ordinal);
@@ -76,6 +76,11 @@ internal static class XamlBindingMarkup
                     break;
                 case "UpdateSourceTrigger":
                     break;
+                case "Converter":
+                case "StringFormat":
+                    result.Converts = true;
+                    result.ShapesValue = true;
+                    break;
                 default:
                     result.ShapesValue = true;
                     break;
@@ -111,6 +116,8 @@ internal sealed class BindingExpression
     public bool WritesSourceOnly;
 
     public bool ShapesValue;
+
+    public bool Converts;
 
     public bool IsPlainDataContext =>
         Path is not null && RelativeSource is null && ElementName is null && !HasSource;

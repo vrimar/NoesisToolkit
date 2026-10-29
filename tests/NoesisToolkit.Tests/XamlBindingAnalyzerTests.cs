@@ -526,6 +526,91 @@ public class XamlBindingAnalyzerTests
     }
 
     [Test]
+    [Arguments("Paged", "Current.Title")]
+    [Arguments("LedgerViewModel", "Extra.Title")]
+    public async Task A_hop_into_a_type_parameter_or_dynamic_stops_the_walk(
+        string dataType,
+        string path
+    )
+    {
+        await Assert
+            .That((await Bindings(dataType, $$"""<TextBlock Text="{Binding {{path}}}" />""")))
+            .IsEmpty();
+    }
+
+    [Test]
+    public async Task A_nullable_hop_is_checked_against_the_type_it_wraps()
+    {
+        await Assert
+            .That(
+                (await Bindings("LedgerViewModel", """<TextBlock Text="{Binding Due.Year}" />"""))
+            )
+            .IsEmpty();
+
+        var bad = await Bindings("LedgerViewModel", """<TextBlock Text="{Binding Due.Nope}" />""");
+        await Assert.That(bad.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task An_escaped_literal_is_not_a_binding()
+    {
+        await Assert
+            .That(
+                (
+                    await Bindings(
+                        "ItemViewModel",
+                        """<TextBlock Text="{}{Binding Nope} is literal" />"""
+                    )
+                )
+            )
+            .IsEmpty();
+    }
+
+    [Test]
+    [Arguments(
+        """
+            <ItemsControl ItemsSource="{Binding Items, Converter={StaticResource ToRows}}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            """
+    )]
+    [Arguments(
+        """
+            <ItemsControl>
+              <ItemsControl.ItemsSource>
+                <Binding Path="Items" StringFormat="{}{0}" />
+              </ItemsControl.ItemsSource>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            """
+    )]
+    [Arguments(
+        """
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ListView ItemsSource="{Binding Items, Converter={StaticResource ToRows}}">
+                <ListView.View>
+                  <GridView>
+                    <GridViewColumn>
+                      <GridViewColumn.CellTemplate>
+                        <DataTemplate><TextBlock Text="{Binding RowOnly}" /></DataTemplate>
+                      </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                  </GridView>
+                </ListView.View>
+              </ListView>
+            </ItemsControl>
+            """
+    )]
+    public async Task A_converted_source_leaves_its_template_untyped(string body)
+    {
+        await Assert.That((await Bindings("ShellViewModel", body))).IsEmpty();
+    }
+
+    [Test]
     public async Task An_interface_is_checked_against_its_implementations()
     {
         await Assert
@@ -582,6 +667,31 @@ public class XamlBindingAnalyzerTests
         );
 
         await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task The_rule_is_on_when_the_property_is_absent()
+    {
+        var diagnostics = await AnalyzerHarness.Analyze(
+            new XamlBindingAnalyzer(),
+            "/tmp/Probe.xaml",
+            """
+            <ResourceDictionary
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              xmlns:ui="clr-namespace:Sample.Ui">
+              <DataTemplate DataType="{x:Type ui:ItemViewModel}">
+                <TextBlock Text="{Binding Nope}" />
+              </DataTemplate>
+            </ResourceDictionary>
+            """,
+            Stubs.Sample,
+            new Dictionary<string, string>()
+        );
+
+        await Assert
+            .That(diagnostics.Count(d => d.Id == XamlBindingAnalyzer.UnresolvedBindingId))
+            .IsEqualTo(1);
     }
 
     [Test]

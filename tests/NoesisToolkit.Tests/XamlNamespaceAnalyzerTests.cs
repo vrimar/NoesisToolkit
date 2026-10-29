@@ -57,6 +57,26 @@ public class XamlNamespaceAnalyzerTests
     }
 
     [Test]
+    public async Task NoesisExtensionsNamespace_IsLeftToTheEngine()
+    {
+        var diagnostics = await Analyze(
+            """xmlns:noesis="clr-namespace:NoesisGUIExtensions;assembly=Noesis.GUI.Extensions" """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
+    public async Task IgnorableNamespace_IsNotReported()
+    {
+        var diagnostics = await Analyze(
+            """xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:design="clr-namespace:Sample.Design" mc:Ignorable="design" """
+        );
+
+        await Assert.That(diagnostics).IsEmpty();
+    }
+
+    [Test]
     public async Task PresentationNamespaces_AreLeftAlone()
     {
         var diagnostics = await Analyze(

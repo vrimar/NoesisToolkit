@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.CodeAnalysis;
 
 namespace NoesisToolkit.CodeGen;
@@ -12,6 +13,15 @@ static class TypeLookup
     {
         if (compilation.GetTypeByMetadataName(metadataName) is { } exact)
             return exact;
+
+        // GetTypeByMetadataName returns null when two referenced assemblies define the name.
+        if (
+            compilation
+                .GetTypesByMetadataName(metadataName)
+                .FirstOrDefault(t => t.DeclaredAccessibility == Accessibility.Public) is
+            { } shared
+        )
+            return shared;
 
         for (var arity = 1; arity <= MaxArity; arity++)
         {

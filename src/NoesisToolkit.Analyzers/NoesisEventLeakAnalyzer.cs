@@ -10,9 +10,10 @@ using NoesisToolkit.CodeGen;
 namespace NoesisToolkit.Analyzers;
 
 /// <summary>
-/// Requires every <c>element.Event += handler</c> inside a <c>Noesis.FrameworkElement</c>-derived type
-/// to have a matching <c>-=</c> that can run on a teardown path. Noesis holds handler delegates in a
-/// static table cleaned only on native destruction, which the pinned managed proxy prevents, so an
+/// Requires every <c>element.Event += handler</c> or <c>element.AddHandler(routedEvent, handler)</c>
+/// inside a <c>Noesis.FrameworkElement</c>-derived type to have a matching <c>-=</c> or
+/// <c>RemoveHandler</c> that can run on a teardown path. Noesis holds handler delegates in a static
+/// table cleaned only on native destruction, which the pinned managed proxy prevents, so an
 /// unbalanced subscription leaks the element and its DataContext for the process lifetime.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -22,9 +23,10 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
 
     private const string FrameworkElementMetadataName = "Noesis.FrameworkElement";
     private const string DependencyObjectMetadataName = "Noesis.DependencyObject";
+    private const string RoutedEventMetadataName = "Noesis.RoutedEvent";
 
     private const string MissingHint =
-        "add a matching '-=' before the element unloads, or make the handler static";
+        "add a matching '-=' or RemoveHandler before the element unloads, or make the handler static";
     private const string GuardHint =
         "every '-=' for it is re-attached further down the same flow, which makes them re-entry "
         + "guards rather than teardowns; detach from Unloaded, or make the handler static";
@@ -38,9 +40,10 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
         category: "Reliability",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Noesis Managed keeps every 'element.Event += instanceHandler' delegate in a "
-            + "static table cleaned only on native element destruction, which the pinned managed proxy "
-            + "prevents. Any instance-method (or self-) subscription without a matching '-=', and any "
+        description: "Noesis Managed keeps every 'element.Event += instanceHandler' and "
+            + "'element.AddHandler(routedEvent, instanceHandler)' delegate in a static table cleaned only "
+            + "on native element destruction, which the pinned managed proxy prevents. Any "
+            + "instance-method (or self-) subscription without a matching '-=' or RemoveHandler, and any "
             + "inline lambda handler, pins the element and its DataContext for the process lifetime. "
             + "A '-=' that the same flow re-attaches does not count: it guards against stacking on a "
             + "second OnApplyTemplate, but never runs when the element goes away. Static-method "
@@ -66,9 +69,16 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
             if (frameworkElement is null || dependencyObject is null)
                 return;
 
+            var routedEvent = start.Compilation.GetTypeByMetadataName(RoutedEventMetadataName);
+
             start.RegisterSymbolStartAction(
                 symbolStart =>
-                    AnalyzeNoesisEventBalance(symbolStart, frameworkElement, dependencyObject),
+                    AnalyzeNoesisEventBalance(
+                        symbolStart,
+                        frameworkElement,
+                        dependencyObject,
+                        routedEvent
+                    ),
                 SymbolKind.NamedType
             );
         });
@@ -77,7 +87,8 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeNoesisEventBalance(
         SymbolStartAnalysisContext context,
         INamedTypeSymbol frameworkElement,
-        INamedTypeSymbol dependencyObject
+        INamedTypeSymbol dependencyObject,
+        INamedTypeSymbol? routedEvent
     )
     {
         if (
@@ -90,49 +101,63 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
         var subscribes = new List<Assignment>();
         var unsubscribes = new List<Assignment>();
 
+        void Record(ISymbol evt, IOperation? handlerValue, bool adds, SyntaxNode syntax)
+        {
+            var (skip, unremovable, handler) = ClassifyHandler(handlerValue);
+            if (skip)
+                return;
+
+            if (!adds && unremovable)
+                return;
+
+            lock (gate)
+            {
+                if (adds)
+                    subscribes.Add(new Assignment(evt, handler, syntax, unremovable));
+                else
+                    unsubscribes.Add(new Assignment(evt, handler, syntax, false));
+            }
+        }
+
         context.RegisterOperationAction(
             opContext =>
             {
                 var op = (IEventAssignmentOperation)opContext.Operation;
-                if (op.EventReference is not IEventReferenceOperation reference)
-                    return;
-
-                var evt = reference.Event;
-
-                // Only Noesis element events route through the leaking static handler store.
                 if (
-                    evt.ContainingType is null
-                    || !SymbolEqualityComparer.Default.Equals(
-                        evt.ContainingType.ContainingAssembly,
-                        dependencyObject.ContainingAssembly
-                    )
-                    || !IsOrInheritsFrom(evt.ContainingType, dependencyObject)
+                    op.EventReference is IEventReferenceOperation reference
+                    && IsNoesisElement(reference.Event.ContainingType, dependencyObject)
                 )
-                    return;
-
-                var (skip, unremovable, handler) = ClassifyHandler(op.HandlerValue);
-                if (skip)
-                    return;
-
-                if (!op.Adds && unremovable)
-                    return;
-
-                lock (gate)
-                {
-                    if (op.Adds)
-                        subscribes.Add(new Assignment(evt, handler, op.Syntax, unremovable));
-                    else
-                        unsubscribes.Add(new Assignment(evt, handler, op.Syntax, false));
-                }
+                    Record(reference.Event, op.HandlerValue, op.Adds, op.Syntax);
             },
             OperationKind.EventAssignment
+        );
+
+        if (routedEvent is null)
+            return;
+
+        context.RegisterOperationAction(
+            opContext =>
+            {
+                var call = (IInvocationOperation)opContext.Operation;
+                var method = call.TargetMethod;
+                var adds = method.Name == "AddHandler";
+                if (
+                    (adds || method.Name == "RemoveHandler")
+                    && method.Parameters.Length == 2
+                    && SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, routedEvent)
+                    && IsNoesisElement(method.ContainingType, dependencyObject)
+                    && RoutedEventOf(ArgumentFor(call, 0)) is { } evt
+                )
+                    Record(evt, ArgumentFor(call, 1), adds, call.Syntax);
+            },
+            OperationKind.Invocation
         );
 
         context.RegisterSymbolEndAction(endContext =>
         {
             // Same event AND handler, so an unrelated one-shot `-=` cannot mask a permanent leak.
-            var unsubUnknownHandler = new HashSet<IEventSymbol>(SymbolEqualityComparer.Default);
-            var unsubHandlers = new Dictionary<IEventSymbol, HashSet<ISymbol>>(
+            var unsubUnknownHandler = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            var unsubHandlers = new Dictionary<ISymbol, HashSet<ISymbol>>(
                 SymbolEqualityComparer.Default
             );
             foreach (var unsub in unsubscribes)
@@ -187,13 +212,13 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
     }
 
     private readonly struct Assignment(
-        IEventSymbol evt,
+        ISymbol evt,
         ISymbol? handler,
         SyntaxNode syntax,
         bool unremovable
     )
     {
-        public IEventSymbol Event { get; } = evt;
+        public ISymbol Event { get; } = evt;
         public ISymbol? Handler { get; } = handler;
         public SyntaxNode Syntax { get; } = syntax;
         public bool Unremovable { get; } = unremovable;
@@ -256,6 +281,53 @@ public sealed class NoesisEventLeakAnalyzer : DiagnosticAnalyzer
             default:
                 return (false, false, null);
         }
+    }
+
+    // Only Noesis element events route through the leaking static handler store.
+    private static bool IsNoesisElement(
+        INamedTypeSymbol? type,
+        INamedTypeSymbol dependencyObject
+    ) =>
+        type is not null
+        && SymbolEqualityComparer.Default.Equals(
+            type.ContainingAssembly,
+            dependencyObject.ContainingAssembly
+        )
+        && IsOrInheritsFrom(type, dependencyObject);
+
+    private static IOperation? ArgumentFor(IInvocationOperation call, int ordinal) =>
+        call.Arguments.FirstOrDefault(a => a.Parameter?.Ordinal == ordinal)?.Value;
+
+    // The CLR event a routed event backs is the same subscription, so either form balances the other.
+    private static ISymbol? RoutedEventOf(IOperation? value)
+    {
+        while (value is IConversionOperation conversion)
+            value = conversion.Operand;
+
+        ISymbol? member = value switch
+        {
+            IFieldReferenceOperation field => field.Field,
+            IPropertyReferenceOperation property => property.Property,
+            _ => null,
+        };
+        if (member is null)
+            return null;
+
+        const string suffix = "Event";
+        if (
+            member.Name.Length > suffix.Length
+            && member.Name.EndsWith(suffix, System.StringComparison.Ordinal)
+            && member
+                .ContainingType.GetMembers(
+                    member.Name.Substring(0, member.Name.Length - suffix.Length)
+                )
+                .OfType<IEventSymbol>()
+                .FirstOrDefault()
+                is { } wrapper
+        )
+            return wrapper;
+
+        return member;
     }
 
     private static bool IsOrInheritsFrom(INamedTypeSymbol type, INamedTypeSymbol baseType) =>

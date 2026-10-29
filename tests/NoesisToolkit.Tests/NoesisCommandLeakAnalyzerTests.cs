@@ -84,6 +84,14 @@ public class NoesisCommandLeakAnalyzerTests
         "public DelegateCommand Next { get; } public Pager() { Next = new DelegateCommand(static () => { }); }",
         0
     )]
+    [Arguments(
+        "readonly global::Noesis.KeyBinding _key = new global::Noesis.KeyBinding(); public Pager() { _key.Command = new DelegateCommand(Turn); }",
+        1
+    )]
+    [Arguments(
+        "sealed class Holder { public DelegateCommand? Command { get; set; } } readonly Holder _holder = new Holder(); public Pager() { _holder.Command = new DelegateCommand(Turn); }",
+        0
+    )]
     // A command handed straight to a collaborator is that collaborator's lifetime, not the control's.
     [Arguments(
         "public Pager() { Use(new DelegateCommand(Turn)); } static void Use(DelegateCommand c) { }",
