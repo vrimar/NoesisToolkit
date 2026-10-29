@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## [0.7.4] - 2026-10-28
+## [0.7.4] - 2026-10-29
 
 ### Added
 
@@ -11,6 +11,13 @@ All notable changes to this project are documented here. The format follows
   text block it makes itself, so the compiler cannot reach it: the engine reads its path by
   reflection and boxes the value for every row it fills, again each time a recycling list reuses
   the row. A `CellTemplate` holding the same binding is typed off the list's items and compiles.
+- **`NTK1011` keeps every binding native when `NoesisToolkit.Mvvm` is another version than the
+  XAML compiler.** Compiled bindings are emitted against the runtime API of the compiler's own
+  version, so a project that pinned the two apart built code calling members the runtime it ran
+  against did not have.
+- **`NTK3004` and `NTK3005` report a `[DependencyProperty]` instance property that is not
+  `partial`, or that already has an implementing declaration.** Nothing is generated for it; the
+  generator used to emit an implementation that failed to compile far from the declaration.
 
 ### Changed
 
@@ -23,15 +30,112 @@ All notable changes to this project are documented here. The format follows
   builds, a style setter, a resource or a document left to the loader stayed native without being
   counted, so a project reported no gaps while its parsed columns still read by reflection. Each
   is now a fallback with its reason, classed as a boundary or an author fix like any other.
+- **An `x:Class` root holding a `{DynamicResource}` in its own property elements is loaded by the
+  parser** (`NTK1005`), entries in its own `.Resources` included, so its XAML has to ship. Built in
+  code it read the resource once and never followed the key.
+- **A command named as text that the parser would load unset is refused** with `NTK1001`, where
+  compiled it set a command the parsed document never has. The parser reads only a Noesis command,
+  by the name it registers natively: `Slider.DecreaseLarge` and `ScrollBar.LineDownCommand` compile,
+  while `ScrollBar.LineDown`, `Slider.DecreaseLargeCommand` and an application's own command are
+  refused; bind those instead.
+- **`NTK2101` reads `AddHandler` and `RemoveHandler` as it reads `+=` and `-=`**, so an instance
+  handler a Noesis element adds through `AddHandler` and never removes is now reported.
+- **An owner-qualified enum or `uint` value set on another type is left to the parser**; on an
+  `x:Class` root, which the parser cannot build, it is `NTK1001`.
+- **`ImageSources.From` returns null for a path that is no URI**, and is typed `ImageSource?`. It
+  threw from the binding that read the path.
+- **A compiled binding reloads without rewriting what it already shows.** A reload left a target
+  whose root and value had not changed as the control last set it, single and multi; a two-way edit
+  made while unloaded reaches the source on reload, as natively, and one nobody made writes nothing.
+- **`DelegateCommand<T>` over a value type refuses a null parameter.** `CanExecute` answers no and
+  `Execute` throws, where it ran with `default(T)`; a reference or nullable `T` still takes null.
+- **`Events.OnKey` and `OnKeyClaim` throw for an event whose args carry no key**, where they
+  subscribed and read a key out of args that hold none.
+- **The binding analyzer runs when its MSBuild property is absent**, as under a
+  `ProjectReference` that imports no props, so such a project may see new binding warnings.
+- **`NTK2102` also reports a self-capturing command the control sets on a Noesis
+  `DependencyObject`'s `Command`**, besides one it keeps or hands out, and its title and message
+  say the control holds it rather than exposes it.
+- **A `[DependencyProperty]` that hides a base member without `new` gets `CS0108` on its own
+  declaration**, where the generated code failed with `CS8800`.
+- **`XamlParity` compares far more of each graph**: attached values, nested objects by their
+  values, grid definitions, inlines and resources, trigger binding knobs, `BasedOn`, merged
+  dictionaries by contents and place, visuals held off the tree, and a root at its own size. A
+  tree deeper than the walk fails instead of being cut short. A suite that passed may now report
+  real differences.
+
+### Removed
+
+- **`NTK1009`.** A reference that already holds the application's generated namespace now moves the
+  application's generated code into a namespace of its own, so the reference's resources chain and
+  there is nothing left to warn about.
 
 ### Fixed
 
+- **Compiled bindings are typed only where the compiler knows the context.** A hierarchical
+  template is typed only where its children are the items it names, a keyed resource reads the
+  context of the element it is placed on, a cell template reads its own list's rows, and items a
+  converter shapes, a context the compiler cannot read and a keyed element's own `DataContext`
+  binding leave what is below them native, where each compiled against the wrong type.
+- **Compiled bindings match native ones at run time.** A multi-binding converter that hands back
+  its values gets a new array each time, an unresolved path no longer hands a nullable slot back to
+  the style, a part whose `ToString` throws formats as nothing, and binding a property or a style
+  set again stops the one it replaces.
+- **An image literal builds its own bitmap when `NoesisToolkit.Mvvm` is not referenced**, and the
+  path map an image binding shares drops paths no element shows any more.
+- **The `noesis:` extension namespace is left to the engine.** The analyzer no longer reports it,
+  the compiler has the parser set an extension property on an element built in code and roots the
+  path of a binding inside one, and an `mc:Ignorable` namespace, its dictionary entries and its
+  merged dictionaries are ignored as the parser ignores them.
+- **Properties compile to what the parser sets.** An owner-qualified property on another type sets
+  that type's property, a trigger on a read-only attached property holds the type its getter
+  returns, a setter on a `uint` slot is applied, a resource element on an attached property takes
+  the property's type, and a setter naming a part that is no element keeps its trigger native.
+- **Resources resolve as the parser resolves them.** A resource of another type leaves the slot as
+  it was, a key given by name resolves as a positional one, an empty string entry is the empty
+  string, a `<DynamicResource>` element follows its key, a resource element holds what the parser
+  finds where it sits, and a key the root never declares is left to the parser and the installed
+  resources. An entry with no key, or one setting a property with no dependency property, is
+  refused where it is written.
+- **An element the parser builds keeps what it had inside a compiled document**: its template
+  bindings, names found from the root, a `TargetName` naming an element without `x:Name`, markup on
+  a binding knob, and a style's theme `BasedOn` without also holding the triggers compiled from it.
+- **Markup reads as the parser reads it.** Enum knobs, `Auto`, relative source modes, `Mode` and
+  `UpdateSourceTrigger` match in any case, a backslash escapes a quote inside a quoted argument,
+  the named forms of `x:Type` and `x:Static` work, and text in an attached property element is its
+  value.
+- **The document pipeline handles edge cases the parser accepts.** A dictionary root keeps its own
+  type and attributes, a handler in a dictionary with code-behind is refused rather than left
+  unconnected, an unresolved code-behind, a name that is no identifier and a dropped entry are each
+  reported once where they are written, a relative source outside the project names its sibling as
+  the registry does, an assembly named like a framework one is still the application's, either
+  order of a field modifier's two words is read, and metadata that opts into two-way, in an
+  initializer or a field, keeps a writerless binding native. A rebuilt root binds each input
+  binding it adds, and generated outputs survive an edit that leaves each document as it was.
+- **The binding analyzer types paths as the compiler does.** A hop into a type parameter or
+  `dynamic` stops the walk, a converted source leaves its template untyped, a nullable hop is
+  checked against the type it wraps, an escaped literal is not a binding, and a type two referenced
+  assemblies declare is not reported.
+- **The Mvvm generators emit code that compiles.** A property is implemented with its declared
+  access and inheritance modifiers, a property redeclared over a generated one hides its field,
+  same-named types nested in a generic and a plain outer both generate, a command is no more
+  accessible than its parameter type, keyword names are escaped, and a non-partial outer type is
+  reported where it is declared.
+- **`NTK2101` reports an event subscription only when it pins the element.** A handler on another
+  object, or held in a `static readonly` field, is not reported, and a routed handler is one
+  subscription whichever form adds or removes it.
+- **A template clone of a bound menu opens and closes without reaching its original.** A clone
+  copies its original's event bindings, raised with the original's handle, so the original's
+  handlers ran for it.
 - **An unloaded element's compiled binding lets go of what it last read.** It dropped its
   subscriptions on unload but kept the object it would write back to, the context that object
   came from and, for a path that broke, the context it broke on. An element a cache kept off the
   tree, such as a popup's presenter, so held its last source after its context was cleared, and
   everything that source reached. Unloaded, a binding writes nothing back, and a load reads all
-  three again.
+  three again. Each binding holds them through weak references made with it, so an unload
+  allocates nothing, and keeps a proxy of Noesis' own types as it is, since Noesis mints a new one
+  after a collection and a weak copy would read as a changed value. A two-way binding pushes on
+  load only what was edited while it was unloaded.
 
 ## [0.7.3] - 2026-10-28
 

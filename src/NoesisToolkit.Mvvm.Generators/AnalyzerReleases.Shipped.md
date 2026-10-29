@@ -28,3 +28,12 @@ NTK3002 | NoesisToolkit | Error | [DependencyProperty] of a type Noesis cannot w
 Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 NTK3003 | NoesisToolkit | Error | [DependencyProperty] of a type Noesis cannot register from managed code
+
+## Release 0.7.4
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|------
+NTK3004 | NoesisToolkit | Error | [DependencyProperty] instance property is not partial
+NTK3005 | NoesisToolkit | Error | [DependencyProperty] instance property already has an implementing declaration
