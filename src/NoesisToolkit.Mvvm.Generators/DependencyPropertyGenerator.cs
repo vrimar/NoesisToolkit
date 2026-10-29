@@ -43,6 +43,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         isEnabledByDefault: true
     );
 
+    private static readonly DiagnosticDescriptor PropertyNotPartial = new(
+        id: "NTK3004",
+        title: "Dependency property must be partial",
+        messageFormat: "'{0}' must be declared partial to generate its dependency property",
+        category: "NoesisToolkit",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
     internal const string PropertiesStep = "NoesisMvvmDependencyProperties";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -51,7 +60,12 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             .SyntaxProvider.ForAttributeWithMetadataName(
                 AttributeMetadataName,
                 static (node, _) => node is PropertyDeclarationSyntax,
-                static (ctx, _) => BuildModel((IPropertySymbol)ctx.TargetSymbol, ctx.SemanticModel)
+                static (ctx, _) =>
+                    BuildModel(
+                        (IPropertySymbol)ctx.TargetSymbol,
+                        (PropertyDeclarationSyntax)ctx.TargetNode,
+                        ctx.SemanticModel
+                    )
             )
             .WithTrackingName(PropertiesStep)
             .Collect();
@@ -78,7 +92,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
 
                     foreach (var m in group)
                     {
-                        if (m.Unregistrable)
+                        if (!m.Generates)
+                            spc.ReportDiagnostic(
+                                Diagnostic.Create(
+                                    PropertyNotPartial,
+                                    m.Location?.ToLocation(),
+                                    m.PropertyName
+                                )
+                            );
+                        else if (m.Unregistrable)
                             spc.ReportDiagnostic(
                                 Diagnostic.Create(
                                     Unregistrable,
@@ -98,20 +120,27 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                             );
                     }
 
+                    var generated = group.Where(m => m.Generates).ToList();
+                    if (generated.Count == 0)
+                        continue;
+
                     Output.Add(
                         spc,
                         $"{owner.Owner.Key}.DependencyProperties.g.cs",
-                        GeneratePartial(owner, group)
+                        GeneratePartial(owner, generated)
                     );
                 }
             }
         );
     }
 
-    private static Model BuildModel(IPropertySymbol prop, SemanticModel model)
+    private static Model BuildModel(
+        IPropertySymbol prop,
+        PropertyDeclarationSyntax declaration,
+        SemanticModel model
+    )
     {
-        var attr = prop.GetAttributes()
-            .First(a => a.AttributeClass?.ToDisplayString() == AttributeMetadataName);
+        var attr = prop.GetAttributes().First(IsDependencyPropertyAttribute);
 
         var typeFqn = prop.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated).Fq();
 
@@ -177,11 +206,10 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             metadataOptions,
             prop.IsStatic,
             OwnerNaming.IsPartial(prop),
-            InheritsMemberNamed(owner, prop.Name),
-            InheritsMemberNamed(owner, prop.Name + "Property"),
+            InheritsDependencyField(owner, prop.Name),
             TypedRead(prop.Type),
             WritesTyped(prop.Type),
-            SyntaxFacts.GetText(prop.DeclaredAccessibility),
+            string.Join(" ", declaration.Modifiers.Select(m => m.Text)),
             prop.GetMethod is null ? null : AccessorModifier(prop, prop.GetMethod),
             prop.SetMethod is null ? null
                 : prop.SetMethod.IsInitOnly ? "init"
@@ -211,9 +239,9 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                 is IMethodSymbol { ContainingType: { } declaring }
             && !InheritsFrom(owner, declaring)
         )
-            return $"{declaring.Fq()}.{name}";
+            return $"{declaring.Fq()}.{PartialTypeEmitter.Identifier(name)}";
 
-        return name;
+        return PartialTypeEmitter.Identifier(name);
     }
 
     private static ExpressionSyntax? ArgumentSyntax(
@@ -317,7 +345,9 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         var members = type.GetMembers()
             .OfType<IFieldSymbol>()
             .Where(f => f.HasConstantValue && f.ConstantValue is not null)
-            .Select(f => (f.Name, Bits: Bits(f.ConstantValue!)))
+            .Select(f =>
+                (Name: PartialTypeEmitter.Identifier(f.Name), Bits: Bits(f.ConstantValue!))
+            )
             .ToList();
 
         if (members.FirstOrDefault(m => m.Bits == bits) is { Name: { } exact })
@@ -384,19 +414,30 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                     or "Noesis.CornerRadius"
         );
 
-    private static bool InheritsMemberNamed(INamedTypeSymbol owner, string name)
+    // A base in this compilation gets its field from this same pass, so its attribute stands in for it.
+    private static bool InheritsDependencyField(INamedTypeSymbol owner, string propertyName)
     {
         for (var t = owner.BaseType; t is not null; t = t.BaseType)
         {
-            foreach (var member in t.GetMembers(name))
+            foreach (var member in t.GetMembers(propertyName + "Property"))
             {
                 if (member.DeclaredAccessibility != Accessibility.Private)
                     return true;
             }
+
+            if (
+                t.GetMembers(propertyName)
+                    .OfType<IPropertySymbol>()
+                    .Any(p => p.GetAttributes().Any(IsDependencyPropertyAttribute))
+            )
+                return true;
         }
 
         return false;
     }
+
+    private static bool IsDependencyPropertyAttribute(AttributeData attribute) =>
+        attribute.AttributeClass?.ToDisplayString() == AttributeMetadataName;
 
     private static string GeneratePartial(Model owner, IEnumerable<Model> props)
     {
@@ -427,15 +468,12 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
     private static void WriteDependencyProperty(CodeWriter w, Model m)
     {
         string fieldNew = m.HidesInheritedField ? "new " : "";
-        string propertyNew = m.HidesInheritedProperty ? "new " : "";
 
         w.Line($"public {fieldNew}static readonly DependencyProperty {m.PropertyName}Property =");
         WriteRegistration(w, m, attached: false);
 
         w.Line();
-        using (
-            w.Block($"{m.Accessibility} {propertyNew}partial {m.TypeFqnNullable} {m.PropertyName}")
-        )
+        using (w.Block($"{m.Modifiers} {m.TypeFqnNullable} {Identifier(m)}"))
         {
             if (m.GetterModifier is { } getter)
                 w.Line($"{getter}get => {Read(m, "this")};");
@@ -484,7 +522,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
                 w.Line($"DependencyProperty.Register{(attached ? "Attached" : "")}(");
                 using (w.Indented())
                 {
-                    w.Line(attached ? $"\"{m.PropertyName}\"," : $"nameof({m.PropertyName}),");
+                    w.Line(attached ? $"\"{m.PropertyName}\"," : $"nameof({Identifier(m)}),");
                     w.Line($"typeof({m.TypeFqn}),");
                     w.Line($"typeof({m.Owner.Fqn}),");
                     w.Line(BuildMetadata(m));
@@ -528,9 +566,7 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         if (m.IsPropertyPartial)
         {
             w.Line($"private static {m.TypeFqnNullable} __backing_{m.PropertyName} = default!;");
-            using (
-                w.Block($"{m.Accessibility} static partial {m.TypeFqnNullable} {m.PropertyName}")
-            )
+            using (w.Block($"{m.Modifiers} {m.TypeFqnNullable} {Identifier(m)}"))
             {
                 if (m.GetterModifier is { } getter)
                     w.Line($"{getter}get => __backing_{m.PropertyName};");
@@ -540,6 +576,8 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
             w.Line();
         }
     }
+
+    private static string Identifier(Model m) => PartialTypeEmitter.Identifier(m.PropertyName);
 
     private static string BuildMetadata(Model m)
     {
@@ -568,13 +606,15 @@ public sealed class DependencyPropertyGenerator : IIncrementalGenerator
         string? MetadataOptions,
         bool IsAttached,
         bool IsPropertyPartial,
-        bool HidesInheritedProperty,
         bool HidesInheritedField,
         string? TypedRead,
         bool WritesTyped,
-        string Accessibility,
+        string Modifiers,
         string? GetterModifier,
         string? SetterKeyword,
         string SetterModifier
-    );
+    )
+    {
+        public bool Generates => IsAttached || IsPropertyPartial;
+    }
 }

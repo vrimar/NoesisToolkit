@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NoesisToolkit.CodeGen;
 
@@ -48,6 +49,7 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
         bool ReturnsValueTask,
         int ParameterCount,
         string? FirstParameterFqn,
+        string Accessibility,
         LocationInfo? MethodLocation
     );
 
@@ -80,6 +82,9 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
             ReturnsValueTask(method),
             method.Parameters.Length,
             firstParam?.Type.Fq(),
+            SyntaxFacts.GetText(
+                firstParam is null ? Accessibility.Public : EffectiveAccessibility(firstParam.Type)
+            ),
             LocationInfo.From(method.Locations.FirstOrDefault())
         );
     }
@@ -140,9 +145,13 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
                     ? kind
                     : $"{kind}<{command.FirstParameterFqn}>";
 
-                members.Line($"public {commandType} {command.MethodName}Command =>");
+                members.Line(
+                    $"{command.Accessibility} {commandType} {command.MethodName}Command =>"
+                );
                 using (members.Indented())
-                    members.Line($"field ??= new({command.MethodName}!);");
+                    members.Line(
+                        $"field ??= new({PartialTypeEmitter.Identifier(command.MethodName)}!);"
+                    );
                 any = true;
             }
 
@@ -163,6 +172,44 @@ public sealed class DelegateCommandGenerator : IIncrementalGenerator
             Output.Add(spc, $"{owner.Owner.Key}.DelegateCommands.g.cs", w.ToString());
         }
     }
+
+    static Accessibility EffectiveAccessibility(ITypeSymbol type) =>
+        type switch
+        {
+            IArrayTypeSymbol array => EffectiveAccessibility(array.ElementType),
+            IPointerTypeSymbol pointer => EffectiveAccessibility(pointer.PointedAtType),
+            INamedTypeSymbol { TypeKind: not TypeKind.Error } named =>
+                named.TypeArguments.Aggregate(
+                    DeclaredWithin(named),
+                    (narrowest, argument) => Narrower(narrowest, EffectiveAccessibility(argument))
+                ),
+            _ => Accessibility.Public,
+        };
+
+    static Accessibility DeclaredWithin(INamedTypeSymbol type)
+    {
+        var narrowest = Accessibility.Public;
+        for (
+            INamedTypeSymbol? current = type;
+            current is not null;
+            current = current.ContainingType
+        )
+            narrowest = Narrower(narrowest, current.DeclaredAccessibility);
+
+        return narrowest;
+    }
+
+    static Accessibility Narrower(Accessibility a, Accessibility b) =>
+        (a, b) switch
+        {
+            _ when a == b => a,
+            (Accessibility.Private, _) or (_, Accessibility.Private) => Accessibility.Private,
+            (Accessibility.Public, _) => b,
+            (_, Accessibility.Public) => a,
+            (Accessibility.ProtectedOrInternal, _) => b,
+            (_, Accessibility.ProtectedOrInternal) => a,
+            _ => Accessibility.ProtectedAndInternal,
+        };
 
     static bool ReturnsValueTask(IMethodSymbol method) =>
         method.ReturnType is INamedTypeSymbol { Name: "ValueTask", IsGenericType: false } named

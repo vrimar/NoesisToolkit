@@ -313,6 +313,250 @@ public class MvvmGeneratorTests
         await Assert.That(ids).DoesNotContain("NTK3002");
     }
 
+    [Test]
+    public async Task A_property_without_an_access_modifier_is_implemented_without_one()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, ImplicitlyPrivateOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_property_is_implemented_with_its_declared_inheritance_modifiers()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, InheritanceModifiersOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_property_redeclared_over_a_generated_one_hides_its_field()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, RedeclaringOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+        await Assert.That(run.CompileDiagnostics.Select(d => d.Id)).DoesNotContain("CS0108");
+    }
+
+    [Test]
+    public async Task A_non_partial_instance_property_is_reported_and_not_generated()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, NonPartialPropertyMember]
+        );
+
+        await Assert.That(run.Errors.Select(d => d.Id)).IsEquivalentTo(["NTK3004"]);
+    }
+
+    [Test]
+    public async Task Same_named_types_nested_in_a_generic_and_a_plain_outer_both_generate()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, GenericOuterOwners]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_command_is_no_more_accessible_than_its_parameter_type()
+    {
+        var run = GeneratorHarness.Run(
+            new DelegateCommandGenerator(),
+            [],
+            [Stubs.Mvvm, InternalParameterOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task Keyword_names_are_escaped_in_the_generated_code()
+    {
+        var run = GeneratorHarness.Run(
+            [new DependencyPropertyGenerator(), new DelegateCommandGenerator()],
+            [],
+            [Stubs.Mvvm, KeywordOwner]
+        );
+
+        await Assert.That(run.Errors).IsEmpty();
+    }
+
+    [Test]
+    public async Task A_non_partial_outer_type_is_reported_where_it_is_declared()
+    {
+        var run = GeneratorHarness.Run(
+            new DependencyPropertyGenerator(),
+            [],
+            [Stubs.Mvvm, NonPartialOuterOwner]
+        );
+
+        var span = run.GeneratorDiagnostics.Single(d => d.Id == "NTK3001").Location.SourceSpan;
+        await Assert
+            .That(NonPartialOuterOwner.Substring(span.Start, span.Length))
+            .IsEqualTo("Frame");
+    }
+
+    const string ImplicitlyPrivateOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Tally : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            partial int Count { get; set; }
+
+            [DependencyProperty]
+            static partial int Slot { get; set; }
+        }
+        """;
+
+    const string InheritanceModifiersOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public class Plain : global::Noesis.UserControl
+        {
+            public string Title => "";
+        }
+
+        public partial class Card : Plain
+        {
+            [DependencyProperty]
+            public partial string? Title { get; set; }
+
+            [DependencyProperty]
+            public virtual partial int Count { get; set; }
+        }
+        """;
+
+    const string RedeclaringOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Gauge : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public partial int Count { get; set; }
+        }
+
+        public partial class LabeledGauge : Gauge
+        {
+            [DependencyProperty]
+            public new partial int Count { get; set; }
+        }
+        """;
+
+    const string NonPartialPropertyMember = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Counter : global::Noesis.UserControl
+        {
+            [DependencyProperty]
+            public int Count { get; set; }
+
+            [DependencyProperty]
+            public partial int Total { get; set; }
+        }
+        """;
+
+    const string GenericOuterOwners = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public partial class Host
+        {
+            public partial class Inner : global::Noesis.UserControl
+            {
+                [DependencyProperty]
+                public partial int A { get; set; }
+            }
+        }
+
+        public partial class Host<T>
+        {
+            public partial class Inner : global::Noesis.UserControl
+            {
+                [DependencyProperty]
+                public partial int B { get; set; }
+            }
+        }
+        """;
+
+    const string InternalParameterOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        internal sealed class Item { }
+
+        public partial class Picker
+        {
+            [DelegateCommand]
+            void Select(Item item) { }
+
+            [DelegateCommand]
+            void SelectAll(System.Collections.Generic.List<Item> items) { }
+        }
+        """;
+
+    const string KeywordOwner = """
+        using NoesisToolkit.Mvvm;
+        using Noesis;
+
+        namespace Sample;
+
+        public enum Mode { @default, @fixed }
+
+        public partial class @event : global::Noesis.UserControl
+        {
+            [DependencyProperty(Mode.@fixed, nameof(@checked))]
+            public partial Mode @default { get; set; }
+
+            [DelegateCommand]
+            void @lock() { }
+
+            static void @checked(DependencyObject d, DependencyPropertyChangedEventArgs e) { }
+        }
+        """;
+
+    const string NonPartialOuterOwner = """
+        using NoesisToolkit.Mvvm;
+
+        namespace Sample;
+
+        public class Frame
+        {
+            public partial class Pane : global::Noesis.UserControl
+            {
+                [DependencyProperty]
+                public partial string? Title { get; set; }
+            }
+        }
+        """;
+
     const string MatrixOwner = """
         using NoesisToolkit.Mvvm;
 

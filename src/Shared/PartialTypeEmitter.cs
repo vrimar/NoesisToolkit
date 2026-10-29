@@ -13,7 +13,10 @@ static class PartialTypeEmitter
     public static string TypeParameters(INamedTypeSymbol type) =>
         type.Arity == 0
             ? ""
-            : "<" + string.Join(", ", type.TypeParameters.Select(p => p.Name)) + ">";
+            : "<" + string.Join(", ", type.TypeParameters.Select(p => Identifier(p.Name))) + ">";
+
+    public static string Identifier(string name) =>
+        SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
 
     /// <summary>One entry per nesting level, outermost first: a dotted join would give
     /// "class Outer.class Inner".</summary>
@@ -21,7 +24,7 @@ static class PartialTypeEmitter
     {
         var parts = new Stack<string>();
         for (var current = type; current is not null; current = current.ContainingType)
-            parts.Push($"{KindOf(current)} {current.Name}{TypeParameters(current)}");
+            parts.Push($"{KindOf(current)} {Identifier(current.Name)}{TypeParameters(current)}");
 
         return string.Join(";", parts);
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -14,36 +15,24 @@ namespace NoesisToolkit.CodeGen;
 static class OwnerNaming
 {
     /// <summary>
-    /// A file-name-safe key for a type: its full name with generic arguments dropped and every
-    /// separator flattened, so a nested or generic owner still gets one stable hint name.
+    /// A file-name-safe key for a type: its namespace and every nesting level joined flat, each
+    /// level's arity included so <c>Outer.Inner</c> and <c>Outer&lt;T&gt;.Inner</c> do not collide.
     /// </summary>
-    internal static string TypeKey(string fullyQualifiedName)
+    internal static string Key(INamedTypeSymbol type)
     {
-        var builder = new System.Text.StringBuilder(fullyQualifiedName.Length);
-        var depth = 0;
-        foreach (var c in fullyQualifiedName.Replace("global::", ""))
-        {
-            if (c == '<')
-                depth++;
-            else if (c == '>')
-                depth--;
-            else if (depth == 0)
-            {
-                if (c == '.')
-                    builder.Append('_');
-                else if (c == '+')
-                    builder.Append("__");
-                else
-                    builder.Append(c);
-            }
-        }
+        var levels = new Stack<string>();
+        for (var current = type; current is not null; current = current.ContainingType)
+            levels.Push(current.Arity == 0 ? current.Name : current.Name + "`" + current.Arity);
 
-        return builder.ToString();
+        for (
+            var ns = type.ContainingNamespace;
+            ns is { IsGlobalNamespace: false };
+            ns = ns.ContainingNamespace
+        )
+            levels.Push(ns.Name);
+
+        return string.Join("_", levels);
     }
-
-    /// <summary>The hint-name key for a type, arity included so two generic arities do not collide.</summary>
-    internal static string Key(INamedTypeSymbol type) =>
-        TypeKey(type.Fq()) + (type.Arity == 0 ? "" : "`" + type.Arity);
 
     internal static bool IsPartial(ISymbol symbol) =>
         symbol
@@ -77,15 +66,18 @@ readonly record struct OwnerInfo(
     LocationInfo? Location
 )
 {
-    public static OwnerInfo From(INamedTypeSymbol type) =>
-        new OwnerInfo(
+    public static OwnerInfo From(INamedTypeSymbol type)
+    {
+        var notPartial = OwnerNaming.NotPartialIn(type);
+        return new OwnerInfo(
             OwnerNaming.Key(type),
             type.Fq(),
             type.ToDisplayString(),
             PartialTypeEmitter.DeclarationChain(type),
             type.NamespaceOrNull(),
-            OwnerNaming.NotPartialIn(type) is null,
-            OwnerNaming.NotPartialIn(type)?.ToDisplayString(),
-            LocationInfo.From(type.Locations.FirstOrDefault())
+            notPartial is null,
+            notPartial?.ToDisplayString(),
+            LocationInfo.From((notPartial ?? type).Locations.FirstOrDefault())
         );
+    }
 }
