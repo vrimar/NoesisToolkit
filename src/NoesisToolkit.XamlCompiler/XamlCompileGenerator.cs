@@ -435,15 +435,15 @@ public sealed class XamlCompileGenerator : IIncrementalGenerator
                 continue;
             }
 
-            // The loader still parses it, so no graph is emitted and nothing here is counted.
+            tally.Add(document.Tally);
+
+            // The loader still parses it, so no graph is emitted; its bindings count above as fallbacks.
             if (document.NeedsLoader)
             {
                 loaders++;
                 rows.Add($"LOAD {file} :: parsed at run time, no binding compiled");
                 continue;
             }
-
-            tally.Add(document.Tally);
 
             foreach (var dead in document.DeadMarkup.Distinct())
                 rows.Add($"DEAD {file} :: {dead}");

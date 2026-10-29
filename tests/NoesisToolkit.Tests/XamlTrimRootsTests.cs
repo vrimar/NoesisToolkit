@@ -352,6 +352,9 @@ public class XamlTrimRootsTests
             .That(native[0].GetMessage())
             .IsEqualTo("RootsLoaded.xaml :: binding stays native: document-left-to-the-loader");
         await Assert.That(native[0].Location.GetLineSpan().StartLinePosition.Line).IsEqualTo(10);
+        await Assert
+            .That(run.Source("XamlCompileSurvey"))
+            .Matches(@"// fallback\s+1\s+Author\s+document-left-to-the-loader");
     }
 
     [Test]
