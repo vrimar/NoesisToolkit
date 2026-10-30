@@ -398,7 +398,7 @@ sealed partial class XamlEmitter
         if (ElementPath(from, propertyName.Trim()) is not { } resolved)
             return null;
 
-        var constant = TriggerConstant(owner, rawValue, resolved.Type);
+        var constant = SlotConstant(owner, rawValue, resolved.Type);
         if (constant is null)
         {
             Note("trigger-value-unsupported");
@@ -662,7 +662,7 @@ sealed partial class XamlEmitter
             return null;
         }
 
-        var value = TriggerConstant(owner, rawValue, slot.Type);
+        var value = SlotConstant(owner, rawValue, slot.Type);
         if (value is null)
         {
             Note("trigger-setter-value-unsupported");
@@ -796,6 +796,17 @@ sealed partial class XamlEmitter
 
         return MarkupValue(owner, call, type);
     }
+
+    string? SlotConstant(XElement owner, string raw, ITypeSymbol type) =>
+        XamlMarkupParser.IsMarkup(raw)
+        && XamlMarkupParser.Parse(raw) is { } call
+        && IsNullString(call, type)
+            ? "\"\""
+            : TriggerConstant(owner, raw, type);
+
+    // A slot typed by its property stores a null string as the empty one; a DataTrigger keeps null.
+    static bool IsNullString(MarkupCall call, ITypeSymbol? type) =>
+        call.Name is "x:Null" or "Null" && type?.SpecialType == SpecialType.System_String;
 
     static readonly string[] SetterWrappers =
     {

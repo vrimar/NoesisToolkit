@@ -41,6 +41,31 @@
     </ControlTemplate.Triggers>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="EmptiedTemplate" TargetType="{x:Type TextBox}">
+    <Border x:Name="Frame">
+      <ScrollViewer x:Name="PART_ContentHost" />
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="Text" Value="{x:Null}">
+        <Setter TargetName="Frame" Property="Opacity" Value="0.5" />
+      </Trigger>
+      <Trigger Property="Text" Value="">
+        <Setter TargetName="Frame" Property="Opacity" Value="0.25" />
+      </Trigger>
+      <MultiTrigger>
+        <MultiTrigger.Conditions>
+          <Condition Property="Text" Value="{x:Null}" />
+          <Condition Property="IsEnabled" Value="False" />
+        </MultiTrigger.Conditions>
+        <Setter TargetName="Frame" Property="Opacity" Value="0.1" />
+      </MultiTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <Style x:Key="Unworded" TargetType="{x:Type TextBlock}">
+    <Setter Property="Text" Value="{x:Null}" />
+  </Style>
+
   <Style x:Key="Triggered" TargetType="{x:Type Border}">
     <Setter Property="Background" Value="{DynamicResource Accent}" />
     <Style.Triggers>

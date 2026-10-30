@@ -17,6 +17,20 @@
     </StackPanel>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="Unlabelled" TargetType="{x:Type t:SpikeControl}">
+    <Border x:Name="Chrome">
+      <TextBlock x:Name="Caption" Text="{TemplateBinding Label}" />
+    </Border>
+    <ControlTemplate.Triggers>
+      <Trigger Property="Label" Value="{x:Null}">
+        <Setter TargetName="Chrome" Property="Visibility" Value="Collapsed" />
+      </Trigger>
+      <DataTrigger Binding="{Binding Label, RelativeSource={RelativeSource Self}}" Value="{x:Null}">
+        <Setter TargetName="Caption" Property="FontStyle" Value="Italic" />
+      </DataTrigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
   <ControlTemplate x:Key="Triggered" TargetType="{x:Type t:SpikeControl}">
     <Border x:Name="Chrome" Background="Red">
       <TextBlock x:Name="Caption" Text="{TemplateBinding Label}" />

@@ -284,8 +284,9 @@ sealed partial class XamlEmitter
                 return;
             }
 
-            var expression = IsCustomExtension(call)
-                ? ProvidedValue(element, call, target, "null")
+            var expression =
+                IsCustomExtension(call) ? ProvidedValue(element, call, target, "null")
+                : IsNullString(call, valueType) ? "\"\""
                 : MarkupValue(element, call, valueType);
             if (expression is not null)
                 _lines.Add($"{target}.Value = {expression};");
