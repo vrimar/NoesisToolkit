@@ -60,7 +60,8 @@ public class DelegateCommand<T> : ICommand
     /// <summary>Runs the command.</summary>
     public void Execute(T? parameter) => _execute(parameter);
 
-    bool ICommand.CanExecute(object? parameter) => Fits(parameter) && CanExecute(Cast(parameter));
+    bool ICommand.CanExecute(object? parameter) =>
+        Unbound(parameter) || (Fits(parameter) && CanExecute(Cast(parameter)));
 
     void ICommand.Execute(object? parameter) => Execute(Cast(parameter));
 
@@ -73,6 +74,9 @@ public class DelegateCommand<T> : ICommand
     /// so a mismatch is "no", where invoking it is still a fault.</summary>
     internal static bool Fits(object? parameter) =>
         parameter is T || (parameter is null && TakesNull);
+
+    // Noesis queries a source's CanExecute when its Command is set, never when its CommandParameter changes.
+    internal static bool Unbound(object? parameter) => parameter is null && !TakesNull;
 
     internal static T? Cast(object? parameter)
     {

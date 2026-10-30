@@ -55,7 +55,9 @@ public class AsyncDelegateCommand<T> : ICommand
     }
 
     bool ICommand.CanExecute(object? parameter) =>
-        DelegateCommand<T>.Fits(parameter) && CanExecute(DelegateCommand<T>.Cast(parameter));
+        DelegateCommand<T>.Unbound(parameter)
+            ? !_running
+            : DelegateCommand<T>.Fits(parameter) && CanExecute(DelegateCommand<T>.Cast(parameter));
 
     void ICommand.Execute(object? parameter) => Execute(DelegateCommand<T>.Cast(parameter));
 
