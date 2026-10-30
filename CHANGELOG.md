@@ -3,6 +3,17 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.7.6] - 2026-10-30
+
+### Fixed
+
+- **A command over a value type no longer disables a button bound before its parameter.**
+  `DelegateCommand<T>` and `AsyncDelegateCommand<T>` answered no to `CanExecute(null)`, and Noesis
+  asks once, when `Command` is set, and never again when `CommandParameter` changes, so a button
+  whose parameter bound second stayed disabled for good. A null a value type cannot hold now reads as
+  a parameter still to come: `CanExecute` answers yes (an async command, no while it runs) and
+  `Execute` still throws.
+
 ## [0.7.5] - 2026-10-29
 
 ### Fixed
@@ -1086,6 +1097,8 @@ First release.
   (.NET 10 SDK or later). Its runtime targets `netstandard2.0` and `net9.0` and depends on
   `Noesis.GUI` >= 4.0.0.
 
+[0.7.6]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.6
+[0.7.5]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.5
 [0.7.4]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.4
 [0.7.3]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.3
 [0.7.1]: https://github.com/vrimar/NoesisToolkit/releases/tag/v0.7.1
