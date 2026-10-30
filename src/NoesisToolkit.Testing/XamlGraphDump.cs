@@ -395,15 +395,15 @@ static class XamlGraphDump
     static string SourceSegment(DependencyProperty property)
     {
         var owner = OwnerOf(property);
-        if (
-            owner is null
-            || owner.GetProperty(property.Name, BindingFlags.Public | BindingFlags.Instance)
-                is not null
-        )
+        if (owner is null || HasClrProperty(owner, property.Name))
             return property.Name;
 
         return $"({OwnerName(owner)}.{property.Name})";
     }
+
+    // GetProperty throws on a name the hierarchy declares twice, as ColumnDefinition does Width.
+    static bool HasClrProperty(Type type, string name) =>
+        type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Any(p => p.Name == name);
 
     // An attached property keeps its owner, so two owners' same-named properties stay apart.
     static string PropertyName(DependencyProperty? property) =>
@@ -836,6 +836,7 @@ static class XamlGraphDump
                 || owned.Contains(handle)
                 || owner?.IsAssignableFrom(type) == true
                 || owner?.Assembly == typeof(CompiledTriggerSet).Assembly
+                || InheritedFromParent(target, property, value)
             )
                 continue;
 
@@ -844,6 +845,20 @@ static class XamlGraphDump
 
         return attached;
     }
+
+    // Noesis stores an inherited value on some elements only, so one equal to its parent's says nothing.
+    static bool InheritedFromParent(
+        DependencyObject target,
+        DependencyProperty property,
+        object? value
+    ) =>
+        property.GetMetadata(target.GetType()) is FrameworkPropertyMetadata { Inherits: true }
+        && InheritanceParent(target) is { } parent
+        && Equals(parent.GetValue(property), value);
+
+    static DependencyObject? InheritanceParent(DependencyObject node) =>
+        (node is Visual ? VisualTreeHelper.GetParent(node) : null)
+        ?? (node as FrameworkElement)?.Parent;
 
     static Type? OwnerOf(DependencyProperty property)
     {

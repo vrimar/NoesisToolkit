@@ -186,6 +186,34 @@ public sealed class EquivalenceTests
     }
 
     [Test]
+    public async Task An_inherited_value_an_element_overrides_is_compared()
+    {
+        Live();
+
+        static Grid Floated(bool? own)
+        {
+            var image = new Image();
+            var grid = new Grid { Children = { new Border { Child = image } } };
+            grid.SetValue(Floating.Property, true);
+            if (own is { } value)
+                image.SetValue(Floating.Property, value);
+            return grid;
+        }
+
+        await Assert.That(XamlParity.Compare("Own", Floated(null), Floated(false))).IsNotNull();
+    }
+
+    static class Floating
+    {
+        public static readonly DependencyProperty Property = DependencyProperty.RegisterAttached(
+            "Floating",
+            typeof(bool),
+            typeof(Floating),
+            new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits)
+        );
+    }
+
+    [Test]
     public async Task A_nested_object_is_compared_by_its_values()
     {
         Live();

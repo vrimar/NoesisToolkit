@@ -21,6 +21,26 @@
     </ControlTemplate.Triggers>
   </ControlTemplate>
 
+  <ControlTemplate x:Key="SizedTemplate" TargetType="{x:Type Button}">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition x:Name="Side" Width="Auto" />
+        <ColumnDefinition />
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition x:Name="Top" Height="Auto" />
+        <RowDefinition />
+      </Grid.RowDefinitions>
+      <ContentPresenter Grid.Column="1" Grid.Row="1" />
+    </Grid>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter TargetName="Side" Property="Width" Value="0" />
+        <Setter TargetName="Top" Property="Height" Value="0" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
   <Style x:Key="Triggered" TargetType="{x:Type Border}">
     <Setter Property="Background" Value="{DynamicResource Accent}" />
     <Style.Triggers>
