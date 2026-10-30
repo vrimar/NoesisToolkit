@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.7.5] - 2026-10-29
+
+### Fixed
+
+- **`{x:Null}` on a string a trigger or setter names compiles to the empty string**, which is what
+  the parser stores there. Compiled, a property `Trigger` or `Condition` held `null` and so never
+  matched the empty text the parsed one does, and a `Setter` wrote `null` where the parsed one wrote
+  `""`. A `DataTrigger` keeps `null`, as the parser does.
+- **`XamlParity` no longer throws on a setter or trigger naming `ColumnDefinition.Width` or
+  `RowDefinition.Height`.** Each type declares the name twice, so the reflection lookup that told a
+  wrapped property from an attached one found the match ambiguous and failed the whole document.
+- **`XamlParity` compares an inherited attached value only where an element sets it.** Noesis stores
+  an inherited value on some elements and not others, and which ones differed between the parsed and
+  the compiled graph, so a value equal to the parent's reported a mismatch neither graph had.
+
 ## [0.7.4] - 2026-10-29
 
 ### Added
